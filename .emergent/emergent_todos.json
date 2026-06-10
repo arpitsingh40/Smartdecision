@@ -1,0 +1,30 @@
+[
+  {
+    "content": "Phase 1: Build test_core.py POC (turn engine + re-engagement + intent classifier + Opus/Haiku)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Run POC, fix until all scenarios pass",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Get design guidelines from design_agent",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 2: Build backend (auth, goals, threads, turn engine, substrate, credits, telemetry)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Build frontend (auth, dashboard, situation pane, history expander)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: All user stories covered in development",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: End to End Testing using Testing Agent",
+    "status": "pending"
+  }
+]

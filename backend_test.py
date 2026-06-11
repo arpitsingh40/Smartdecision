@@ -8,7 +8,7 @@ import time
 from datetime import datetime
 
 class BackendTester:
-    def __init__(self, base_url="https://root-cause-engine-1.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://impact-mapper-5.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.token = None
         self.user_id = None

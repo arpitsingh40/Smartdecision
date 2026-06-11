@@ -188,13 +188,34 @@ export default function ThreadPage() {
                 <p className="text-sm md:text-base leading-6 whitespace-pre-line">{thread.current_state_summary}</p>
               </Field>
 
-              <Field label="Easiest path" testId="situation-easiest-path" refreshKey={refreshKey}>
-                <p className="text-sm md:text-base leading-6">{thread.current_easiest_path}</p>
-              </Field>
+              <div className={thread.current_bold_move ? 'grid sm:grid-cols-2 gap-5 sm:gap-6' : ''}>
+                <Field label="Easiest path" testId="situation-easiest-path" refreshKey={refreshKey}>
+                  <p className="text-sm md:text-base leading-6">{thread.current_easiest_path}</p>
+                </Field>
+                {thread.current_bold_move && (
+                  <Field label="The bolder play" testId="situation-bold-move" refreshKey={refreshKey}>
+                    <p className="text-sm md:text-base leading-6 border-l-2 border-[hsl(var(--warning))]/50 pl-3">
+                      {thread.current_bold_move}
+                    </p>
+                  </Field>
+                )}
+              </div>
 
               <Field label="Next action · 24–48h" testId="situation-next-action" refreshKey={refreshKey}>
                 <div className="rounded-xl bg-[hsl(var(--accent))]/60 border border-border/70 px-4 py-3">
                   <p className="font-display text-base md:text-lg leading-snug">{thread.current_next_action}</p>
+                  {thread.current_action_payoff && (
+                    <p data-testid="action-payoff" className="mt-2 text-sm leading-6 text-foreground/85">
+                      <span className="text-[hsl(var(--ring))] mr-1.5" aria-hidden="true">↳</span>
+                      {thread.current_action_payoff}
+                    </p>
+                  )}
+                  {thread.current_big_picture && (
+                    <p data-testid="action-big-picture" className="mt-2.5 pt-2.5 border-t border-border/60 text-xs leading-5 text-muted-foreground">
+                      <span className="uppercase tracking-[0.12em] text-[10px] mr-2">Big picture</span>
+                      {thread.current_big_picture}
+                    </p>
+                  )}
                 </div>
               </Field>
 

@@ -153,32 +153,38 @@ backend:
 frontend:
   - task: "Render value layers (payoff in action box, big-picture line, bolder play beside easiest path)"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/ThreadPage.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Visualized via screenshot with seeded data — layout approved by user. Conditional rendering (fields may be null on old threads)."
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED via comprehensive Playwright test. Static render: situation-easiest-path, situation-bold-move (with amber left border), situation-next-action all visible with seeded data. action-payoff (with ↳ arrow) and action-big-picture (with 'Big picture' label) both visible inside next-action box. Live turns: Turn 1 (Normal mode, 9.77s) and Turn 2 (Ultra mode, 19.94s) both successfully updated all value fields with NEW non-empty content. Fields properly refresh after each turn with distinct content."
   - task: "Mode toggle Normal / Ultra thinking in composer"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/ThreadPage.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Segmented control next to Send; mode sent with each turn; ultra-specific thinking copy. Not yet UI-tested."
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED via Playwright test. Mode toggle (mode-toggle) visible with both mode-normal-button and mode-ultra-button. Normal mode selected by default (accent background). Mode switching works correctly: clicking mode-ultra-button activates Ultra mode (accent background switches). Thinking states display correctly: Normal shows 'Processing… the situation is being re-read.' and Ultra shows 'Ultra thinking… going deeper before answering.' Both modes successfully complete turns and update fields."
 
 metadata:
   created_by: "main_agent"
-  version: "1.2"
-  test_sequence: 5
-  run_ui: false
+  version: "1.3"
+  test_sequence: 7
+  run_ui: true
 
 test_plan:
   current_focus: []
@@ -206,3 +212,18 @@ agent_communication:
       7. Default mode: omitted mode defaults to normal ✓
       8. Auth guard: 401 without token ✓
       NO CRITICAL ISSUES. Backend fully functional. Ready for main agent to summarize and finish.
+  - agent: "main"
+    message: >
+      User approved frontend testing. Test ThreadPage value layers + mode toggle.
+      BUDGET: max 2 real LLM turns total (each costs real API money, 5 credits).
+      Ultra turn may take 30-90s — wait patiently before asserting field refresh.
+  - agent: "testing"
+    message: >
+      ✅ ALL FRONTEND TESTS PASSED (2/2 LLM turns used, 5/5 total budget). Comprehensive UI test via Playwright:
+      1. Login & Navigation: demo@smartdecigen.com login successful, dashboard loaded, thread opened ✓
+      2. Static Render (seeded data): All value layers visible - situation-easiest-path, situation-bold-move (with amber border), situation-next-action, action-payoff (with ↳ arrow), action-big-picture (with "Big picture" label) ✓
+      3. Mode Toggle: mode-toggle visible, Normal selected by default (accent background), Ultra button working ✓
+      4. Turn 1 (Normal): Message sent, thinking state "Processing… the situation is being re-read." displayed, response received (~10s), acknowledgment updated, action-payoff and action-big-picture refreshed with NEW content, credits 85→80 ✓
+      5. Turn 2 (Ultra): Ultra mode activated, message sent, thinking state "Ultra thinking… going deeper before answering." displayed, response received (~20s), acknowledgment updated again, all value fields refreshed with NEW content, credits 80→75 ✓
+      6. Console: No critical errors (WebSocket/HMR warnings ignored) ✓
+      NO CRITICAL ISSUES. All features working as designed. Ready for main agent to summarize and finish.

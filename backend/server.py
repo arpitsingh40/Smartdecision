@@ -123,6 +123,12 @@ def run_pipeline(thread: dict, user: dict, message: str):
     events = list(events_col.find({"thread_id": thread["thread_id"]}))
     for e in events: e["at"] = as_aware(e["at"])
     substrate = rolling_fields(events, now)
+    # streak: consecutive kept actions, most recent first (felt momentum, passed to engine voice)
+    streak = 0
+    for e in sorted(events, key=lambda x: x["at"], reverse=True):
+        if e.get("action_done"): streak += 1
+        else: break
+    substrate["streak"] = streak
     # step 3: intent (pure)
     intent = classify_intent(message, days_gap)
     # step 4: single LLM call (Opus 4.8 -> Haiku 4.5)
@@ -142,7 +148,7 @@ def run_pipeline(thread: dict, user: dict, message: str):
     new_snapshot["summary_line"] = out["state_summary"].split("\n")[0][:160]
     new_msgs = [
         {"role": "user", "text": message, "at": now, "intent": intent},
-        {"role": "engine", "text": out["acknowledgment"], "at": now},
+        {"role": "engine", "text": out["acknowledgment"], "mirror": out.get("mirror"), "at": now},
     ]
     threads_col.update_one({"thread_id": thread["thread_id"]}, {
         "$set": {
@@ -150,6 +156,7 @@ def run_pipeline(thread: dict, user: dict, message: str):
             "current_open_question": out["refreshed_open_question"],
             "current_easiest_path": out["refreshed_easiest_path"],
             "current_next_action": out["refreshed_next_action"],
+            "current_mirror": out.get("mirror"),
             "skip_list": out.get("skip_list", []),
             "last_turn_at": now,
             "snapshot_at_last_turn": new_snapshot,

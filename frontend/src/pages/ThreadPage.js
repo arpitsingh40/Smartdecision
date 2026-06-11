@@ -166,10 +166,18 @@ export default function ThreadPage() {
 
             {lastEngineMsg && (
               <AnimatePresence mode="wait">
-                <motion.p key={refreshKey + '-ack'} {...fieldAnim} data-testid="engine-acknowledgment"
-                  className="font-display text-lg sm:text-xl leading-relaxed text-foreground">
-                  {lastEngineMsg.text}
-                </motion.p>
+                <motion.div key={refreshKey + '-ack'} {...fieldAnim}>
+                  <p data-testid="engine-acknowledgment"
+                    className="font-display text-lg sm:text-xl leading-relaxed text-foreground">
+                    {lastEngineMsg.text}
+                  </p>
+                  {thread.current_mirror && (
+                    <p data-testid="engine-mirror"
+                      className="mt-3 text-sm italic text-muted-foreground border-l-2 border-border pl-3 leading-6">
+                      {thread.current_mirror}
+                    </p>
+                  )}
+                </motion.div>
               </AnimatePresence>
             )}
 

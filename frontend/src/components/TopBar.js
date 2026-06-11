@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LogOut, CircleUser } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -22,9 +22,12 @@ export const TopBar = ({ title, backTo }) => {
         <h1 className="font-display text-lg sm:text-xl truncate">{title}</h1>
       </div>
       <div className="flex items-center gap-4 shrink-0">
-        <span data-testid="credits-balance" className="font-mono-plex text-xs text-muted-foreground">
+        <button data-testid="credits-balance" onClick={() => navigate('/billing')}
+          className="group flex items-center gap-1 font-mono-plex text-xs text-muted-foreground hover:text-foreground transition-colors"
+          title="Buy credits">
           {user?.credits ?? 0} credits
-        </span>
+          <Plus size={12} strokeWidth={2} className="opacity-60 group-hover:opacity-100" />
+        </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" data-testid="account-menu-button" className="rounded-xl">
@@ -33,6 +36,15 @@ export const TopBar = ({ title, backTo }) => {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="rounded-xl">
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{user?.email}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem data-testid="buy-credits-menu" onClick={() => navigate('/billing')} className="text-sm cursor-pointer">
+              <Plus size={16} strokeWidth={1.75} className="mr-2" /> Buy credits
+            </DropdownMenuItem>
+            {user?.is_admin && (
+              <DropdownMenuItem data-testid="founder-os-menu" onClick={() => navigate('/admin')} className="text-sm cursor-pointer">
+                <LayoutDashboard size={16} strokeWidth={1.75} className="mr-2" /> Founder OS
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem data-testid="logout-button" onClick={logout} className="text-sm cursor-pointer">
               <LogOut size={16} strokeWidth={1.75} className="mr-2" /> Sign out

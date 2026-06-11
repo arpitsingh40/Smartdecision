@@ -5,6 +5,10 @@ import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
 import NewGoalPage from './pages/NewGoalPage';
 import ThreadPage from './pages/ThreadPage';
+import AdminPage from './pages/AdminPage';
+import BillingPage from './pages/BillingPage';
+import TestCheckoutPage from './pages/TestCheckoutPage';
+import PaymentResultPage from './pages/PaymentResultPage';
 import { api, setAuthToken } from './lib/api';
 import './App.css';
 
@@ -53,6 +57,16 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // traffic heartbeat: one session per visit, refreshed every 60s (time-spent tracking)
+  useEffect(() => {
+    const beat = () => api.post('/track/session', { session_id: sessionStorage.getItem('sdg_session') || null })
+      .then((r) => sessionStorage.setItem('sdg_session', r.data.session_id))
+      .catch(() => {});
+    beat();
+    const id = setInterval(beat, 60000);
+    return () => clearInterval(id);
+  }, [token]);
+
   return (
     <AuthContext.Provider value={{ token, user, login, logout, setCredits }}>
       <div className="paper-noise min-h-screen">
@@ -62,6 +76,10 @@ function App() {
             <Route path="/" element={token ? <DashboardPage /> : <Navigate to="/auth" replace />} />
             <Route path="/new" element={token ? <NewGoalPage /> : <Navigate to="/auth" replace />} />
             <Route path="/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/pay/test-checkout" element={token ? <TestCheckoutPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/pay/result" element={token ? <PaymentResultPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/admin" element={token ? <AdminPage /> : <Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

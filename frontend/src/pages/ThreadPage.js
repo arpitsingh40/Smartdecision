@@ -287,12 +287,12 @@ export default function ThreadPage() {
                   <button type="button" data-testid="mode-normal-button"
                     onClick={() => setMode('normal')} disabled={thinking}
                     className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'normal' ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                    Normal
+                    Normal · 5
                   </button>
                   <button type="button" data-testid="mode-ultra-button"
                     onClick={() => setMode('ultra')} disabled={thinking}
                     className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'ultra' ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                    Ultra thinking
+                    Ultra thinking · 10
                   </button>
                 </div>
                 <Button onClick={send} disabled={thinking || inactive || !message.trim()}

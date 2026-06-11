@@ -42,6 +42,7 @@ export default function ThreadPage() {
   const [reengagement, setReengagement] = useState(null);
   const [actionOverdue, setActionOverdue] = useState(false);
   const [message, setMessage] = useState('');
+  const [mode, setMode] = useState('normal');
   const [thinking, setThinking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -60,7 +61,7 @@ export default function ThreadPage() {
     if (!msg || thinking) return;
     setThinking(true);
     try {
-      const r = await api.post(`/threads/${threadId}/turn`, { message: msg });
+      const r = await api.post(`/threads/${threadId}/turn`, { message: msg, mode });
       setThread(r.data.thread);
       setCredits(r.data.credits);
       setMessage('');
@@ -73,7 +74,7 @@ export default function ThreadPage() {
     } finally {
       setThinking(false);
     }
-  }, [thinking, threadId, setCredits]);
+  }, [thinking, threadId, setCredits, mode]);
 
   const send = useCallback(() => sendText(message), [sendText, message]);
 
@@ -128,7 +129,7 @@ export default function ThreadPage() {
             <DropdownMenuContent align="end" className="rounded-xl">
               {thread.status !== 'active' && <DropdownMenuItem data-testid="status-activate" onClick={() => setStatus('active')}>Reactivate</DropdownMenuItem>}
               {thread.status === 'active' && <DropdownMenuItem data-testid="status-pause" onClick={() => setStatus('paused')}>Pause</DropdownMenuItem>}
-              <DropdownMenuItem data-testid="status-graduate" onClick={() => setStatus('graduated')}>Graduate — it's done</DropdownMenuItem>
+              <DropdownMenuItem data-testid="status-graduate" onClick={() => setStatus('graduated')}>{"Graduate — it's done"}</DropdownMenuItem>
               <DropdownMenuItem data-testid="status-release" onClick={() => setStatus('released')}>Release — let it go</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -235,7 +236,7 @@ export default function ThreadPage() {
               {thinking && (
                 <p data-testid="engine-thinking-state" aria-live="polite"
                   className="text-xs text-muted-foreground mb-2 thinking-field">
-                  Processing… the situation is being re-read.
+                  {mode === 'ultra' ? 'Ultra thinking… going deeper before answering.' : 'Processing… the situation is being re-read.'}
                 </p>
               )}
               <Textarea ref={composerRef} data-testid="composer-textarea"
@@ -243,7 +244,20 @@ export default function ThreadPage() {
                 disabled={thinking || inactive}
                 placeholder={inactive ? `This thread is ${thread.status}. Reactivate it to continue.` : 'Say where things actually are. Enter to send · Shift+Enter for a new line.'}
                 className="min-h-[96px] rounded-xl bg-white border border-border/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]" />
-              <div className="flex justify-end mt-3">
+              <div className="flex items-center justify-between mt-3 gap-3">
+                <div data-testid="mode-toggle"
+                  className="flex items-center rounded-xl border border-border/70 bg-white p-0.5">
+                  <button type="button" data-testid="mode-normal-button"
+                    onClick={() => setMode('normal')} disabled={thinking}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'normal' ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    Normal
+                  </button>
+                  <button type="button" data-testid="mode-ultra-button"
+                    onClick={() => setMode('ultra')} disabled={thinking}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'ultra' ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    Ultra thinking
+                  </button>
+                </div>
                 <Button onClick={send} disabled={thinking || inactive || !message.trim()}
                   data-testid="composer-send-button" className="rounded-xl active:scale-[0.98] transition-colors">
                   {thinking ? 'Thinking…' : 'Send'}

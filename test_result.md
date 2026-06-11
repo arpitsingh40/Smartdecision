@@ -101,3 +101,108 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: >
+  Continuation: user's final test said replies lack out-of-box thinking, no benefits stated early
+  for actions, no concrete big-picture justification — "make it more worth it". Implemented 3 new
+  value layers per turn (action_payoff, big_picture_link, bold_move) + two engine modes:
+  normal (claude-opus-4-8) and ultra thinking (claude-fable-5, adaptive thinking).
+  Environment was restored (.env files recreated, real ANTHROPIC_API_KEY added, demo data seeded).
+
+backend:
+  - task: "Value layers in turn engine (action_payoff, big_picture_link, bold_move)"
+    implemented: true
+    working: true
+    file: "/app/backend/engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "SYSTEM prompt + JSON schema extended; REQUIRED_KEYS now include action_payoff and big_picture_link (bold_move nullable). why_now added to turn prompt. Verified live via direct llm_turn call — both modes returned concrete payoff/big-picture/bold-move."
+  - task: "Two engine modes: normal (claude-opus-4-8) and ultra (claude-fable-5 adaptive thinking)"
+    implemented: true
+    working: true
+    file: "/app/backend/engine.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "TurnIn.mode ('normal'|'ultra', 422 otherwise). Ultra chain: fable-5 (thinking adaptive, effort high, max_tokens 8000) -> opus-4-8 -> haiku-4-5. Turn response now includes model+mode. Verified live via direct engine call: normal->claude-opus-4-8, ultra->claude-fable-5. API endpoint not yet tested."
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED via comprehensive backend_test.py (10/10 tests passed, 3/5 LLM calls used). Normal mode: claude-opus-4-8 (9.77s latency), Ultra mode: claude-fable-5 (19.94s latency). Mode validation working (422 for invalid 'turbo'). Default mode (omitted) correctly defaults to 'normal'. Credits deducted correctly (5 per turn). All 3 value fields (action_payoff, big_picture, bold_move) non-empty and persisted. Auth guard working (401 without token)."
+  - task: "Environment restore (.env recreate, key, seed demo data)"
+    implemented: true
+    working: true
+    file: "/app/backend/.env, /app/frontend/.env, /app/scripts/seed_demo.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Both .env files recreated (preview URL, MONGO_URL, real ANTHROPIC_API_KEY). Demo account demo@smartdecigen.com / Demo1234! seeded with thread b64136c0-0ab6-4b46-bdb1-533472691426. Both Claude models verified reachable. Login verified via curl."
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED. Auth working: signup (100 credits), login (demo user), GET /api/auth/me all passed. Real Anthropic API key working: goal creation (9.14s), normal turn (9.77s), ultra turn (19.94s) all successful with proper model routing."
+
+frontend:
+  - task: "Render value layers (payoff in action box, big-picture line, bolder play beside easiest path)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/ThreadPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Visualized via screenshot with seeded data — layout approved by user. Conditional rendering (fields may be null on old threads)."
+  - task: "Mode toggle Normal / Ultra thinking in composer"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/ThreadPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Segmented control next to Send; mode sent with each turn; ultra-specific thinking copy. Not yet UI-tested."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.2"
+  test_sequence: 5
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: >
+      Backend ready for testing. Credentials in /app/memory/test_credentials.md
+      (demo@smartdecigen.com / Demo1234!). IMPORTANT: every turn = real Claude call costing
+      real API money; keep total LLM turns <= 5 across the whole run. Ultra mode latency can be
+      30-90s — use long timeouts. Focus: new fields non-empty after goal creation + turns,
+      mode routing (response.model), invalid mode 422, credits deduction 5/turn.
+  - agent: "testing"
+    message: >
+      ✅ ALL BACKEND TESTS PASSED (10/10, 3/5 LLM budget used). Comprehensive test coverage:
+      1. Auth: signup/login/me all working
+      2. Goal creation: 3 value fields (action_payoff 87 chars, big_picture 112 chars, bold_move present) ✓
+      3. Normal mode: claude-opus-4-8, 9.77s latency, credits 100→95→90 ✓
+      4. Ultra mode: claude-fable-5, 19.94s latency, credits 90→85 ✓
+      5. Invalid mode: 422 validation, credits unchanged ✓
+      6. Persistence: all fields persisted correctly ✓
+      7. Default mode: omitted mode defaults to normal ✓
+      8. Auth guard: 401 without token ✓
+      NO CRITICAL ISSUES. Backend fully functional. Ready for main agent to summarize and finish.

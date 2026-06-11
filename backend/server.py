@@ -1,4 +1,7 @@
-import os, uuid, time, logging
+import os
+import uuid
+import time
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dotenv import load_dotenv
@@ -81,6 +84,7 @@ class GoalIn(BaseModel):
 
 class TurnIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+    mode: str = "normal"  # normal (Opus 4.8) | ultra (Fable 5 ultra thinking)
 
 class StatusIn(BaseModel):
     status: str  # active | paused | graduated | released
@@ -113,7 +117,7 @@ def me(user: dict = Depends(current_user)):
     return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0)}
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
-def run_pipeline(thread: dict, user: dict, message: str):
+def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal"):
     t0 = time.time()
     now = now_utc()
     last_at = as_aware(thread.get("last_turn_at")) or as_aware(thread["opened_at"])
@@ -121,18 +125,21 @@ def run_pipeline(thread: dict, user: dict, message: str):
 
     # step 2: substrate refresh (pure)
     events = list(events_col.find({"thread_id": thread["thread_id"]}))
-    for e in events: e["at"] = as_aware(e["at"])
+    for e in events:
+        e["at"] = as_aware(e["at"])
     substrate = rolling_fields(events, now)
     # streak: consecutive kept actions, most recent first (felt momentum, passed to engine voice)
     streak = 0
     for e in sorted(events, key=lambda x: x["at"], reverse=True):
-        if e.get("action_done"): streak += 1
-        else: break
+        if e.get("action_done"):
+            streak += 1
+        else:
+            break
     substrate["streak"] = streak
     # step 3: intent (pure)
     intent = classify_intent(message, days_gap)
-    # step 4: single LLM call (Opus 4.8 -> Haiku 4.5)
-    out, model = llm_turn(thread, substrate, message, intent)
+    # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5)
+    out, model = llm_turn(thread, substrate, message, intent, mode)
     sig = out["signals"]
     # step 5: state update
     events_col.insert_one({
@@ -156,6 +163,9 @@ def run_pipeline(thread: dict, user: dict, message: str):
             "current_open_question": out["refreshed_open_question"],
             "current_easiest_path": out["refreshed_easiest_path"],
             "current_next_action": out["refreshed_next_action"],
+            "current_action_payoff": (out.get("action_payoff") or "").strip() or None,
+            "current_big_picture": (out.get("big_picture_link") or "").strip() or None,
+            "current_bold_move": (out.get("bold_move") or "").strip() or None,
             "current_mirror": out.get("mirror"),
             "skip_list": out.get("skip_list", []),
             "last_turn_at": now,
@@ -186,6 +196,7 @@ def create_goal(body: GoalIn, user: dict = Depends(current_user)):
         "opened_at": now, "status": "active",
         "current_state_summary": "(opening)", "current_open_question": "(none yet)",
         "current_easiest_path": "(none yet)", "current_next_action": "(none yet)",
+        "current_action_payoff": None, "current_big_picture": None, "current_bold_move": None,
         "skip_list": [], "messages": [], "last_turn_at": None, "snapshot_at_last_turn": None,
         "rolling": {"emotional_temperature": 0.5, "execution_consistency": 0.5, "pace_calibration": "on-track"},
     }
@@ -239,7 +250,8 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
         days = int((now - last_at).total_seconds() // 86400)
         if days >= 7 and t.get("snapshot_at_last_turn"):
             events = list(events_col.find({"thread_id": thread_id}))
-            for e in events: e["at"] = as_aware(e["at"])
+            for e in events:
+                e["at"] = as_aware(e["at"])
             now_snap = rolling_fields(events, now)
             reengagement = compute_reengagement_line(t["snapshot_at_last_turn"], now_snap, days)
             if reengagement:
@@ -255,6 +267,8 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
 
 @api.post("/threads/{thread_id}/turn")
 def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
+    if body.mode not in ("normal", "ultra"):
+        raise HTTPException(422, "mode must be 'normal' or 'ultra'")
     t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
     if not t:
         raise HTTPException(404, "Thread not found")
@@ -265,14 +279,14 @@ def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
     if not u:
         raise HTTPException(402, "Not enough credits")
     try:
-        out, intent, model, latency = run_pipeline(t, user, body.message.strip())
+        out, intent, model, latency = run_pipeline(t, user, body.message.strip(), body.mode)
     except Exception as e:
         users_col.update_one({"id": user["id"]}, {"$inc": {"credits": TURN_COST}})  # refund
         log.error(f"turn failed: {e}")
         raise HTTPException(502, "The engine did not respond. You were not charged — try again.")
     fresh = threads_col.find_one({"thread_id": thread_id})
     return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"],
-            "intent": intent, "credits": u["credits"]}
+            "intent": intent, "credits": u["credits"], "model": model, "mode": body.mode}
 
 @api.patch("/threads/{thread_id}/status")
 def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user)):

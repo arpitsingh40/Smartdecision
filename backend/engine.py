@@ -2,11 +2,15 @@
 Pure functions: intent classification, rolling fields, re-engagement.
 Single LLM call per turn: Opus 4.8 primary -> Haiku 4.5 fallback.
 """
-import os, json, re, time
+import os
+import json
+import re
+import time
 from datetime import datetime, timedelta, timezone
 import anthropic
 
 PRIMARY_MODEL = "claude-opus-4-8"
+ULTRA_MODEL = "claude-fable-5"  # ultra thinking: adaptive thinking + high effort
 FALLBACK_MODEL = "claude-haiku-4-5"
 
 _client = None
@@ -22,11 +26,16 @@ SETBACK = re.compile(r"\b(couldn'?t|didn'?t|failed|stuck|blocked|gave up|too har
 QUESTION = re.compile(r"\?\s*$|^\s*(how|what|should|why|when|can i|do i|is it)\b", re.I)
 
 def classify_intent(msg: str, days_since_last: float) -> str:
-    if days_since_last >= 14: return "silence_breaker"
-    if ACK.search(msg): return "acknowledgment"
-    if SETBACK.search(msg): return "setback"
-    if QUESTION.search(msg): return "question"
-    if len(msg.split()) < 4: return "drift"
+    if days_since_last >= 14:
+        return "silence_breaker"
+    if ACK.search(msg):
+        return "acknowledgment"
+    if SETBACK.search(msg):
+        return "setback"
+    if QUESTION.search(msg):
+        return "question"
+    if len(msg.split()) < 4:
+        return "drift"
     return "update"
 
 # ------------------------------------------------- rolling fields (pure, replayable)
@@ -39,8 +48,10 @@ def rolling_fields(events: list, now: datetime) -> dict:
     consistency = (len(done) / len(acts)) if acts else 0.5
     expected_turns = 14 / 3.5  # own-pace baseline: ~2 turns/week
     pace = "on-track"
-    if len(recent) >= expected_turns * 1.4 and consistency >= 0.6: pace = "ahead"
-    elif len(recent) <= expected_turns * 0.5 or consistency < 0.3: pace = "behind"
+    if len(recent) >= expected_turns * 1.4 and consistency >= 0.6:
+        pace = "ahead"
+    elif len(recent) <= expected_turns * 0.5 or consistency < 0.3:
+        pace = "behind"
     return {
         "emotional_temperature": round(sum(temps)/len(temps), 2) if temps else 0.5,
         "execution_consistency": round(consistency, 2),
@@ -59,15 +70,20 @@ PHRASE_BANK = {
 PRIORITY = ["contradiction", "execution", "emotional"]
 
 def compute_reengagement_line(last_snap: dict, now_snap: dict, days_absent: int):
-    if days_absent < 7 or not last_snap: return None
+    if days_absent < 7 or not last_snap:
+        return None
     deltas = []
     de = now_snap["execution_consistency"] - last_snap.get("execution_consistency", 0.5)
-    if abs(de) >= 0.15: deltas.append(("execution", de, abs(round(de*100))))
+    if abs(de) >= 0.15:
+        deltas.append(("execution", de, abs(round(de*100))))
     dt = now_snap["emotional_temperature"] - last_snap.get("emotional_temperature", 0.5)
-    if abs(dt) >= 0.2: deltas.append(("emotional", dt, abs(round(dt*100))))
+    if abs(dt) >= 0.2:
+        deltas.append(("emotional", dt, abs(round(dt*100))))
     new_contra = [c for c in now_snap["contradiction_history"] if c not in last_snap.get("contradiction_history", [])]
-    if new_contra: deltas.append(("contradiction", 0, new_contra[-1]))
-    if not deltas: return None  # silence-preserving
+    if new_contra:
+        deltas.append(("contradiction", 0, new_contra[-1]))
+    if not deltas:
+        return None  # silence-preserving
     deltas.sort(key=lambda d: PRIORITY.index(d[0]))
     kind, sign, extra = deltas[0]
     if kind == "contradiction":
@@ -83,23 +99,31 @@ What makes each turn worth returning for:
 - MIRROR: every reply must contain one short sentence that names what the user did NOT say but is true beneath their message - the fear, the pattern, the real trade-off. Said plainly, never clinically, never accusing ("I may be wrong, but..." allowed). This is the moment they feel seen.
 - STICKY QUESTION: the open question must create productive discomfort - specific to their words, slightly uncomfortable, impossible to stop thinking about. Never generic ("what's holding you back?" is banned). Use their own words against their own avoidance.
 - FELT MOMENTUM: if SUBSTRATE shows streak >= 2 kept actions, weave it naturally into the acknowledgment in your own voice ("that's three kept in a row - notice that"), never as a stat.
+- PAYOFF EARLY: state the benefit of the next action up front - one line naming the concrete thing they will HOLD within 48h of doing it (a reply in their inbox, a booked call, a number on paper, a closed loop). Vague benefit is banned ("you'll feel better", "it builds confidence"). Name the artifact or the certainty gained.
+- BIG PICTURE: one line of concrete justification tying THIS action to THEIR stated goal - count and quantify where possible ("client #1 of the 3 you need", "removes the last blocker before X"). Generic glue is banned ("every step counts", "this builds momentum"). It must answer: why does this small move matter to the big thing?
+- BOLDER PLAY: when a genuinely unconventional, higher-leverage move exists - lateral, game-changing, NOT just 'do more' - name it in 1-2 lines: bigger risk, disproportionate payoff, something they would not think of themselves. The easiest path stays the default; this is the door they did not see. If nothing genuinely bold exists this turn, return null - a forced bold move destroys trust.
 - BREVITY: short enough to always read fully, dense enough that every line earns its place. No filler ever.
 Return ONLY valid JSON, no markdown fences:
 {"acknowledgment": "1-3 sentences, companion voice, responds to their message",
  "mirror": "1 sentence: what they didn't say but is true beneath the message",
  "refreshed_easiest_path": "1-2 lines: easiest path forward given today's reality",
  "refreshed_next_action": "1 line: concrete action for next 24-48h",
+ "action_payoff": "1 line: the concrete thing they hold within 48h of doing it",
+ "big_picture_link": "1 line: concrete justification - how this action moves their stated goal, quantified where possible",
+ "bold_move": "1-2 lines: the unconventional higher-leverage play, or null if none genuinely exists",
  "refreshed_open_question": "1 line: the single unresolved tension, sticky and specific",
  "skip_list": ["0-2 things to deliberately ignore right now"],
  "state_summary": "3 short lines (\\n separated): where they are right now",
  "signals": {"emotional_temperature": 0.0to1.0, "action_done": bool (did they report completing the prior next action), "contradiction": "string or null (tension between what they say and do)"}}"""
 
 REQUIRED_KEYS = ("acknowledgment", "refreshed_easiest_path", "refreshed_next_action",
-                 "refreshed_open_question", "state_summary", "signals")
+                 "refreshed_open_question", "state_summary", "signals",
+                 "action_payoff", "big_picture_link")
 
-def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str):
+def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal"):
     prompt = (
         f"GOAL: {thread['goal']}\n"
+        f"WHY IT MATTERS TO THEM (their words at the start): {thread.get('why_now', '(not stated)')}\n"
         f"STATE SUMMARY:\n{thread['current_state_summary']}\n"
         f"OPEN QUESTION: {thread['current_open_question']}\n"
         f"CURRENT EASIEST PATH: {thread['current_easiest_path']}\n"
@@ -108,12 +132,19 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str):
         f"INTENT: {intent}\n"
         f"USER MESSAGE: {user_msg}"
     )
+    # mode "ultra": Fable 5 with adaptive thinking, then graceful fallback to the normal chain
+    chain = (ULTRA_MODEL, PRIMARY_MODEL, FALLBACK_MODEL) if mode == "ultra" else (PRIMARY_MODEL, FALLBACK_MODEL)
     last_err = None
-    for model in (PRIMARY_MODEL, FALLBACK_MODEL):
+    for model in chain:
         try:
-            r = client().messages.create(model=model, max_tokens=900, system=SYSTEM,
-                                         messages=[{"role": "user", "content": prompt}])
-            txt = r.content[0].text.strip()
+            kwargs = {"model": model, "max_tokens": 1200, "system": SYSTEM,
+                      "messages": [{"role": "user", "content": prompt}]}
+            if model == ULTRA_MODEL:
+                kwargs["max_tokens"] = 8000  # room for thinking + JSON output
+                kwargs["thinking"] = {"type": "adaptive"}
+                kwargs["extra_body"] = {"output_config": {"effort": "high"}}
+            r = client().messages.create(**kwargs)
+            txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
             txt = re.sub(r"^```(json)?|```$", "", txt, flags=re.M).strip()
             out = json.loads(txt)
             if not all(k in out for k in REQUIRED_KEYS):
@@ -121,4 +152,4 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str):
             return out, model
         except Exception as e:
             last_err = e
-    raise RuntimeError(f"Both models failed: {last_err}")
+    raise RuntimeError(f"All models failed: {last_err}")

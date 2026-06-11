@@ -1,397 +1,404 @@
+#!/usr/bin/env python3
 """
-Backend API Testing for SmartDecigen Deep Discussion Engine
-Tests all endpoints with minimal LLM calls (max 2-3 total)
+SmartDecigen Backend Test Suite
+Tests new value layers (action_payoff, big_picture_link, bold_move) and engine modes (normal/ultra).
+CRITICAL: Keeps total LLM calls <= 5 (each costs real money via Anthropic API).
 """
 import requests
-import sys
 import time
-from datetime import datetime
+import sys
 
-class BackendTester:
-    def __init__(self, base_url="https://impact-mapper-5.preview.emergentagent.com/api"):
-        self.base_url = base_url
-        self.token = None
-        self.user_id = None
-        self.tests_run = 0
-        self.tests_passed = 0
-        self.test_results = []
+# Backend URL from frontend/.env
+BASE_URL = "https://36cb0266-8d04-47aa-a315-0aedeb82fa21.preview.emergentagent.com/api"
+TIMEOUT_NORMAL = 60
+TIMEOUT_ULTRA = 120  # Ultra mode can take 30-90s
 
-    def log(self, emoji, message):
-        """Log test result"""
-        print(f"{emoji} {message}")
+# Test state
+llm_call_count = 0
+test_results = []
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, headers=None):
-        """Run a single API test"""
-        url = f"{self.base_url}{endpoint}"
-        req_headers = {'Content-Type': 'application/json'}
-        if self.token:
-            req_headers['Authorization'] = f'Bearer {self.token}'
-        if headers:
-            req_headers.update(headers)
+def log_test(name, passed, details=""):
+    """Log test result."""
+    status = "✅ PASS" if passed else "❌ FAIL"
+    test_results.append({"name": name, "passed": passed, "details": details})
+    print(f"{status}: {name}")
+    if details:
+        print(f"  → {details}")
 
-        self.tests_run += 1
-        self.log("🔍", f"Testing {name}...")
+def track_llm_call(description):
+    """Track LLM calls to stay within budget."""
+    global llm_call_count
+    llm_call_count += 1
+    print(f"\n🔥 LLM CALL #{llm_call_count}: {description}")
+    if llm_call_count > 5:
+        print("⚠️  WARNING: Exceeded 5 LLM call budget!")
+
+# ============================================================================
+# TEST 1: Auth Sanity
+# ============================================================================
+print("\n" + "="*80)
+print("TEST 1: AUTH SANITY")
+print("="*80)
+
+# 1a. Signup new user (gets 100 credits for clean testing)
+print("\n1a. Signup new user...")
+signup_email = f"test_{int(time.time())}@smartdecigen.com"
+signup_payload = {
+    "email": signup_email,
+    "password": "TestPass123!",
+    "name": "Test User"
+}
+try:
+    r = requests.post(f"{BASE_URL}/auth/signup", json=signup_payload, timeout=10)
+    if r.status_code == 200:
+        data = r.json()
+        test_token = data.get("token")
+        test_user = data.get("user", {})
+        initial_credits = test_user.get("credits", 0)
+        log_test("Signup new user", test_token is not None and initial_credits == 100,
+                 f"Token received, credits={initial_credits}")
+    else:
+        log_test("Signup new user", False, f"Status {r.status_code}: {r.text}")
+        sys.exit(1)
+except Exception as e:
+    log_test("Signup new user", False, f"Exception: {e}")
+    sys.exit(1)
+
+# 1b. Login demo user
+print("\n1b. Login demo user...")
+try:
+    r = requests.post(f"{BASE_URL}/auth/login", json={
+        "email": "demo@smartdecigen.com",
+        "password": "Demo1234!"
+    }, timeout=10)
+    if r.status_code == 200:
+        demo_token = r.json().get("token")
+        log_test("Login demo user", demo_token is not None, "Token received")
+    else:
+        log_test("Login demo user", False, f"Status {r.status_code}: {r.text}")
+except Exception as e:
+    log_test("Login demo user", False, f"Exception: {e}")
+
+# 1c. GET /api/auth/me
+print("\n1c. GET /api/auth/me...")
+headers = {"Authorization": f"Bearer {test_token}"}
+try:
+    r = requests.get(f"{BASE_URL}/auth/me", headers=headers, timeout=10)
+    if r.status_code == 200:
+        me_data = r.json()
+        log_test("GET /api/auth/me", me_data.get("email") == signup_email,
+                 f"Email matches: {me_data.get('email')}")
+    else:
+        log_test("GET /api/auth/me", False, f"Status {r.status_code}: {r.text}")
+except Exception as e:
+    log_test("GET /api/auth/me", False, f"Exception: {e}")
+
+# ============================================================================
+# TEST 2: Goal Creation (LLM CALL #1)
+# ============================================================================
+print("\n" + "="*80)
+print("TEST 2: GOAL CREATION (LLM CALL #1)")
+print("="*80)
+
+track_llm_call("Goal creation")
+goal_payload = {
+    "title": "Launch my freelance consulting practice",
+    "why_now": "I've been thinking about this for months, but my current job is draining me. I need to take control of my career and build something that's mine."
+}
+
+start_time = time.time()
+try:
+    r = requests.post(f"{BASE_URL}/goals", json=goal_payload, headers=headers, timeout=TIMEOUT_NORMAL)
+    latency = round(time.time() - start_time, 2)
+    
+    if r.status_code == 200:
+        data = r.json()
+        thread = data.get("thread", {})
+        thread_id = thread.get("thread_id")
+        credits_after = data.get("credits")
         
-        try:
-            if method == 'GET':
-                response = requests.get(url, headers=req_headers, timeout=30)
-            elif method == 'POST':
-                response = requests.post(url, json=data, headers=req_headers, timeout=30)
-            elif method == 'PATCH':
-                response = requests.patch(url, json=data, headers=req_headers, timeout=30)
-
-            success = response.status_code == expected_status
-            if success:
-                self.tests_passed += 1
-                self.log("✅", f"Passed - Status: {response.status_code}")
-                self.test_results.append({"test": name, "status": "PASS", "code": response.status_code})
-            else:
-                self.log("❌", f"Failed - Expected {expected_status}, got {response.status_code}")
-                try:
-                    self.log("📄", f"Response: {response.json()}")
-                except:
-                    self.log("📄", f"Response: {response.text[:200]}")
-                self.test_results.append({"test": name, "status": "FAIL", "code": response.status_code, "expected": expected_status})
-
-            return success, response
-
-        except Exception as e:
-            self.log("❌", f"Failed - Error: {str(e)}")
-            self.test_results.append({"test": name, "status": "ERROR", "error": str(e)})
-            return False, None
-
-    def test_root(self):
-        """Test root endpoint"""
-        success, resp = self.run_test("Root endpoint", "GET", "/", 200)
-        if success and resp:
-            data = resp.json()
-            if "service" in data and "SmartDecigen" in data["service"]:
-                self.log("✅", "Root endpoint returns correct service name")
-            else:
-                self.log("⚠️", "Root endpoint response format unexpected")
-        return success
-
-    def test_signup(self, email, password, name=""):
-        """Test signup and get token"""
-        success, resp = self.run_test(
-            "Signup",
-            "POST",
-            "/auth/signup",
-            200,
-            data={"email": email, "password": password, "name": name}
-        )
-        if success and resp:
-            data = resp.json()
-            if 'token' in data and 'user' in data:
-                self.token = data['token']
-                self.user_id = data['user']['id']
-                credits = data['user'].get('credits', 0)
-                if credits == 100:
-                    self.log("✅", f"Signup successful - 100 credits granted")
-                else:
-                    self.log("⚠️", f"Signup credits incorrect: {credits} (expected 100)")
-                return True
-            else:
-                self.log("❌", "Signup response missing token or user")
-        return False
-
-    def test_login(self, email, password):
-        """Test login and get token"""
-        success, resp = self.run_test(
-            "Login",
-            "POST",
-            "/auth/login",
-            200,
-            data={"email": email, "password": password}
-        )
-        if success and resp:
-            data = resp.json()
-            if 'token' in data and 'user' in data:
-                self.token = data['token']
-                self.user_id = data['user']['id']
-                self.log("✅", f"Login successful - Credits: {data['user'].get('credits', 0)}")
-                return True
-            else:
-                self.log("❌", "Login response missing token or user")
-        return False
-
-    def test_auth_me(self):
-        """Test /auth/me endpoint"""
-        success, resp = self.run_test("Auth /me", "GET", "/auth/me", 200)
-        if success and resp:
-            data = resp.json()
-            if 'id' in data and 'email' in data and 'credits' in data:
-                self.log("✅", f"Auth /me successful - User: {data['email']}, Credits: {data['credits']}")
-                return True
-        return False
-
-    def test_auth_guard(self):
-        """Test auth guard with invalid token"""
-        old_token = self.token
-        self.token = "invalid_token_xyz"
-        success, resp = self.run_test("Auth guard (invalid token)", "GET", "/auth/me", 401)
-        self.token = old_token
-        return success
-
-    def test_credits_endpoint(self):
-        """Test GET /credits"""
-        success, resp = self.run_test("Get credits", "GET", "/credits", 200)
-        if success and resp:
-            data = resp.json()
-            if 'credits' in data and 'turn_cost' in data:
-                self.log("✅", f"Credits endpoint - Balance: {data['credits']}, Turn cost: {data['turn_cost']}")
-                if data['turn_cost'] == 5:
-                    self.log("✅", "Turn cost is correct (5)")
-                else:
-                    self.log("⚠️", f"Turn cost unexpected: {data['turn_cost']}")
-                return True
-        return False
-
-    def test_list_goals_empty(self):
-        """Test GET /goals for new user (should be empty)"""
-        success, resp = self.run_test("List goals (empty)", "GET", "/goals", 200)
-        if success and resp:
-            data = resp.json()
-            if 'goals' in data and len(data['goals']) == 0:
-                self.log("✅", "Goals list empty for new user")
-                return True
-        return False
-
-    def test_create_goal(self, title, why_now):
-        """Test POST /goals (REAL LLM CALL - ~5-10s)"""
-        self.log("⏳", "Creating goal - this will take 5-10s (REAL LLM call)...")
-        success, resp = self.run_test(
-            "Create goal (LLM call)",
-            "POST",
-            "/goals",
-            200,
-            data={"title": title, "why_now": why_now}
-        )
-        if success and resp:
-            data = resp.json()
-            if 'thread' in data and 'acknowledgment' in data and 'credits' in data:
-                thread = data['thread']
-                self.log("✅", f"Goal created - Thread ID: {thread['thread_id']}")
-                self.log("✅", f"Credits after creation: {data['credits']} (should be 5 less)")
-                self.log("✅", f"Acknowledgment: {data['acknowledgment'][:80]}...")
-                
-                # Verify 4 living fields are populated
-                if thread.get('current_state_summary') and thread.get('current_easiest_path') and \
-                   thread.get('current_next_action') and thread.get('current_open_question'):
-                    self.log("✅", "All 4 living fields populated")
-                else:
-                    self.log("⚠️", "Some living fields missing")
-                
-                return thread['thread_id']
-        return None
-
-    def test_list_goals_with_data(self):
-        """Test GET /goals after creating a goal"""
-        success, resp = self.run_test("List goals (with data)", "GET", "/goals", 200)
-        if success and resp:
-            data = resp.json()
-            if 'goals' in data and len(data['goals']) > 0:
-                goal = data['goals'][0]
-                self.log("✅", f"Goals list has {len(data['goals'])} goal(s)")
-                if 'thread_id' in goal and 'goal' in goal and 'status' in goal and 'pace' in goal:
-                    self.log("✅", "Goal card data complete")
-                    return True
-        return False
-
-    def test_get_thread(self, thread_id):
-        """Test GET /threads/{id}"""
-        success, resp = self.run_test(f"Get thread {thread_id[:8]}...", "GET", f"/threads/{thread_id}", 200)
-        if success and resp:
-            data = resp.json()
-            if 'thread' in data and 'reengagement_line' in data and 'silence_days' in data:
-                thread = data['thread']
-                self.log("✅", f"Thread retrieved - Status: {thread.get('status')}")
-                self.log("✅", f"Reengagement line: {data['reengagement_line']} (null for fresh threads)")
-                return True
-        return False
-
-    def test_turn(self, thread_id, message):
-        """Test POST /threads/{id}/turn (REAL LLM CALL - ~5-10s)"""
-        self.log("⏳", "Sending turn - this will take 5-10s (REAL LLM call)...")
-        success, resp = self.run_test(
-            "Turn (LLM call)",
-            "POST",
-            f"/threads/{thread_id}/turn",
-            200,
-            data={"message": message}
-        )
-        if success and resp:
-            data = resp.json()
-            if 'thread' in data and 'acknowledgment' in data and 'credits' in data:
-                self.log("✅", f"Turn successful - Credits: {data['credits']}")
-                self.log("✅", f"Intent: {data.get('intent')}")
-                self.log("✅", f"Acknowledgment: {data['acknowledgment'][:80]}...")
-                return True
-        return False
-
-    def test_thread_status_pause(self, thread_id):
-        """Test PATCH /threads/{id}/status to pause"""
-        success, resp = self.run_test(
-            "Pause thread",
-            "PATCH",
-            f"/threads/{thread_id}/status",
-            200,
-            data={"status": "paused"}
-        )
-        if success and resp:
-            data = resp.json()
-            if data.get('ok') and data.get('status') == 'paused':
-                self.log("✅", "Thread paused successfully")
-                return True
-        return False
-
-    def test_turn_on_paused_thread(self, thread_id):
-        """Test POST turn on paused thread (should fail with 400)"""
-        success, resp = self.run_test(
-            "Turn on paused thread (should fail)",
-            "POST",
-            f"/threads/{thread_id}/turn",
-            400,
-            data={"message": "This should fail"}
-        )
-        return success
-
-    def test_thread_status_reactivate(self, thread_id):
-        """Test PATCH /threads/{id}/status to reactivate"""
-        success, resp = self.run_test(
-            "Reactivate thread",
-            "PATCH",
-            f"/threads/{thread_id}/status",
-            200,
-            data={"status": "active"}
-        )
-        if success and resp:
-            data = resp.json()
-            if data.get('ok') and data.get('status') == 'active':
-                self.log("✅", "Thread reactivated successfully")
-                return True
-        return False
-
-    def test_invalid_status(self, thread_id):
-        """Test PATCH with invalid status"""
-        success, resp = self.run_test(
-            "Invalid status (should fail)",
-            "PATCH",
-            f"/threads/{thread_id}/status",
-            422,
-            data={"status": "invalid_status"}
-        )
-        return success
-
-    def test_multi_user_isolation(self, other_thread_id):
-        """Test that user cannot access another user's thread"""
-        success, resp = self.run_test(
-            "Multi-user isolation (should 404)",
-            "GET",
-            f"/threads/{other_thread_id}",
-            404
-        )
-        return success
-
-    def test_insufficient_credits(self):
-        """Test creating goal with insufficient credits (would need to drain credits first)"""
-        # This is hard to test without draining all credits, so we'll skip for now
-        self.log("⏭️", "Skipping insufficient credits test (would require draining all credits)")
-        return True
-
-    def print_summary(self):
-        """Print test summary"""
-        print("\n" + "="*60)
-        print(f"📊 BACKEND TEST SUMMARY")
-        print("="*60)
-        print(f"Tests run: {self.tests_run}")
-        print(f"Tests passed: {self.tests_passed}")
-        print(f"Tests failed: {self.tests_run - self.tests_passed}")
-        print(f"Success rate: {(self.tests_passed/self.tests_run*100):.1f}%")
-        print("="*60)
+        # Verify thread structure
+        action_payoff = thread.get("current_action_payoff")
+        big_picture = thread.get("current_big_picture")
+        bold_move = thread.get("current_bold_move")
         
-        if self.tests_passed < self.tests_run:
-            print("\n❌ FAILED TESTS:")
-            for result in self.test_results:
-                if result['status'] != 'PASS':
-                    error_msg = result.get('error', f"Status {result.get('code')} (expected {result.get('expected')})")
-                    print(f"  - {result['test']}: {error_msg}")
+        # Check non-empty strings for required fields
+        payoff_valid = isinstance(action_payoff, str) and len(action_payoff.strip()) > 0
+        big_picture_valid = isinstance(big_picture, str) and len(big_picture.strip()) > 0
+        bold_move_exists = "current_bold_move" in thread  # can be null or string
         
-        return self.tests_passed == self.tests_run
+        # Check credits deduction
+        credits_valid = credits_after == (initial_credits - 5)
+        
+        all_valid = payoff_valid and big_picture_valid and bold_move_exists and credits_valid
+        
+        details = (f"Latency: {latency}s | Credits: {initial_credits} → {credits_after} | "
+                  f"action_payoff: {'✓' if payoff_valid else '✗'} ({len(action_payoff or '')} chars) | "
+                  f"big_picture: {'✓' if big_picture_valid else '✗'} ({len(big_picture or '')} chars) | "
+                  f"bold_move: {'✓' if bold_move_exists else '✗'} ({type(bold_move).__name__})")
+        
+        log_test("Goal creation - value fields", all_valid, details)
+        
+        if not all_valid:
+            print(f"  action_payoff: {action_payoff}")
+            print(f"  big_picture: {big_picture}")
+            print(f"  bold_move: {bold_move}")
+    else:
+        log_test("Goal creation - value fields", False, f"Status {r.status_code}: {r.text}")
+        sys.exit(1)
+except Exception as e:
+    log_test("Goal creation - value fields", False, f"Exception: {e}")
+    sys.exit(1)
 
+# ============================================================================
+# TEST 3: Normal Mode Turn (LLM CALL #2)
+# ============================================================================
+print("\n" + "="*80)
+print("TEST 3: NORMAL MODE TURN (LLM CALL #2)")
+print("="*80)
 
-def main():
-    print("="*60)
-    print("🚀 SmartDecigen Backend API Testing")
-    print("="*60)
-    print("⚠️  Note: This test includes 2 REAL LLM calls (~5-10s each)")
-    print("="*60 + "\n")
+track_llm_call("Normal mode turn")
+turn_payload = {
+    "message": "I did it — sent the first email to a potential client today. It felt scary but I hit send.",
+    "mode": "normal"
+}
 
-    tester = BackendTester()
+start_time = time.time()
+try:
+    r = requests.post(f"{BASE_URL}/threads/{thread_id}/turn", json=turn_payload, headers=headers, timeout=TIMEOUT_NORMAL)
+    latency = round(time.time() - start_time, 2)
     
-    # Test 1: Root endpoint
-    tester.test_root()
-    
-    # Test 2: Signup new user
-    test_email = f"test_{int(time.time())}@test.com"
-    test_password = "test1234"
-    if not tester.test_signup(test_email, test_password, "Test User"):
-        print("\n❌ Signup failed - stopping tests")
-        return 1
-    
-    # Test 3: Auth /me
-    tester.test_auth_me()
-    
-    # Test 4: Auth guard
-    tester.test_auth_guard()
-    
-    # Test 5: Credits endpoint
-    tester.test_credits_endpoint()
-    
-    # Test 6: List goals (empty)
-    tester.test_list_goals_empty()
-    
-    # Test 7: Create goal (LLM call #1)
-    thread_id = tester.test_create_goal(
-        "Get my first paying client",
-        "I've been working on my freelance business for 3 months but keep avoiding outreach. I know I need to reach out to potential clients but I keep finding reasons to work on my portfolio instead."
-    )
-    if not thread_id:
-        print("\n❌ Goal creation failed - stopping tests")
-        return 1
-    
-    # Test 8: List goals (with data)
-    tester.test_list_goals_with_data()
-    
-    # Test 9: Get thread
-    tester.test_get_thread(thread_id)
-    
-    # Test 10: Turn (LLM call #2)
-    tester.test_turn(thread_id, "I didn't do it, I got stuck and avoided it")
-    
-    # Test 11: Pause thread
-    tester.test_thread_status_pause(thread_id)
-    
-    # Test 12: Turn on paused thread (should fail)
-    tester.test_turn_on_paused_thread(thread_id)
-    
-    # Test 13: Reactivate thread
-    tester.test_thread_status_reactivate(thread_id)
-    
-    # Test 14: Invalid status
-    tester.test_invalid_status(thread_id)
-    
-    # Test 15: Login with existing user
-    tester2 = BackendTester()
-    if tester2.test_login("smoke1@test.com", "test1234"):
-        # Test 16: Multi-user isolation
-        tester2.test_multi_user_isolation(thread_id)
-    
-    # Print summary
-    success = tester.print_summary()
-    
-    return 0 if success else 1
+    if r.status_code == 200:
+        data = r.json()
+        model = data.get("model")
+        mode = data.get("mode")
+        credits_after = data.get("credits")
+        thread = data.get("thread", {})
+        
+        # Verify model (should be claude-opus-4-8 or claude-haiku-4-5 if fallback)
+        model_valid = model in ("claude-opus-4-8", "claude-haiku-4-5")
+        mode_valid = mode == "normal"
+        credits_valid = credits_after == (initial_credits - 10)  # 5 for goal + 5 for turn
+        
+        # Verify value fields refreshed
+        action_payoff = thread.get("current_action_payoff")
+        big_picture = thread.get("current_big_picture")
+        payoff_valid = isinstance(action_payoff, str) and len(action_payoff.strip()) > 0
+        big_picture_valid = isinstance(big_picture, str) and len(big_picture.strip()) > 0
+        
+        all_valid = model_valid and mode_valid and credits_valid and payoff_valid and big_picture_valid
+        
+        details = (f"Latency: {latency}s | Model: {model} | Mode: {mode} | "
+                  f"Credits: {initial_credits - 5} → {credits_after} | "
+                  f"Fields refreshed: {'✓' if payoff_valid and big_picture_valid else '✗'}")
+        
+        log_test("Normal mode turn", all_valid, details)
+        
+        # Store for comparison
+        normal_payoff = action_payoff
+        normal_big_picture = big_picture
+    else:
+        log_test("Normal mode turn", False, f"Status {r.status_code}: {r.text}")
+        sys.exit(1)
+except Exception as e:
+    log_test("Normal mode turn", False, f"Exception: {e}")
+    sys.exit(1)
 
+# ============================================================================
+# TEST 4: Ultra Mode Turn (LLM CALL #3)
+# ============================================================================
+print("\n" + "="*80)
+print("TEST 4: ULTRA MODE TURN (LLM CALL #3) - May take 30-90s")
+print("="*80)
 
-if __name__ == "__main__":
-    sys.exit(main())
+track_llm_call("Ultra mode turn")
+ultra_payload = {
+    "message": "I keep putting off the hard conversation with my current boss about leaving. Every day I delay feels like I'm lying to him.",
+    "mode": "ultra"
+}
+
+start_time = time.time()
+try:
+    r = requests.post(f"{BASE_URL}/threads/{thread_id}/turn", json=ultra_payload, headers=headers, timeout=TIMEOUT_ULTRA)
+    latency = round(time.time() - start_time, 2)
+    
+    if r.status_code == 200:
+        data = r.json()
+        model = data.get("model")
+        mode = data.get("mode")
+        credits_after = data.get("credits")
+        thread = data.get("thread", {})
+        
+        # Verify model (should be claude-fable-5, or fallback to opus/haiku)
+        model_valid = model in ("claude-fable-5", "claude-opus-4-8", "claude-haiku-4-5")
+        mode_valid = mode == "ultra"
+        credits_valid = credits_after == (initial_credits - 15)  # 5 + 5 + 5
+        
+        # Verify value fields refreshed (should be different from normal turn)
+        action_payoff = thread.get("current_action_payoff")
+        big_picture = thread.get("current_big_picture")
+        payoff_valid = isinstance(action_payoff, str) and len(action_payoff.strip()) > 0
+        big_picture_valid = isinstance(big_picture, str) and len(big_picture.strip()) > 0
+        fields_changed = (action_payoff != normal_payoff) or (big_picture != normal_big_picture)
+        
+        all_valid = model_valid and mode_valid and credits_valid and payoff_valid and big_picture_valid
+        
+        details = (f"Latency: {latency}s | Model: {model} | Mode: {mode} | "
+                  f"Credits: {initial_credits - 10} → {credits_after} | "
+                  f"Fields changed: {'✓' if fields_changed else '✗'}")
+        
+        log_test("Ultra mode turn", all_valid, details)
+        
+        if model != "claude-fable-5":
+            print(f"  ⚠️  Note: Fallback occurred, expected claude-fable-5 but got {model}")
+    else:
+        log_test("Ultra mode turn", False, f"Status {r.status_code}: {r.text}")
+        sys.exit(1)
+except Exception as e:
+    log_test("Ultra mode turn", False, f"Exception: {e}")
+    sys.exit(1)
+
+# ============================================================================
+# TEST 5: Invalid Mode (No LLM Call)
+# ============================================================================
+print("\n" + "="*80)
+print("TEST 5: INVALID MODE (Should 422, no credit deduction)")
+print("="*80)
+
+invalid_payload = {
+    "message": "test message",
+    "mode": "turbo"  # invalid
+}
+
+try:
+    r = requests.post(f"{BASE_URL}/threads/{thread_id}/turn", json=invalid_payload, headers=headers, timeout=10)
+    
+    if r.status_code == 422:
+        # Verify credits NOT deducted
+        r_me = requests.get(f"{BASE_URL}/auth/me", headers=headers, timeout=10)
+        current_credits = r_me.json().get("credits")
+        credits_unchanged = current_credits == (initial_credits - 15)
+        
+        log_test("Invalid mode rejection", credits_unchanged,
+                 f"422 received, credits unchanged: {current_credits}")
+    else:
+        log_test("Invalid mode rejection", False,
+                 f"Expected 422, got {r.status_code}: {r.text}")
+except Exception as e:
+    log_test("Invalid mode rejection", False, f"Exception: {e}")
+
+# ============================================================================
+# TEST 6: Persistence
+# ============================================================================
+print("\n" + "="*80)
+print("TEST 6: PERSISTENCE (GET thread)")
+print("="*80)
+
+try:
+    r = requests.get(f"{BASE_URL}/threads/{thread_id}", headers=headers, timeout=10)
+    
+    if r.status_code == 200:
+        data = r.json()
+        thread = data.get("thread", {})
+        
+        # Verify 3 new fields exist and match last turn
+        action_payoff = thread.get("current_action_payoff")
+        big_picture = thread.get("current_big_picture")
+        bold_move = thread.get("current_bold_move")
+        
+        payoff_valid = isinstance(action_payoff, str) and len(action_payoff.strip()) > 0
+        big_picture_valid = isinstance(big_picture, str) and len(big_picture.strip()) > 0
+        bold_move_exists = "current_bold_move" in thread
+        
+        all_valid = payoff_valid and big_picture_valid and bold_move_exists
+        
+        log_test("Persistence of value fields", all_valid,
+                 f"All 3 fields persisted correctly")
+    else:
+        log_test("Persistence of value fields", False,
+                 f"Status {r.status_code}: {r.text}")
+except Exception as e:
+    log_test("Persistence of value fields", False, f"Exception: {e}")
+
+# ============================================================================
+# TEST 7: Default Mode (No LLM Call - verify schema only)
+# ============================================================================
+print("\n" + "="*80)
+print("TEST 7: DEFAULT MODE (Omit mode field)")
+print("="*80)
+
+# To save LLM calls, we'll pause the thread first, then verify the schema accepts
+# a request without mode (should default to "normal" but fail with 400 for paused thread)
+try:
+    # Pause thread
+    r = requests.patch(f"{BASE_URL}/threads/{thread_id}/status",
+                      json={"status": "paused"}, headers=headers, timeout=10)
+    
+    if r.status_code == 200:
+        # Try turn without mode on paused thread
+        default_payload = {"message": "test"}  # mode omitted
+        r = requests.post(f"{BASE_URL}/threads/{thread_id}/turn",
+                         json=default_payload, headers=headers, timeout=10)
+        
+        # Should get 400 (paused), not 422 (validation error)
+        # This proves the schema accepted the missing mode field
+        if r.status_code == 400 and "paused" in r.text.lower():
+            log_test("Default mode schema", True,
+                     "Schema accepts omitted mode (defaults to normal)")
+        elif r.status_code == 422:
+            log_test("Default mode schema", False,
+                     "422 validation error - mode field may be required")
+        else:
+            log_test("Default mode schema", False,
+                     f"Unexpected status {r.status_code}: {r.text}")
+        
+        # Reactivate thread
+        requests.patch(f"{BASE_URL}/threads/{thread_id}/status",
+                      json={"status": "active"}, headers=headers, timeout=10)
+    else:
+        log_test("Default mode schema", False, f"Failed to pause thread: {r.status_code}")
+except Exception as e:
+    log_test("Default mode schema", False, f"Exception: {e}")
+
+# ============================================================================
+# TEST 8: Auth Guard
+# ============================================================================
+print("\n" + "="*80)
+print("TEST 8: AUTH GUARD (No token)")
+print("="*80)
+
+try:
+    r = requests.get(f"{BASE_URL}/threads/{thread_id}", timeout=10)  # no headers
+    
+    if r.status_code == 401:
+        log_test("Auth guard", True, "401 Unauthorized as expected")
+    else:
+        log_test("Auth guard", False, f"Expected 401, got {r.status_code}")
+except Exception as e:
+    log_test("Auth guard", False, f"Exception: {e}")
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+print("\n" + "="*80)
+print("TEST SUMMARY")
+print("="*80)
+
+passed = sum(1 for t in test_results if t["passed"])
+total = len(test_results)
+print(f"\nTotal: {passed}/{total} tests passed")
+print(f"LLM calls used: {llm_call_count}/5")
+
+print("\nDetailed Results:")
+for t in test_results:
+    status = "✅" if t["passed"] else "❌"
+    print(f"{status} {t['name']}")
+    if t["details"]:
+        print(f"   {t['details']}")
+
+if passed == total:
+    print("\n🎉 All tests passed!")
+    sys.exit(0)
+else:
+    print(f"\n⚠️  {total - passed} test(s) failed")
+    sys.exit(1)

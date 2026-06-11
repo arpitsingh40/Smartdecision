@@ -29,6 +29,7 @@ A thread holds the user's pursuit across weeks. Every turn refreshes "the easies
 - Phase 1 POC: DONE (12/12 checks)
 - Phase 2 Full app: DONE, tested by testing agent — 100% backend (14/14), 100% frontend
 - Retention Loop: DONE, tested (iteration_2, 100%) — momentum strip (kept promises / follow-through / moves this week), open-question pull lines + 48h overdue chips on goal cards, thread accountability prompt with one-tap "I did it"/"Not yet" (sends real turn)
+- Conversational addictiveness: DONE, tested (iteration_3, 100%) — engine SYSTEM prompt upgraded: MIRROR line (names what user didn't say, stored as thread.current_mirror, rendered italic w/ left border), STICKY open questions (productive discomfort, generic banned), FELT MOMENTUM (streak of kept actions passed in substrate, woven into voice), BREVITY discipline. Still exactly 1 LLM call/turn.
 - Phase 3 (pending, future): KPI dashboards from telemetry, felt-understood micro-prompt, Stripe credit top-ups, account deletion, email re-engagement nudges (needs SMTP/SendGrid key)
 
 ## Design rules (non-negotiable)

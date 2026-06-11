@@ -7,8 +7,9 @@ The user walks away doing the one thing they already knew they needed to do but 
 A thread holds the user's pursuit across weeks. Every turn refreshes "the easiest path forward" against updated reality. Every return after absence surfaces what changed about the user while they were gone.
 
 ## Architecture
-- Stack: FastAPI + React + MongoDB. LLM: Claude Opus 4.8 (`claude-opus-4-8`) primary, Haiku 4.5 (`claude-haiku-4-5`) fallback. User's own ANTHROPIC_API_KEY in backend/.env.
+- Stack: FastAPI + React + MongoDB. LLM: two modes per turn — NORMAL: Claude Opus 4.8 (`claude-opus-4-8`), ULTRA THINKING: Fable 5 (`claude-fable-5`, thinking={"type":"adaptive"} + extra_body output_config.effort=high, max_tokens 8000, text block must be extracted from content). Fallback chain: ultra: fable-5→opus-4-8→haiku-4-5; normal: opus-4-8→haiku-4-5. User's own ANTHROPIC_API_KEY in backend/.env.
 - 4 LIVING FIELDS per thread (the primary UI): current_state_summary (3 lines), current_open_question (1 line, pinned above composer), current_easiest_path (1-2 lines), current_next_action (1 line, 24-48h, hero element).
+- 3 VALUE LAYERS per turn (added after founder's "make it more worth it" feedback): current_action_payoff (benefit stated early — concrete thing held within 48h, vague banned), current_big_picture (concrete justification tying action to stated goal, quantified, generic glue banned; why_now passed in prompt as material), current_bold_move (out-of-box higher-leverage play, NULLABLE — never forced). Rendered: payoff+big-picture inside next-action box; bolder play beside easiest path (amber left border, 2-col grid).
 - 4 ROLLING FIELDS computed deterministically from substrate_events (no LLM): emotional_temperature, execution_consistency (14d), pace_calibration, contradiction_history.
 - TURN ENGINE: 6-step pipeline, ONE LLM call/turn. Substrate signals (emotional temp, action_done, contradiction) piggybacked on the same call.
 - Intent classifier (pure regex): update|question|setback|acknowledgment|drift|silence_breaker (>=14d gap).
@@ -30,6 +31,7 @@ A thread holds the user's pursuit across weeks. Every turn refreshes "the easies
 - Phase 2 Full app: DONE, tested by testing agent — 100% backend (14/14), 100% frontend
 - Retention Loop: DONE, tested (iteration_2, 100%) — momentum strip (kept promises / follow-through / moves this week), open-question pull lines + 48h overdue chips on goal cards, thread accountability prompt with one-tap "I did it"/"Not yet" (sends real turn)
 - Conversational addictiveness: DONE, tested (iteration_3, 100%) — engine SYSTEM prompt upgraded: MIRROR line (names what user didn't say, stored as thread.current_mirror, rendered italic w/ left border), STICKY open questions (productive discomfort, generic banned), FELT MOMENTUM (streak of kept actions passed in substrate, woven into voice), BREVITY discipline. Still exactly 1 LLM call/turn.
+- Value layers + dual engine modes: DONE, tested (iteration_4: backend 10/10, frontend 100%) — payoff early / big picture / bolder play in every turn; mode toggle Normal vs Ultra thinking in composer (TurnIn.mode, 422 on invalid, model+mode returned in turn response). Demo account: demo@smartdecigen.com / Demo1234! (seed: /app/scripts/seed_demo.py, idempotent). NOTE: env was restored this session (.env files recreated; user re-supplied ANTHROPIC_API_KEY).
 - Phase 3 (pending, future): KPI dashboards from telemetry, felt-understood micro-prompt, Stripe credit top-ups, account deletion, email re-engagement nudges (needs SMTP/SendGrid key)
 
 ## Design rules (non-negotiable)

@@ -9,7 +9,7 @@ import time
 import sys
 
 # Backend URL from frontend/.env
-BASE_URL = "https://36cb0266-8d04-47aa-a315-0aedeb82fa21.preview.emergentagent.com/api"
+BASE_URL = "https://ops-center-34.preview.emergentagent.com/api"
 TIMEOUT_NORMAL = 60
 TIMEOUT_ULTRA = 120  # Ultra mode can take 30-90s
 

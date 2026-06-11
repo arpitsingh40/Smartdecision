@@ -51,13 +51,15 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-        <div className="flex items-center justify-between mb-8">
-          <p className="text-sm text-muted-foreground">One thread per goal. Each holds where you are, and what comes next.</p>
-          <Button data-testid="goals-new-goal-button" onClick={() => navigate('/new')}
-            className="rounded-xl active:scale-[0.98] transition-colors">
-            New goal
-          </Button>
-        </div>
+        {goals?.length !== 0 && (
+          <div className="flex items-center justify-between mb-8">
+            <p className="text-sm text-muted-foreground">One thread per goal. Each holds where you are, and what comes next.</p>
+            <Button data-testid="goals-new-goal-button" onClick={() => navigate('/new')}
+              className="rounded-xl active:scale-[0.98] transition-colors">
+              New goal
+            </Button>
+          </div>
+        )}
 
         {goals === null && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
@@ -67,16 +69,49 @@ export default function DashboardPage() {
         )}
 
         {goals !== null && goals.length === 0 && (
-          <Card className="rounded-2xl border border-border/70 premium-lift">
-            <CardContent className="p-12 text-center">
-              <p className="font-display text-2xl mb-2">Nothing held yet.</p>
-              <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
-                Name the one thing you keep circling. The engine will hold it with you, week after week.
+          <Card data-testid="empty-state" className="relative overflow-hidden rounded-2xl border border-border/70 premium-lift">
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+              <div className="absolute -top-28 -right-24 w-96 h-96 rounded-full bg-[hsl(var(--accent))]/60 blur-3xl" />
+              <div className="absolute -bottom-36 -left-24 w-80 h-80 rounded-full bg-[hsl(var(--warning))]/[0.07] blur-3xl" />
+            </div>
+            <CardContent className="relative px-6 py-14 sm:px-14 sm:py-16 text-center">
+              <svg viewBox="0 0 240 24" className="rise-1 mx-auto mb-8 w-52 sm:w-60 text-[hsl(var(--ring))]" fill="none" aria-hidden="true">
+                <path className="thread-draw" d="M4 12 Q 62 -2 120 12 T 236 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <circle cx="4" cy="12" r="2.5" fill="currentColor" opacity="0.35" />
+                <circle className="thread-node" cx="120" cy="12" r="3.5" fill="currentColor" />
+                <circle cx="236" cy="12" r="2.5" fill="currentColor" opacity="0.35" />
+              </svg>
+              <p className="rise-1 text-[11px] uppercase tracking-[0.24em] text-muted-foreground mb-4">Your first thread</p>
+              <h2 className="rise-2 font-display text-3xl sm:text-[40px] leading-[1.12] max-w-xl mx-auto">
+                The goal you keep circling?
+                <span className="block italic mt-1">Bring it here.</span>
+              </h2>
+              <p className="rise-3 text-sm sm:text-[15px] text-muted-foreground leading-relaxed max-w-md mx-auto mt-5">
+                Not another chat that forgets you by morning. One thread holds your pursuit
+                across weeks — and every reply ends in a single action you can finish in 48 hours.
               </p>
-              <Button data-testid="empty-state-new-goal-button" onClick={() => navigate('/new')}
-                className="rounded-xl active:scale-[0.98] transition-colors">
-                Open your first thread
-              </Button>
+              <div className="rise-3 grid grid-cols-1 sm:grid-cols-3 gap-7 sm:gap-0 max-w-2xl mx-auto mt-11 sm:divide-x sm:divide-border/60">
+                {[
+                  ['01', 'Name it', 'The thing you keep postponing, in your own words.'],
+                  ['02', 'Move in 48 hours', 'Every reply converges to one concrete next action.'],
+                  ['03', 'Be remembered', 'Return anytime — it knows what changed while you were gone.'],
+                ].map(([n, title, line]) => (
+                  <div key={n} className="px-4">
+                    <p className="font-mono-plex text-[11px] text-[hsl(var(--ring))] mb-1.5">{n}</p>
+                    <p className="text-sm font-medium">{title}</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">{line}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="rise-4 mt-11">
+                <Button data-testid="empty-state-new-goal-button" size="lg" onClick={() => navigate('/new')}
+                  className="rounded-xl px-8 h-12 text-[15px] shadow-md hover:shadow-lg active:scale-[0.98] transition-all">
+                  Open your first thread
+                </Button>
+                <p className="font-mono-plex text-[11px] text-muted-foreground mt-3.5">
+                  2 minutes to start · 100 free credits — your first 20 moves
+                </p>
+              </div>
             </CardContent>
           </Card>
         )}

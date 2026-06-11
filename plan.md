@@ -1,5 +1,7 @@
 # SmartDecigen Deep Discussion Engine — Plan
 
+> STATUS: Phase 1 POC DONE (12/12 checks). Phase 2 V1 app DONE + tested (100% backend 14/14, 100% frontend, testing agent iteration_1). Auth was built in Phase 2 (email/password JWT, multi-user isolation verified). Remaining (future): Phase 3 KPI dashboards from telemetry, felt-understood micro-prompt, Stripe credit top-ups, account deletion.
+
 ## 1) Objectives
 - Deliver a **goal-anchored accountability companion** where each interaction closes the gap between **knowing and doing**.
 - Implement the **GoalThread** component exactly as specified: **4 living fields as the primary UI**, bounded context, **1 LLM call/turn**, deterministic rolling signals, and **pure-function re-engagement**.

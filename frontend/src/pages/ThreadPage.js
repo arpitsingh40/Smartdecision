@@ -24,9 +24,12 @@ const fieldAnim = {
   transition: { duration: 0.32, ease: 'easeOut' },
 };
 
-const Field = ({ label, children, testId, refreshKey }) => (
+const Field = ({ label, right, children, testId, refreshKey }) => (
   <div>
-    <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">{label}</p>
+    <div className="flex items-baseline justify-between gap-3 mb-1.5">
+      <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      {right}
+    </div>
     <AnimatePresence mode="wait">
       <motion.div key={refreshKey} {...fieldAnim} data-testid={testId}>
         {children}
@@ -34,6 +37,14 @@ const Field = ({ label, children, testId, refreshKey }) => (
     </AnimatePresence>
   </div>
 );
+
+const ACTION_WINDOW_MS = 48 * 3600 * 1000;
+
+const fmtRemaining = (ms) => {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
 
 export default function ThreadPage() {
   const { threadId } = useParams();
@@ -46,7 +57,14 @@ export default function ThreadPage() {
   const [thinking, setThinking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const composerRef = useRef(null);
+
+  // live ticker for the action countdown (1-minute resolution)
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     api.get(`/threads/${threadId}`).then((r) => {
@@ -109,6 +127,11 @@ export default function ThreadPage() {
   const lastEngineMsg = [...(thread.messages || [])].reverse().find((m) => m.role === 'engine');
   const inactive = thread.status !== 'active';
 
+  // countdown: arms automatically when an action is issued (each turn re-arms it)
+  const deadline = thread.last_turn_at ? new Date(thread.last_turn_at).getTime() + ACTION_WINDOW_MS : null;
+  const remainingMs = deadline ? deadline - nowTick : null;
+  const windowClosed = remainingMs !== null ? remainingMs <= 0 : actionOverdue;
+
   return (
     <div className="relative z-10 min-h-screen">
       <TopBar title={thread.goal} backTo="/" />
@@ -144,13 +167,13 @@ export default function ThreadPage() {
               </p>
             )}
 
-            {actionOverdue && !thinking && !inactive && (
+            {windowClosed && !thinking && !inactive && (
               <div data-testid="accountability-prompt"
                 className="rounded-xl border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/5 px-4 py-3">
                 <p className="text-sm leading-6 mb-3">
-                  The 48-hour window on your last action has passed. Did it happen?
+                  {"The 48-hour window on this action closed. What's the result?"}
                 </p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button size="sm" data-testid="accountability-done-button"
                     onClick={() => sendText('Done — I did it.')}
                     className="rounded-xl active:scale-[0.98] transition-colors">
@@ -161,6 +184,7 @@ export default function ThreadPage() {
                     className="rounded-xl border border-border/70 active:scale-[0.98] transition-colors">
                     Not yet
                   </Button>
+                  <span className="text-xs text-muted-foreground">or type what actually happened below.</span>
                 </div>
               </div>
             )}
@@ -202,7 +226,20 @@ export default function ThreadPage() {
                 )}
               </div>
 
-              <Field label="Next action · 24–48h" testId="situation-next-action" refreshKey={refreshKey}>
+              <Field label="Next action · 24–48h" testId="situation-next-action" refreshKey={refreshKey}
+                right={!inactive && remainingMs !== null ? (
+                  remainingMs > 0 ? (
+                    <span data-testid="action-countdown"
+                      className={`font-mono-plex text-[11px] tabular-nums whitespace-nowrap ${remainingMs < 12 * 3600000 ? 'text-[hsl(var(--warning))]' : 'text-muted-foreground'}`}>
+                      result due in {fmtRemaining(remainingMs)}
+                    </span>
+                  ) : (
+                    <span data-testid="action-window-closed"
+                      className="font-mono-plex text-[11px] whitespace-nowrap text-[hsl(var(--warning))]">
+                      window closed
+                    </span>
+                  )
+                ) : null}>
                 <div className="rounded-xl bg-[hsl(var(--accent))]/60 border border-border/70 px-4 py-3">
                   <p className="font-display text-base md:text-lg leading-snug">{thread.current_next_action}</p>
                   {thread.current_action_payoff && (

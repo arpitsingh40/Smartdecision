@@ -179,6 +179,17 @@ frontend:
       - working: true
         agent: "testing"
         comment: "✅ VERIFIED via Playwright test. Mode toggle (mode-toggle) visible with both mode-normal-button and mode-ultra-button. Normal mode selected by default (accent background). Mode switching works correctly: clicking mode-ultra-button activates Ultra mode (accent background switches). Thinking states display correctly: Normal shows 'Processing… the situation is being re-read.' and Ultra shows 'Ultra thinking… going deeper before answering.' Both modes successfully complete turns and update fields."
+  - task: "Action countdown + result prompt (no accept button)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/ThreadPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Countdown arms automatically from last_turn_at + 48h (no accept button per founder). Live chip 'result due in Xh Ym' (data-testid action-countdown) on next-action label row, warning color <12h, 30s ticker. At expiry: 'window closed' chip (action-window-closed) + result prompt 'The 48-hour window on this action closed. What's the result?' (I did it / Not yet / or type below). Frontend-only change. Both states visually verified by main agent via screenshots (thread temporarily aged to 50h in Mongo then restored)."
 
 metadata:
   created_by: "main_agent"

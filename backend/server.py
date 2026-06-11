@@ -5,28 +5,24 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
-from pymongo import MongoClient, ReturnDocument
-from passlib.context import CryptContext
-import jwt
+from pymongo import ReturnDocument
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from engine import classify_intent, rolling_fields, compute_reengagement_line, llm_turn
+from db import users_col, threads_col, events_col, telemetry_col
+from security import pwd, make_token, current_user
+from ledger import record_ledger, inc_stats, ensure_startup
+from tracking import router as tracking_router, client_ip, geo_lookup
+from admin import router as admin_router
+from payments import router as payments_router
 
-mongo = MongoClient(os.environ["MONGO_URL"])
-db = mongo[os.environ.get("DB_NAME", "test_database")]
-users_col = db.users
-threads_col = db.goal_threads
-events_col = db.substrate_events
-telemetry_col = db.telemetry_events
-
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
-JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret")
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
+ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
 SIGNUP_CREDITS = int(os.environ.get("SIGNUP_CREDITS", "100"))
 
 app = FastAPI(title="SmartDecigen Deep Discussion Engine")
@@ -53,21 +49,6 @@ def as_aware(dt):
         return dt.replace(tzinfo=timezone.utc)
     return dt
 
-def make_token(user_id: str) -> str:
-    return jwt.encode({"sub": user_id, "exp": now_utc() + timedelta(days=30)}, JWT_SECRET, algorithm="HS256")
-
-def current_user(authorization: str = Header(None)) -> dict:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Not authenticated")
-    try:
-        payload = jwt.decode(authorization.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
-    except Exception:
-        raise HTTPException(401, "Invalid or expired token")
-    user = users_col.find_one({"id": payload["sub"]})
-    if not user:
-        raise HTTPException(401, "User not found")
-    return user
-
 # ----------------------------------------------------------------- models
 class SignupIn(BaseModel):
     email: EmailStr
@@ -91,9 +72,11 @@ class StatusIn(BaseModel):
 
 # ----------------------------------------------------------------- auth
 @api.post("/auth/signup")
-def signup(body: SignupIn):
+def signup(body: SignupIn, request: Request):
     if users_col.find_one({"email": body.email.lower()}):
         raise HTTPException(409, "An account with this email already exists")
+    ip = client_ip(request)
+    geo = geo_lookup(ip)
     user = {
         "id": str(uuid.uuid4()),
         "email": body.email.lower(),
@@ -101,24 +84,35 @@ def signup(body: SignupIn):
         "password_hash": pwd.hash(body.password),
         "credits": SIGNUP_CREDITS,
         "created_at": now_utc(),
+        "country": geo["country"], "city": geo["city"], "last_ip": ip,
+        "questions_asked": 0, "tokens_in": 0, "tokens_out": 0,
+        "credits_issued_free": SIGNUP_CREDITS, "credits_issued_paid": 0,
     }
     users_col.insert_one(user)
-    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"]}}
+    record_ledger(user["id"], "free_grant", SIGNUP_CREDITS, reason="signup")
+    inc_stats({"credits_issued_free": SIGNUP_CREDITS})
+    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False}}
 
 @api.post("/auth/login")
-def login(body: LoginIn):
+def login(body: LoginIn, request: Request):
     user = users_col.find_one({"email": body.email.lower()})
     if not user or not pwd.verify(body.password, user["password_hash"]):
         raise HTTPException(401, "Incorrect email or password")
-    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0)}}
+    ip = client_ip(request)
+    users_col.update_one({"id": user["id"]}, {"$set": {"last_login_at": now_utc(), "last_ip": ip}})
+    if not user.get("country"):
+        geo = geo_lookup(ip)
+        users_col.update_one({"id": user["id"]}, {"$set": {"country": geo["country"], "city": geo["city"]}})
+    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin"))}}
 
 @api.get("/auth/me")
 def me(user: dict = Depends(current_user)):
-    return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0)}
+    return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin"))}
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
-def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal"):
+def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal", cost: int = None):
     t0 = time.time()
+    cost = cost if cost is not None else (ULTRA_TURN_COST if mode == "ultra" else TURN_COST)
     now = now_utc()
     last_at = as_aware(thread.get("last_turn_at")) or as_aware(thread["opened_at"])
     days_gap = (now - last_at).total_seconds() / 86400
@@ -139,7 +133,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal"):
     # step 3: intent (pure)
     intent = classify_intent(message, days_gap)
     # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5)
-    out, model = llm_turn(thread, substrate, message, intent, mode)
+    out, model, usage = llm_turn(thread, substrate, message, intent, mode)
     sig = out["signals"]
     # step 5: state update
     events_col.insert_one({
@@ -174,11 +168,18 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal"):
         },
         "$push": {"messages": {"$each": new_msgs}},
     })
-    # step 6: telemetry
+    # step 6: telemetry + usage counters (pre-aggregated -> Founder OS reads stay O(1))
     latency = round(time.time() - t0, 2)
     telemetry_col.insert_one({"id": str(uuid.uuid4()), "type": "discussion_turn", "user_id": user["id"],
                               "thread_id": thread["thread_id"], "intent": intent, "model": model,
+                              "mode": mode, "cost": cost,
+                              "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"],
                               "latency_s": latency, "response_len": len(out["acknowledgment"]), "at": now})
+    users_col.update_one({"id": user["id"]}, {
+        "$inc": {"questions_asked": 1, "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
+        "$set": {"last_active_at": now}})
+    inc_stats({"questions_total": 1, ("turns_ultra" if mode == "ultra" else "turns_normal"): 1,
+               "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]})
     return out, intent, model, latency
 
 # ----------------------------------------------------------------- goals & threads
@@ -208,6 +209,8 @@ def create_goal(body: GoalIn, user: dict = Depends(current_user)):
         threads_col.delete_one({"thread_id": thread["thread_id"]})
         log.error(f"goal creation turn failed: {e}")
         raise HTTPException(502, "The engine could not open this thread. You were not charged — try again.")
+    record_ledger(user["id"], "turn_spend", -TURN_COST, thread_id=thread["thread_id"], mode="normal", reason="goal_opening")
+    inc_stats({"credits_spent": TURN_COST})
     fresh = threads_col.find_one({"thread_id": thread["thread_id"]})
     return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"], "credits": u["credits"]}
 
@@ -269,24 +272,27 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
 def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
     if body.mode not in ("normal", "ultra"):
         raise HTTPException(422, "mode must be 'normal' or 'ultra'")
+    cost = ULTRA_TURN_COST if body.mode == "ultra" else TURN_COST  # ultra thinking costs double
     t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
     if not t:
         raise HTTPException(404, "Thread not found")
     if t["status"] != "active":
         raise HTTPException(400, f"This thread is {t['status']}. Reactivate it to continue.")
-    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": TURN_COST}},
-                                      {"$inc": {"credits": -TURN_COST}}, return_document=ReturnDocument.AFTER)
+    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": cost}},
+                                      {"$inc": {"credits": -cost}}, return_document=ReturnDocument.AFTER)
     if not u:
         raise HTTPException(402, "Not enough credits")
     try:
-        out, intent, model, latency = run_pipeline(t, user, body.message.strip(), body.mode)
+        out, intent, model, latency = run_pipeline(t, user, body.message.strip(), body.mode, cost)
     except Exception as e:
-        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": TURN_COST}})  # refund
+        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": cost}})  # refund
         log.error(f"turn failed: {e}")
         raise HTTPException(502, "The engine did not respond. You were not charged — try again.")
+    record_ledger(user["id"], "turn_spend", -cost, thread_id=thread_id, mode=body.mode)
+    inc_stats({"credits_spent": cost})
     fresh = threads_col.find_one({"thread_id": thread_id})
     return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"],
-            "intent": intent, "credits": u["credits"], "model": model, "mode": body.mode}
+            "intent": intent, "credits": u["credits"], "model": model, "mode": body.mode, "cost": cost}
 
 @api.patch("/threads/{thread_id}/status")
 def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user)):
@@ -299,13 +305,21 @@ def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user
 
 @api.get("/credits")
 def credits(user: dict = Depends(current_user)):
-    return {"credits": user.get("credits", 0), "turn_cost": TURN_COST}
+    return {"credits": user.get("credits", 0), "turn_cost": TURN_COST, "ultra_turn_cost": ULTRA_TURN_COST}
 
 @api.get("/")
 def root():
     return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok"}
 
 app.include_router(api)
+app.include_router(tracking_router)
+app.include_router(admin_router)
+app.include_router(payments_router)
+
+@app.on_event("startup")
+def _startup():
+    ensure_startup()  # idempotent: indexes + founder account + one-time stats backfill
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),

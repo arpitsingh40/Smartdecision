@@ -149,7 +149,9 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
             out = json.loads(txt)
             if not all(k in out for k in REQUIRED_KEYS):
                 raise ValueError("incomplete JSON keys")
-            return out, model
+            usage = {"input_tokens": int(getattr(r.usage, "input_tokens", 0) or 0),
+                     "output_tokens": int(getattr(r.usage, "output_tokens", 0) or 0)}
+            return out, model, usage
         except Exception as e:
             last_err = e
     raise RuntimeError(f"All models failed: {last_err}")

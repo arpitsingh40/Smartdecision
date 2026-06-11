@@ -23,15 +23,34 @@ const statusStyle = {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [goals, setGoals] = useState(null);
+  const [momentum, setMomentum] = useState(null);
 
   useEffect(() => {
-    api.get('/goals').then((r) => setGoals(r.data.goals)).catch(() => setGoals([]));
+    api.get('/goals').then((r) => { setGoals(r.data.goals); setMomentum(r.data.momentum); }).catch(() => setGoals([]));
   }, []);
 
   return (
     <div className="relative z-10 min-h-screen">
       <TopBar title="Your pursuits" />
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+        {momentum && goals?.length > 0 && (
+          <div data-testid="momentum-strip" className="flex flex-wrap items-baseline gap-x-8 gap-y-2 mb-8 pb-6 border-b border-border/70">
+            <div>
+              <span className="font-display text-3xl">{momentum.kept_promises}</span>
+              <span className="text-xs text-muted-foreground ml-2">promises kept</span>
+            </div>
+            {momentum.avg_consistency !== null && (
+              <div>
+                <span className="font-display text-3xl">{Math.round(momentum.avg_consistency * 100)}%</span>
+                <span className="text-xs text-muted-foreground ml-2">follow-through, last 14 days</span>
+              </div>
+            )}
+            <div>
+              <span className="font-display text-3xl">{momentum.turns_this_week}</span>
+              <span className="text-xs text-muted-foreground ml-2">moves this week</span>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-8">
           <p className="text-sm text-muted-foreground">One thread per goal. Each holds where you are, and what comes next.</p>
           <Button data-testid="goals-new-goal-button" onClick={() => navigate('/new')}
@@ -74,14 +93,24 @@ export default function DashboardPage() {
                       {g.status}
                     </Badge>
                     <span className={`text-[11px] ${paceStyle[g.pace] || paceStyle['on-track']}`}>{g.pace}</span>
+                    {g.action_overdue && (
+                      <span data-testid="overdue-chip" className="text-[11px] text-[hsl(var(--warning))]">
+                        48h window passed — did it happen?
+                      </span>
+                    )}
                   </div>
                   <Separator className="hairline mb-4" />
                   <p className="text-xs text-muted-foreground mb-1">Next action</p>
-                  <p className="text-sm leading-5 line-clamp-2 mb-5">{g.next_action || '—'}</p>
+                  <p className="text-sm leading-5 line-clamp-2 mb-3">{g.next_action || '—'}</p>
+                  {g.open_question && g.open_question !== '(none yet)' && (
+                    <p data-testid="card-open-question" className="text-xs text-muted-foreground italic leading-5 line-clamp-2 mb-5">
+                      Still open: {g.open_question}
+                    </p>
+                  )}
                   <Button variant="secondary" data-testid="goal-card-open-button"
                     onClick={() => navigate(`/thread/${g.thread_id}`)}
                     className="rounded-xl border border-border/70 active:scale-[0.98] transition-colors w-full">
-                    Open
+                    {g.action_overdue ? 'Answer it' : 'Open'}
                   </Button>
                 </CardContent>
               </Card>

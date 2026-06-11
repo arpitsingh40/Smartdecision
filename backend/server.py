@@ -195,16 +195,29 @@ def create_goal(body: GoalIn, user: dict = Depends(current_user)):
 
 @api.get("/goals")
 def list_goals(user: dict = Depends(current_user)):
+    now = now_utc()
     items = []
     for t in threads_col.find({"user_id": user["id"]}).sort("opened_at", -1):
+        last_at = as_aware(t.get("last_turn_at"))
+        hours_since = (now - last_at).total_seconds() / 3600 if last_at else None
         items.append({
             "thread_id": t["thread_id"], "goal": t["goal"], "status": t["status"],
             "pace": t.get("rolling", {}).get("pace_calibration", "on-track"),
+            "consistency": t.get("rolling", {}).get("execution_consistency", 0.5),
             "next_action": t.get("current_next_action", ""),
+            "open_question": t.get("current_open_question", ""),
+            "action_overdue": bool(t["status"] == "active" and hours_since is not None and hours_since > 48),
+            "hours_since_turn": round(hours_since) if hours_since is not None else None,
             "opened_at": t["opened_at"].isoformat() if isinstance(t.get("opened_at"), datetime) else t.get("opened_at"),
             "last_turn_at": t["last_turn_at"].isoformat() if isinstance(t.get("last_turn_at"), datetime) else t.get("last_turn_at"),
         })
-    return {"goals": items}
+    kept = events_col.count_documents({"user_id": user["id"], "action_done": True})
+    week_ago = now - timedelta(days=7)
+    turns_week = telemetry_col.count_documents({"user_id": user["id"], "type": "discussion_turn", "at": {"$gte": week_ago}})
+    active = [g for g in items if g["status"] == "active"]
+    avg_consistency = round(sum(g["consistency"] for g in active) / len(active), 2) if active else None
+    return {"goals": items, "momentum": {"kept_promises": kept, "turns_this_week": turns_week,
+                                         "avg_consistency": avg_consistency}}
 
 @api.get("/threads/{thread_id}")
 def get_thread(thread_id: str, user: dict = Depends(current_user)):
@@ -227,7 +240,11 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
                                           "user_id": user["id"], "thread_id": thread_id, "at": now})
         if days >= 14:
             silence_days = days
-    return {"thread": serialize(t), "reengagement_line": reengagement, "silence_days": silence_days}
+    hours_since = (now - last_at).total_seconds() / 3600 if last_at else None
+    action_overdue = bool(t["status"] == "active" and hours_since is not None and hours_since > 48)
+    return {"thread": serialize(t), "reengagement_line": reengagement, "silence_days": silence_days,
+            "action_overdue": action_overdue,
+            "hours_since_turn": round(hours_since) if hours_since is not None else None}
 
 @api.post("/threads/{thread_id}/turn")
 def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):

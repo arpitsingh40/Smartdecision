@@ -40,6 +40,7 @@ export default function ThreadPage() {
   const { setCredits } = useAuth();
   const [thread, setThread] = useState(null);
   const [reengagement, setReengagement] = useState(null);
+  const [actionOverdue, setActionOverdue] = useState(false);
   const [message, setMessage] = useState('');
   const [thinking, setThinking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -50,11 +51,12 @@ export default function ThreadPage() {
     api.get(`/threads/${threadId}`).then((r) => {
       setThread(r.data.thread);
       setReengagement(r.data.reengagement_line);
+      setActionOverdue(r.data.action_overdue);
     }).catch(() => toast.error('Thread not found.'));
   }, [threadId]);
 
-  const send = useCallback(async () => {
-    const msg = message.trim();
+  const sendText = useCallback(async (text) => {
+    const msg = (text || '').trim();
     if (!msg || thinking) return;
     setThinking(true);
     try {
@@ -63,6 +65,7 @@ export default function ThreadPage() {
       setCredits(r.data.credits);
       setMessage('');
       setReengagement(null);
+      setActionOverdue(false);
       setRefreshKey((k) => k + 1);
     } catch (err) {
       const msg402 = err.response?.status === 402;
@@ -70,7 +73,9 @@ export default function ThreadPage() {
     } finally {
       setThinking(false);
     }
-  }, [message, thinking, threadId, setCredits]);
+  }, [thinking, threadId, setCredits]);
+
+  const send = useCallback(() => sendText(message), [sendText, message]);
 
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -136,6 +141,27 @@ export default function ThreadPage() {
                 className="text-sm text-muted-foreground border-l-2 border-[hsl(var(--ring))]/40 pl-3 leading-6">
                 {reengagement}
               </p>
+            )}
+
+            {actionOverdue && !thinking && !inactive && (
+              <div data-testid="accountability-prompt"
+                className="rounded-xl border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/5 px-4 py-3">
+                <p className="text-sm leading-6 mb-3">
+                  The 48-hour window on your last action has passed. Did it happen?
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" data-testid="accountability-done-button"
+                    onClick={() => sendText('Done — I did it.')}
+                    className="rounded-xl active:scale-[0.98] transition-colors">
+                    I did it
+                  </Button>
+                  <Button size="sm" variant="secondary" data-testid="accountability-not-done-button"
+                    onClick={() => sendText("I didn't do it yet — something got in the way.")}
+                    className="rounded-xl border border-border/70 active:scale-[0.98] transition-colors">
+                    Not yet
+                  </Button>
+                </div>
+              </div>
             )}
 
             {lastEngineMsg && (

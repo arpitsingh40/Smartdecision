@@ -1,18 +1,18 @@
 [
   {
     "content": "Retention: enrich /api/goals with open question, overdue window, kept-promises momentum",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Retention: Dashboard momentum strip + open-question pull lines + overdue chips",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Retention: Thread 48h accountability prompt with one-tap Done / Didn't happen",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Retention: test end to end",
-    "status": "pending"
+    "status": "completed"
   }
 ]

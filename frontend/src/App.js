@@ -1,55 +1,73 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from './components/ui/sonner';
+import AuthPage from './pages/AuthPage';
+import DashboardPage from './pages/DashboardPage';
+import NewGoalPage from './pages/NewGoalPage';
+import ThreadPage from './pages/ThreadPage';
+import { api, setAuthToken } from './lib/api';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+const AuthContext = createContext(null);
+export const useAuth = () => useContext(AuthContext);
 
 function App() {
+  const [token, setToken] = useState(() => localStorage.getItem('sdg_token'));
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('sdg_user') || 'null'); } catch { return null; }
+  });
+
+  useEffect(() => { setAuthToken(token); }, [token]);
+
+  const login = useCallback((tok, usr) => {
+    localStorage.setItem('sdg_token', tok);
+    localStorage.setItem('sdg_user', JSON.stringify(usr));
+    setAuthToken(tok);
+    setToken(tok);
+    setUser(usr);
+  }, []);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('sdg_token');
+    localStorage.removeItem('sdg_user');
+    setAuthToken(null);
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  const setCredits = useCallback((credits) => {
+    setUser((u) => {
+      if (!u) return u;
+      const next = { ...u, credits };
+      localStorage.setItem('sdg_user', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    api.get('/auth/me').then((r) => {
+      setUser(r.data);
+      localStorage.setItem('sdg_user', JSON.stringify(r.data));
+    }).catch(() => logout());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <AuthContext.Provider value={{ token, user, login, logout, setCredits }}>
+      <div className="paper-noise min-h-screen">
+        <BrowserRouter>
+          <Routes>
+            <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthPage />} />
+            <Route path="/" element={token ? <DashboardPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/new" element={token ? <NewGoalPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+        <Toaster position="bottom-right" />
+      </div>
+    </AuthContext.Provider>
   );
 }
 

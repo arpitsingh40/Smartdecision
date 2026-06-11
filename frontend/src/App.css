@@ -1,34 +1,46 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* SmartDecigen — premium minimal surface */
+
+.paper-noise {
+  position: relative;
+}
+.paper-noise::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  background:
+    radial-gradient(1200px 600px at 20% 0%, rgba(47, 143, 138, 0.07), transparent 55%),
+    radial-gradient(900px 500px at 90% 10%, rgba(208, 138, 0, 0.05), transparent 60%);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.premium-lift {
+  box-shadow: 0 1px 0 rgba(17, 24, 39, 0.06), 0 12px 30px rgba(17, 24, 39, 0.06);
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+.hairline {
+  border-color: hsl(30 12% 88% / 0.7);
 }
 
-.App-link {
-    color: #61dafb;
+/* calm shimmer for engine thinking state */
+@keyframes sdg-shimmer {
+  0% { opacity: 0.45; }
+  50% { opacity: 0.85; }
+  100% { opacity: 0.45; }
+}
+.thinking-field {
+  animation: sdg-shimmer 1.8s ease-in-out infinite;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+@media (prefers-reduced-motion: reduce) {
+  .thinking-field { animation: none; opacity: 0.6; }
+}
+
+textarea:focus-visible, input:focus-visible {
+  outline: none;
+}
+
+::selection {
+  background: hsl(186 42% 88%);
 }

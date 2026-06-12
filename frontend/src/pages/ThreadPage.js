@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wand2, Copy, Mail, MessageCircle } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
@@ -58,6 +58,9 @@ export default function ThreadPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [assistLoading, setAssistLoading] = useState(false);
+  const [workbenchOpen, setWorkbenchOpen] = useState(false);
+  const [artifactEdit, setArtifactEdit] = useState(null); // { key, text } — local edits per generated artifact
   const composerRef = useRef(null);
 
   // live ticker for the action countdown (1-minute resolution)
@@ -112,6 +115,39 @@ export default function ThreadPage() {
       toast.error('Could not update status.');
     }
   };
+
+  // ---- "Do it for me": ship-ready artifact for the next action (1 credit / 1k tokens)
+  const artifact = thread?.current_action_artifact || null;
+  const artifactKey = artifact?.generated_at || null;
+  const artifactText = (artifactEdit && artifactEdit.key === artifactKey) ? artifactEdit.text : (artifact?.artifact || '');
+
+  const doItForMe = async () => {
+    if (assistLoading || thinking) return;
+    setAssistLoading(true);
+    try {
+      const r = await api.post(`/threads/${threadId}/complete-action`);
+      setThread((t) => ({ ...t, current_action_artifact: r.data.artifact }));
+      setCredits(r.data.credits);
+      setWorkbenchOpen(true);
+      toast.success(`Ready — ${r.data.cost} credit${r.data.cost > 1 ? 's' : ''} for ${(r.data.artifact.tokens || 0).toLocaleString()} tokens.`);
+    } catch (err) {
+      toast.error(err.response?.status === 402 ? 'Not enough credits.' : err.response?.data?.detail || 'Could not prepare this. Try again.');
+    } finally {
+      setAssistLoading(false);
+    }
+  };
+
+  const copyArtifact = async () => {
+    try {
+      await navigator.clipboard.writeText(artifactText);
+      toast.success('Copied — paste it where it needs to go.');
+    } catch {
+      toast.error('Copy failed — select the text and copy manually.');
+    }
+  };
+
+  const mailtoHref = `mailto:?subject=${encodeURIComponent(artifact?.subject || artifact?.title || '')}&body=${encodeURIComponent(artifactText)}`;
+  const waHref = `https://wa.me/?text=${encodeURIComponent(artifactText)}`;
 
   if (!thread) {
     return (
@@ -254,8 +290,81 @@ export default function ThreadPage() {
                       {thread.current_big_picture}
                     </p>
                   )}
+                  {!inactive && (
+                    <div className="mt-3 pt-3 border-t border-border/60 flex flex-wrap items-center justify-between gap-2">
+                      <Button size="sm" variant="secondary" data-testid="do-it-for-me-button"
+                        onClick={artifact ? () => setWorkbenchOpen((o) => !o) : doItForMe}
+                        disabled={assistLoading || thinking}
+                        className="rounded-xl border border-border/70 bg-white active:scale-[0.98] transition-colors">
+                        <Wand2 size={14} strokeWidth={1.75} className="mr-1.5" />
+                        {assistLoading ? 'Preparing your draft…' : artifact ? (workbenchOpen ? 'Hide the draft' : 'Open the draft') : 'Do it for me'}
+                      </Button>
+                      {!artifact && (
+                        <span className="font-mono-plex text-[10px] text-muted-foreground">~1 credit / 1k tokens</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </Field>
+
+              {artifact && workbenchOpen && !inactive && (
+                <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+                  data-testid="action-workbench"
+                  className="rounded-xl border border-[hsl(var(--ring))]/30 bg-white p-4 sm:p-5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+                    <div className="flex items-baseline gap-2.5">
+                      <p className="font-display text-base">{artifact.title}</p>
+                      <span className="text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--ring))]">
+                        {artifact.kind === 'kit' ? '10-minute kit' : 'ship-ready draft'}
+                      </span>
+                    </div>
+                    <span className="font-mono-plex text-[10px] text-muted-foreground">
+                      {artifact.time_estimate_min ? `~${artifact.time_estimate_min} min` : ''}{artifact.cost ? ` · ${artifact.cost} cr` : ''}
+                    </span>
+                  </div>
+                  <Textarea data-testid="workbench-artifact" value={artifactText}
+                    onChange={(e) => setArtifactEdit({ key: artifactKey, text: e.target.value })}
+                    className="min-h-[180px] rounded-xl bg-secondary/40 border border-border/70 text-sm leading-6 focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]" />
+                  {artifact.steps?.length > 0 && (
+                    <ol className="mt-3 space-y-1">
+                      {artifact.steps.map((s, i) => (
+                        <li key={i} className="text-xs text-muted-foreground leading-5">
+                          <span className="font-mono-plex text-[10px] text-[hsl(var(--ring))] mr-2">{String(i + 1).padStart(2, '0')}</span>{s}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  <p className="mt-3 text-xs italic text-muted-foreground border-l-2 border-[hsl(var(--ring))]/40 pl-3 leading-5">
+                    {artifact.handoff}
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant="secondary" data-testid="workbench-copy" onClick={copyArtifact}
+                      className="rounded-xl border border-border/70 active:scale-[0.98]">
+                      <Copy size={13} strokeWidth={1.75} className="mr-1.5" /> Copy
+                    </Button>
+                    {(artifact.channel === 'email' || artifact.subject) && (
+                      <Button size="sm" variant="secondary" asChild className="rounded-xl border border-border/70 active:scale-[0.98]">
+                        <a data-testid="workbench-mailto" href={mailtoHref}>
+                          <Mail size={13} strokeWidth={1.75} className="mr-1.5" /> Open in email
+                        </a>
+                      </Button>
+                    )}
+                    {artifact.channel === 'whatsapp' && (
+                      <Button size="sm" variant="secondary" asChild className="rounded-xl border border-border/70 active:scale-[0.98]">
+                        <a data-testid="workbench-whatsapp" href={waHref} target="_blank" rel="noreferrer">
+                          <MessageCircle size={13} strokeWidth={1.75} className="mr-1.5" /> Send on WhatsApp
+                        </a>
+                      </Button>
+                    )}
+                    <Button size="sm" data-testid="workbench-shipped-button"
+                      onClick={() => { setWorkbenchOpen(false); sendText('Done — I shipped it.'); }}
+                      disabled={thinking}
+                      className="rounded-xl ml-auto active:scale-[0.98]">
+                      I shipped it
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
 
               {thread.skip_list?.length > 0 && (
                 <Field label="Ignore for now" testId="situation-skip-list" refreshKey={refreshKey}>

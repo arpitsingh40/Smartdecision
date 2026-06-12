@@ -1,6 +1,7 @@
 import os
 import uuid
 import time
+import math
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,7 +14,7 @@ from pymongo import ReturnDocument
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from engine import classify_intent, rolling_fields, compute_reengagement_line, llm_turn
+from engine import classify_intent, rolling_fields, compute_reengagement_line, llm_turn, llm_complete_action
 from db import users_col, threads_col, events_col, telemetry_col
 from security import pwd, make_token, current_user
 from ledger import record_ledger, inc_stats, ensure_startup
@@ -161,6 +162,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal", c
             "current_big_picture": (out.get("big_picture_link") or "").strip() or None,
             "current_bold_move": (out.get("bold_move") or "").strip() or None,
             "current_mirror": out.get("mirror"),
+            "current_action_artifact": None,  # new action -> old "Do it for me" draft is stale
             "skip_list": out.get("skip_list", []),
             "last_turn_at": now,
             "snapshot_at_last_turn": new_snapshot,
@@ -293,6 +295,57 @@ def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
     fresh = threads_col.find_one({"thread_id": thread_id})
     return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"],
             "intent": intent, "credits": u["credits"], "model": model, "mode": body.mode, "cost": cost}
+
+# ----------------------------------------------------------------- "Do it for me": ship-ready artifact for the next action
+# Pricing (founder): 1 credit per 1,000 tokens (input+output combined), minimum 1.
+@api.post("/threads/{thread_id}/complete-action")
+def complete_action(thread_id: str, user: dict = Depends(current_user)):
+    t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
+    if not t:
+        raise HTTPException(404, "Thread not found")
+    if t["status"] != "active":
+        raise HTTPException(400, f"This thread is {t['status']}. Reactivate it to continue.")
+    if not t.get("current_next_action") or t["current_next_action"].startswith("(none"):
+        raise HTTPException(400, "No next action to complete yet.")
+    if user.get("credits", 0) < 1:
+        raise HTTPException(402, "Not enough credits")
+    t0 = time.time()
+    try:
+        out, model, usage = llm_complete_action(t)
+    except Exception as e:
+        log.error(f"complete-action failed: {e}")
+        raise HTTPException(502, "The engine could not prepare this. You were not charged — try again.")
+    total_tokens = usage["input_tokens"] + usage["output_tokens"]
+    cost = max(1, math.ceil(total_tokens / 1000))
+    now = now_utc()
+    # charge actual usage; balance never goes below zero
+    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": cost}},
+                                      {"$inc": {"credits": -cost}}, return_document=ReturnDocument.AFTER)
+    if not u:
+        u = users_col.find_one_and_update(
+            {"id": user["id"]},
+            [{"$set": {"credits": {"$max": [0, {"$subtract": ["$credits", cost]}]}}}],
+            return_document=ReturnDocument.AFTER)
+    users_col.update_one({"id": user["id"]}, {
+        "$inc": {"tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
+        "$set": {"last_active_at": now}})
+    artifact = {
+        "kind": out.get("kind", "draft"), "title": out.get("title", "Your draft"),
+        "channel": out.get("channel", "other"), "subject": out.get("subject"),
+        "artifact": out["artifact"], "steps": out.get("steps", []),
+        "handoff": out["handoff"], "time_estimate_min": out.get("time_estimate_min"),
+        "generated_at": now, "model": model, "cost": cost, "tokens": total_tokens,
+    }
+    threads_col.update_one({"thread_id": thread_id}, {"$set": {"current_action_artifact": artifact}})
+    record_ledger(user["id"], "action_assist", -cost, thread_id=thread_id,
+                  tokens=total_tokens, reason="do_it_for_me")
+    inc_stats({"credits_spent": cost, "assists_total": 1,
+               "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]})
+    telemetry_col.insert_one({"id": str(uuid.uuid4()), "type": "action_assist", "user_id": user["id"],
+                              "thread_id": thread_id, "model": model, "cost": cost,
+                              "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"],
+                              "latency_s": round(time.time() - t0, 2), "at": now})
+    return {"artifact": serialize(artifact), "credits": u.get("credits", 0), "cost": cost}
 
 @api.patch("/threads/{thread_id}/status")
 def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user)):

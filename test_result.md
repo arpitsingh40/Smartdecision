@@ -94,6 +94,18 @@ backend:
         agent: "testing"
         comment: "PASS - Turn economics and refund system working correctly: GET /credits returns turn_cost=5, ultra_turn_cost=10. POST /threads/{id}/turn with mode=normal returns 502 (expected due to placeholder ANTHROPIC_API_KEY) and credits remain unchanged (refund of 5 credits verified). POST /threads/{id}/turn with mode=ultra returns 502 and credits remain unchanged (refund of 10 credits verified). Invalid mode=turbo correctly returns 422. Refund guarantee working perfectly: credits before == credits after 502 error for both normal and ultra modes. This is EXPECTED BEHAVIOR until real API key is provided."
 
+  - task: "Do it for me: POST /api/threads/{id}/complete-action (artifact generation, 1 credit per 1k tokens min 1)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/backend/engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "llm_complete_action returns ship-ready draft or 10-minute kit JSON. Cost = ceil((in+out)/1000) min 1, charged AFTER call, floor-at-zero overdraft guard. Ledger type action_assist, stats assists_total. Stale artifact cleared on each new turn. Manually verified: 502 no-charge w/ placeholder key, 404, 401. Success path untestable until real ANTHROPIC_API_KEY."
+
 frontend:
   - task: "Founder OS UI (/admin: Overview/Users/Traffic/Usage tabs, user Q&A drilldown)"
     implemented: true
@@ -131,6 +143,9 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: >
+      NEW (iteration 6): complete-action endpoint added; only guard paths testable (LLM key placeholder).
   - agent: "main"
     message: >
       Backend ready for testing. Credentials in /app/memory/test_credentials.md

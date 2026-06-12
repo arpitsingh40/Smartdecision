@@ -92,6 +92,53 @@ def compute_reengagement_line(last_snap: dict, now_snap: dict, days_absent: int)
     key = f"{kind}_{'up' if sign > 0 else 'down'}"
     return PHRASE_BANK[key].format(days=days_absent, prior=last_snap.get("summary_line", "your last position"), mag=extra)
 
+# ------------------------------------------------- action assist: "Do it for me" (1 LLM call)
+ASSIST_SYSTEM = """You are the Deep Discussion Engine's execution hand. The user has ONE next action. Your job: remove every ounce of friction so they finish it in minutes, not days.
+Decide the kind:
+- "draft": the action produces a sendable/usable artifact (email, message, list, script, post, plan, outline, research summary). Write the FINISHED artifact in the user's voice - specific, ready to ship, grounded in everything known from the thread. No placeholders unless a fact is truly unknowable, then use [[FILL: what goes here]] sparingly.
+- "kit": the action is physical/real-world (a call, a visit, signing, a workout, a meeting). Produce the 10-minute version: the exact words to say or script to follow, what to bring/open, the smallest viable version that still counts as done.
+Rules: concrete over generic; their stated goal and why-it-matters are your material; zero fluff; the artifact must be genuinely shippable as-is.
+Return ONLY valid JSON, no markdown fences:
+{"kind": "draft" or "kit",
+ "title": "3-6 words naming the artifact",
+ "channel": "email"|"whatsapp"|"call"|"document"|"calendar"|"other",
+ "subject": "email subject line, or null if not an email",
+ "artifact": "the complete artifact text (for kit: the exact script/words + what to bring)",
+ "steps": ["2-4 micro-steps to ship it, each under 10 words"],
+ "handoff": "1 line: exactly what to do with this in the next 5 minutes",
+ "time_estimate_min": minutes_to_complete_as_integer}"""
+
+ASSIST_REQUIRED = ("kind", "title", "artifact", "handoff")
+
+def llm_complete_action(thread: dict):
+    """Generate the ship-ready artifact (or 10-minute kit) for the current next action."""
+    prompt = (
+        f"GOAL: {thread['goal']}\n"
+        f"WHY IT MATTERS TO THEM: {thread.get('why_now', '(not stated)')}\n"
+        f"STATE SUMMARY:\n{thread['current_state_summary']}\n"
+        f"EASIEST PATH: {thread['current_easiest_path']}\n"
+        f"NEXT ACTION TO COMPLETE: {thread['current_next_action']}\n"
+        f"PAYOFF WHEN DONE: {thread.get('current_action_payoff') or '(not stated)'}\n"
+        f"BIG PICTURE: {thread.get('current_big_picture') or '(not stated)'}\n"
+        "Produce the artifact or kit that completes this next action with minimal user effort."
+    )
+    last_err = None
+    for model in (PRIMARY_MODEL, FALLBACK_MODEL):
+        try:
+            r = client().messages.create(model=model, max_tokens=3000, system=ASSIST_SYSTEM,
+                                         messages=[{"role": "user", "content": prompt}])
+            txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+            txt = re.sub(r"^```(json)?|```$", "", txt, flags=re.M).strip()
+            out = json.loads(txt)
+            if not all(k in out for k in ASSIST_REQUIRED):
+                raise ValueError("incomplete JSON keys")
+            usage = {"input_tokens": int(getattr(r.usage, "input_tokens", 0) or 0),
+                     "output_tokens": int(getattr(r.usage, "output_tokens", 0) or 0)}
+            return out, model, usage
+        except Exception as e:
+            last_err = e
+    raise RuntimeError(f"All models failed: {last_err}")
+
 # ------------------------------------------------- single LLM call per turn
 SYSTEM = """You are the Deep Discussion Engine: a calm, direct companion holding a user's goal across weeks. Your only purpose: shrink the distance between knowing and doing.
 Rules: never announce memory ("as we discussed"); surface what changed, not recaps; acknowledge before answering (match the intent label); always converge to ONE next action doable in 24-48h; the easiest path forward given today's reality, not the ideal plan; warm, respectful, zero fluff, no lists of options. If intent is silence_breaker, gently name the silence without accusation and ask if the goal is still active or something shifted.

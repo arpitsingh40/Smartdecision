@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Wand2, Copy, Mail, MessageCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wand2, Copy, Mail, MessageCircle, SlidersHorizontal } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
@@ -40,6 +40,13 @@ const Field = ({ label, right, children, testId, refreshKey }) => (
 
 const ACTION_WINDOW_MS = 48 * 3600 * 1000;
 
+const ADJUST_CHIPS = [
+  { id: 'no-time', label: 'No time', phrase: "I don't have time for this step as written." },
+  { id: 'blocked', label: 'Blocked by someone', phrase: "I'm blocked by someone else on this step." },
+  { id: 'not-sure-how', label: 'Not sure how', phrase: "I'm not sure how to actually do this step." },
+  { id: 'different-idea', label: 'I have a different idea', phrase: 'I have a different idea for this step.' },
+];
+
 const fmtRemaining = (ms) => {
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
@@ -60,6 +67,9 @@ export default function ThreadPage() {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [assistLoading, setAssistLoading] = useState(false);
   const [workbenchOpen, setWorkbenchOpen] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjustChip, setAdjustChip] = useState(null);
+  const [adjustText, setAdjustText] = useState('');
   const [artifactEdit, setArtifactEdit] = useState(null); // { key, text } — local edits per generated artifact
   const composerRef = useRef(null);
 
@@ -77,27 +87,45 @@ export default function ThreadPage() {
     }).catch(() => toast.error('Thread not found.'));
   }, [threadId]);
 
-  const sendText = useCallback(async (text) => {
+  const sendText = useCallback(async (text, adjust = false) => {
     const msg = (text || '').trim();
-    if (!msg || thinking) return;
+    if (!msg || thinking) return false;
     setThinking(true);
     try {
-      const r = await api.post(`/threads/${threadId}/turn`, { message: msg, mode });
+      const r = await api.post(`/threads/${threadId}/turn`, {
+        message: msg, mode: adjust ? 'normal' : mode, adjust,
+      });
       setThread(r.data.thread);
       setCredits(r.data.credits);
       setMessage('');
       setReengagement(null);
       setActionOverdue(false);
       setRefreshKey((k) => k + 1);
+      return true;
     } catch (err) {
       const msg402 = err.response?.status === 402;
       toast.error(msg402 ? 'Not enough credits for this turn.' : err.response?.data?.detail || 'The engine did not respond. Try again.');
+      return false;
     } finally {
       setThinking(false);
     }
   }, [thinking, threadId, setCredits, mode]);
 
   const send = useCallback(() => sendText(message), [sendText, message]);
+
+  const sendAdjust = useCallback(async () => {
+    const chip = ADJUST_CHIPS.find((c) => c.id === adjustChip);
+    const extra = adjustText.trim();
+    if (!chip && !extra) return;
+    const composed = `About the next action you gave me: ${chip ? chip.phrase + ' ' : ''}${extra}`.trim();
+    const ok = await sendText(composed, true);
+    if (ok) {
+      setAdjustOpen(false);
+      setAdjustChip(null);
+      setAdjustText('');
+      toast.success('Step reshaped around your input.');
+    }
+  }, [adjustChip, adjustText, sendText]);
 
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -292,17 +320,60 @@ export default function ThreadPage() {
                   )}
                   {!inactive && (
                     <div className="mt-3 pt-3 border-t border-border/60 flex flex-wrap items-center justify-between gap-2">
-                      <Button size="sm" variant="secondary" data-testid="do-it-for-me-button"
-                        onClick={artifact ? () => setWorkbenchOpen((o) => !o) : doItForMe}
-                        disabled={assistLoading || thinking}
-                        className="rounded-xl border border-border/70 bg-white active:scale-[0.98] transition-colors">
-                        <Wand2 size={14} strokeWidth={1.75} className="mr-1.5" />
-                        {assistLoading ? 'Preparing your draft…' : artifact ? (workbenchOpen ? 'Hide the draft' : 'Open the draft') : 'Do it for me'}
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" variant="secondary" data-testid="do-it-for-me-button"
+                          onClick={artifact ? () => setWorkbenchOpen((o) => !o) : doItForMe}
+                          disabled={assistLoading || thinking}
+                          className="rounded-xl border border-border/70 bg-white active:scale-[0.98] transition-colors">
+                          <Wand2 size={14} strokeWidth={1.75} className="mr-1.5" />
+                          {assistLoading ? 'Preparing your draft…' : artifact ? (workbenchOpen ? 'Hide the draft' : 'Open the draft') : 'Do it for me'}
+                        </Button>
+                        <Button size="sm" variant="secondary" data-testid="adjust-step-button"
+                          onClick={() => setAdjustOpen((o) => !o)} disabled={thinking}
+                          aria-expanded={adjustOpen}
+                          className="rounded-xl border border-border/70 bg-white active:scale-[0.98] transition-colors">
+                          <SlidersHorizontal size={14} strokeWidth={1.75} className="mr-1.5" />
+                          Adjust this step
+                        </Button>
+                      </div>
                       {!artifact && (
                         <span className="font-mono-plex text-[10px] text-muted-foreground">~1 credit / 1k tokens</span>
                       )}
                     </div>
+                  )}
+                  {adjustOpen && !inactive && (
+                    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
+                      data-testid="adjust-panel" className="mt-3 pt-3 border-t border-border/60">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {"What's in the way — or what's your version of this step? The engine will reshape it around you."}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mb-2.5">
+                        {ADJUST_CHIPS.map((c) => (
+                          <button key={c.id} type="button" data-testid={`adjust-chip-${c.id}`}
+                            onClick={() => setAdjustChip((cur) => (cur === c.id ? null : c.id))}
+                            disabled={thinking}
+                            className={`px-2.5 py-1.5 rounded-lg text-[11px] border transition-colors ${
+                              adjustChip === c.id
+                                ? 'bg-foreground text-background border-transparent'
+                                : 'bg-white border-border/70 text-muted-foreground hover:text-foreground'}`}>
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input data-testid="adjust-input" value={adjustText}
+                          onChange={(e) => setAdjustText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendAdjust(); } }}
+                          disabled={thinking} maxLength={300}
+                          placeholder="Your obstacle, or your version of the step…"
+                          className="flex-1 bg-white border border-border/70 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]" />
+                        <Button size="sm" data-testid="adjust-send-button"
+                          onClick={sendAdjust} disabled={thinking || (!adjustChip && !adjustText.trim())}
+                          className="rounded-xl shrink-0 active:scale-[0.98] transition-colors">
+                          {thinking ? 'Reshaping…' : 'Reshape · 5'}
+                        </Button>
+                      </div>
+                    </motion.div>
                   )}
                 </div>
               </Field>

@@ -68,6 +68,7 @@ class GoalIn(BaseModel):
 class TurnIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     mode: str = "normal"  # normal (Opus 4.8) | ultra (Fable 5 ultra thinking)
+    adjust: bool = False  # true = user is reshaping the current next action (obstacle / their version)
 
 class StatusIn(BaseModel):
     status: str  # active | paused | graduated | released
@@ -112,7 +113,8 @@ def me(user: dict = Depends(current_user)):
     return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin"))}
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
-def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal", cost: int = None):
+def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal", cost: int = None,
+                 intent_override: str = None):
     t0 = time.time()
     cost = cost if cost is not None else (ULTRA_TURN_COST if mode == "ultra" else TURN_COST)
     now = now_utc()
@@ -132,8 +134,8 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal", c
         else:
             break
     substrate["streak"] = streak
-    # step 3: intent (pure)
-    intent = classify_intent(message, days_gap)
+    # step 3: intent (pure; explicit override wins - e.g. action_adjust from the next-action block)
+    intent = intent_override or classify_intent(message, days_gap)
     # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5)
     out, model, usage = llm_turn(thread, substrate, message, intent, mode)
     sig = out["signals"]
@@ -286,7 +288,8 @@ def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
     if not u:
         raise HTTPException(402, "Not enough credits")
     try:
-        out, intent, model, latency = run_pipeline(t, user, body.message.strip(), body.mode, cost)
+        out, intent, model, latency = run_pipeline(t, user, body.message.strip(), body.mode, cost,
+                                                   intent_override="action_adjust" if body.adjust else None)
     except Exception as e:
         users_col.update_one({"id": user["id"]}, {"$inc": {"credits": cost}})  # refund
         log.error(f"turn failed: {e}")

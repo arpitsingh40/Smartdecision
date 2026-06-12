@@ -139,15 +139,33 @@ backend:
 frontend:
   - task: "Feedback dialog (TopBar link) + Admin Feedback tab (summary, filters, status select)"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/components/FeedbackDialog.js, TopBar.js, /app/frontend/src/pages/AdminPage.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "NEW (iteration 7). Header 'Feedback' link on every TopBar page opens dialog (5 stars, category pills, textarea, sonner toast). Admin /admin Feedback tab: summary stats, All/New/Reviewed/Resolved filters, table w/ stars + category badge + status dropdown (PATCH), pagination. Visually verified full flow via screenshots: submit as demo -> appears in founder Feedback tab."
+      - working: true
+        agent: "testing"
+        comment: "PASS - All 9 feedback UI tests passed successfully. TEST A1: Login and feedback dialog opens with correct title 'Share feedback'. TEST A2: Submit button correctly disabled until both rating and message provided. TEST A3: Feedback submission successful with unique message 'UI test feedback 1781275158', success toast appeared, dialog closed. TEST A4: Logout/login as admin successful. TEST A5: Admin page navigation and Feedback tab working, summary stats and table rendered. TEST A6: Submitted feedback appears in table with 5 stars, PRAISE badge, status 'New'. TEST A7: Status change to 'Reviewed' successful. TEST A8: Status filter pills (New/Reviewed) working correctly. TEST A9: Feedback link exists and visible on admin page TopBar. All core functionality working perfectly."
+
+  - task: "Adjust-step UI (panel with chips, input, reshape button in ThreadPage)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/ThreadPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (iteration 8). Adjust-step button next to 'Do it for me', opens panel with 4 chips (no-time, blocked, not-sure-how, different-idea), input field, and 'Reshape · 5' button. Button disabled when no chip and no input. Sends adjust turn to backend."
+      - working: true
+        agent: "testing"
+        comment: "PASS - All 6 adjust-step UI tests passed successfully. TEST B1: Navigation to thread 5da96480-6c43-49b7-990b-e0c76de387da successful. TEST B2: 'Adjust this step' button exists and visible next to 'Do it for me'. TEST B3: Panel opens with all 4 chips (no-time, blocked, not-sure-how, different-idea), input field, and 'Reshape · 5' button. TEST B4: Button enable/disable logic working correctly (disabled when no chip and no input, enabled with chip or input). TEST B5: Sent 1 REAL adjust request - credits decreased by exactly 5 (50→45), next action text changed from 'Today, send only the collaborator line...' to 'Copy this, swap the brackets, send it today...', panel closed after sending. TEST B6: Panel can be reopened and is reset (no chip selected, empty input). All functionality working perfectly. Used exactly 1 real LLM call as required."
 
   - task: "Founder OS UI (/admin: Overview/Users/Traffic/Usage tabs, user Q&A drilldown)"
     implemented: true
@@ -175,7 +193,7 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.5"
-  test_sequence: 10
+  test_sequence: 11
   run_ui: false
 
 test_plan:
@@ -202,6 +220,16 @@ agent_communication:
       Guards: invalid mode -> 422, unknown thread -> 404, no token -> 401.
       Note: Pydantic coerces string 'yes' to boolean True (expected behavior).
       All adjust-this-step turn functionality is production-ready.
+  - agent: "testing"
+    message: >
+      FEEDBACK + ADJUST-STEP UI TESTED (iteration 8 frontend) - All tests passed ✓
+      Comprehensive UI testing completed for both new features.
+      
+      FEEDBACK FEATURE (9 tests, no cost): Login as demo user, feedback dialog opens with correct title. Submit button disabled until rating+message provided. Submitted feedback 'UI test feedback 1781275158' with 5 stars and PRAISE category. Success toast appeared, dialog closed. Logged out and logged in as admin (ceo@smartdecigen.com). Navigated to /admin, clicked Feedback tab. Summary stats rendered correctly. Submitted feedback appears in table with 5 stars, PRAISE badge, status 'New'. Changed status to 'Reviewed' via dropdown, verified persistence. Status filter pills (New/Reviewed) working correctly. Feedback link exists on admin page TopBar. All feedback UI functionality working perfectly.
+      
+      ADJUST-STEP FEATURE (6 tests, 1 real LLM call): Navigated to thread 5da96480-6c43-49b7-990b-e0c76de387da. 'Adjust this step' button exists next to 'Do it for me'. Panel opens with 4 chips (no-time, blocked, not-sure-how, different-idea), input field, and 'Reshape · 5' button. Button enable/disable logic working (disabled when no chip and no input, enabled with chip or input). Sent 1 REAL adjust request with chip 'Not sure how' + text "I don't know what to write in the one-line message". Credits decreased by exactly 5 (50→45). Next action text changed from 'Today, send only the collaborator line...' to 'Copy this, swap the brackets, send it today...'. Panel closed after sending. Panel can be reopened and is reset. All adjust-step UI functionality working perfectly.
+      
+      Used exactly 1 real LLM call as required (not 2 - only frontend testing, backend was already tested). Both features are production-ready.
   - agent: "main"
     message: >
       LIVE KEYS SET (iteration 7b): real ANTHROPIC_API_KEY (normal+ultra turns verified live,

@@ -135,14 +135,23 @@ def create_order(body: OrderIn, request: Request, user: dict = Depends(current_u
         return {"order_id": order_id, "test_mode": True,
                 "checkout_url": f"{front}/pay/test-checkout?order_id={order_id}"}
     try:
+        desc = f"SmartDecigen top-up: {pack['label']}"
+        hosted = {
+            "description": desc,
+            "success_url": f"{front}/pay/result?order_id={order_id}",
+            "failure_url": f"{front}/pay/result?order_id={order_id}",
+        }
+        if user.get("name"):
+            hosted["name"] = str(user["name"])[:100]
+        if user.get("email"):
+            hosted["email"] = user["email"]
         resp = _zoho_api("POST", "/paymentsessions", {
-            "amount": str(pack["amount_inr"]),
-            "currency_code": "INR",
-            "configurations": {"hosted_checkout_parameters": {
-                "success_url": f"{front}/pay/result?order_id={order_id}",
-                "failure_url": f"{front}/pay/result?order_id={order_id}",
-                "description": f"SmartDecigen top-up: {pack['label']}",
-            }},
+            "amount": float(pack["amount_inr"]),
+            "currency": "INR",
+            "description": desc,
+            "reference_number": order_id[:50],
+            "meta_data": [{"key": "order_id", "value": order_id}],
+            "configurations": {"hosted_page_parameters": hosted},
         })
         data = resp.get("payments_session") or resp.get("data") or resp
         session_id = data.get("payments_session_id") or data.get("payment_session_id")
@@ -193,7 +202,9 @@ def order_status(order_id: str, user: dict = Depends(current_user)):
             resp = _zoho_api("GET", f"/paymentsessions/{order['zoho_session_id']}")
             data = resp.get("payments_session") or resp.get("data") or resp
             pay_status = (data.get("payment_status") or data.get("status") or "").lower()
-            payment_id = data.get("payment_id")
+            pays = data.get("payments") or []
+            payment_id = (pays[0].get("payment_id") if pays and isinstance(pays[0], dict)
+                          else data.get("payment_id"))
             if payment_id:
                 orders_col.update_one({"order_id": order_id}, {"$set": {"zoho_payment_id": payment_id}})
             if pay_status in ("succeeded", "success", "captured", "paid"):

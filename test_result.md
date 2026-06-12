@@ -172,6 +172,13 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: >
+      LIVE KEYS SET (iteration 7b): real ANTHROPIC_API_KEY (normal+ultra turns verified live,
+      correct 5/10 credit costs). Zoho Payments LIVE (ZOHO_TEST_MODE=false): fixed
+      /paymentsessions payload per official spec (amount float + currency + hosted_page_parameters);
+      live create-order verified -> real payments.zoho.in/hostedcheckout URL; status poll verified.
+      test-complete correctly 403 in live mode. DO NOT run real payment completion in tests.
+  - agent: "main"
+    message: >
       NEW (iteration 7): Feedback feature. Env was reset at session start: backend/.env + frontend/.env
       recreated (ANTHROPIC_API_KEY still PLACEHOLDER). Test ONLY the feedback APIs:
       POST /api/feedback (auth required, validate 422 on bad rating/category/empty message),

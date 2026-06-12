@@ -6,7 +6,7 @@ import os
 import uuid
 import logging
 from db import (users_col, threads_col, events_col, telemetry_col, ledger_col,
-                stats_col, traffic_col, geo_col, orders_col)
+                stats_col, traffic_col, geo_col, orders_col, feedback_col)
 from security import pwd, now_utc
 
 log = logging.getLogger("ledger")
@@ -59,6 +59,10 @@ def ensure_startup():
     orders_col.create_index("zoho_session_id")
     geo_col.create_index("ip", unique=True)
     stats_col.create_index("id", unique=True)
+    feedback_col.create_index("id", unique=True)
+    feedback_col.create_index([("created_at", -1)])
+    feedback_col.create_index([("status", 1), ("created_at", -1)])
+    feedback_col.create_index([("category", 1), ("created_at", -1)])
 
     # ---- founder account (idempotent) ----
     existing = users_col.find_one({"email": ADMIN_EMAIL})

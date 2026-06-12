@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Users, Activity, Globe, Coins } from 'lucide-react';
+import { ArrowLeft, Users, Activity, Globe, Coins, Star } from 'lucide-react';
 import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
@@ -272,12 +272,116 @@ function UsageTab() {
   );
 }
 
+// ---------------------------------------------------------------- Feedback
+const STATUS_FILTERS = [
+  { id: '', label: 'All' },
+  { id: 'new', label: 'New' },
+  { id: 'reviewed', label: 'Reviewed' },
+  { id: 'resolved', label: 'Resolved' },
+];
+const CATEGORY_STYLE = {
+  bug: 'bg-red-50 text-red-700 border-red-200',
+  idea: 'bg-blue-50 text-blue-700 border-blue-200',
+  praise: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  other: 'bg-secondary text-muted-foreground border-border/70',
+};
+
+const Stars = ({ n }) => (
+  <span className="inline-flex items-center gap-0.5" title={`${n}/5`}>
+    {[1, 2, 3, 4, 5].map((i) => (
+      <Star key={i} size={12} strokeWidth={1.5}
+        className={i <= n ? 'fill-amber-400 text-amber-400' : 'text-border'} />
+    ))}
+  </span>
+);
+
+function FeedbackTab() {
+  const [data, setData] = useState(null);
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState('');
+  const load = useCallback(() => {
+    const params = { page, limit: 25 };
+    if (status) params.status = status;
+    api.get('/admin/feedback', { params }).then((r) => setData(r.data)).catch(() => {});
+  }, [page, status]);
+  useEffect(() => { load(); }, [load]);
+
+  const setRowStatus = (id, newStatus) => {
+    api.patch(`/admin/feedback/${id}`, { status: newStatus }).then(() => load()).catch(() => {});
+  };
+
+  if (!data) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
+  const s = data.summary;
+  return (
+    <div data-testid="admin-feedback" className="mt-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Stat testId="feedback-stat-total" label="Total feedback" value={fmt(s.total)} />
+        <Stat testId="feedback-stat-new" label="Awaiting review" value={fmt(s.by_status.new)}
+          sub={`${fmt(s.by_status.reviewed)} reviewed · ${fmt(s.by_status.resolved)} resolved`} />
+        <Stat label="Avg rating" value={s.avg_rating ? `${s.avg_rating} / 5` : '—'} />
+        <Stat label="By type" value={`${fmt(s.by_category.bug)} bugs · ${fmt(s.by_category.idea)} ideas`}
+          sub={`${fmt(s.by_category.praise)} praise · ${fmt(s.by_category.other)} other`} />
+      </div>
+      <div className="flex items-center gap-1.5 mt-4">
+        {STATUS_FILTERS.map((f) => (
+          <button key={f.id} data-testid={`feedback-filter-${f.id || 'all'}`}
+            onClick={() => { setPage(1); setStatus(f.id); }}
+            className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+              status === f.id
+                ? 'bg-[hsl(var(--accent))] border-transparent text-foreground'
+                : 'bg-white border-border/70 text-muted-foreground hover:text-foreground'}`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-4 bg-white border border-border/70 rounded-xl overflow-x-auto">
+        <table className="w-full" data-testid="admin-feedback-table">
+          <thead className="border-b border-border/70">
+            <tr><Th>User</Th><Th>Rating</Th><Th>Type</Th><Th>Message</Th><Th>When</Th><Th>Status</Th></tr>
+          </thead>
+          <tbody>
+            {data.items.map((f) => (
+              <tr key={f.id} data-testid="feedback-row"
+                className={`border-b border-border/40 last:border-0 align-top ${f.status === 'new' ? 'bg-amber-50/40' : ''}`}>
+                <Td>
+                  <span className="font-medium text-[12px]">{f.user_name || '—'}</span>
+                  <span className="block text-[11px] text-muted-foreground">{f.user_email}</span>
+                </Td>
+                <Td><Stars n={f.rating} /></Td>
+                <Td>
+                  <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wider border ${CATEGORY_STYLE[f.category] || CATEGORY_STYLE.other}`}>
+                    {f.category}
+                  </span>
+                </Td>
+                <Td className="max-w-md"><span className="whitespace-pre-wrap break-words">{f.message}</span></Td>
+                <Td mono>{fmtDate(f.created_at)}</Td>
+                <Td>
+                  <select data-testid="feedback-status-select" value={f.status}
+                    onChange={(e) => setRowStatus(f.id, e.target.value)}
+                    className="bg-white border border-border/70 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] cursor-pointer">
+                    <option value="new">New</option>
+                    <option value="reviewed">Reviewed</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                </Td>
+              </tr>
+            ))}
+            {data.items.length === 0 && <tr><Td className="text-muted-foreground" colSpan={6}>No feedback yet.</Td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} pages={data.pages} onPage={setPage} />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- page
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'users', label: 'Users' },
   { id: 'traffic', label: 'Traffic' },
   { id: 'usage', label: 'Usage' },
+  { id: 'feedback', label: 'Feedback' },
 ];
 
 export default function AdminPage() {
@@ -309,6 +413,7 @@ export default function AdminPage() {
         {tab === 'users' && <UsersTab />}
         {tab === 'traffic' && <TrafficTab />}
         {tab === 'usage' && <UsageTab />}
+        {tab === 'feedback' && <FeedbackTab />}
       </main>
     </div>
   );

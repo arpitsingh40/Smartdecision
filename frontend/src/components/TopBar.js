@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, CircleUser, Plus, LayoutDashboard } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import { FeedbackDialog } from './FeedbackDialog';
 import { useAuth } from '../App';
 
 export const TopBar = ({ title, backTo }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   return (
     <header className="relative z-10 flex items-center justify-between max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-2">
       <div className="flex items-center gap-3 min-w-0">
@@ -22,6 +25,12 @@ export const TopBar = ({ title, backTo }) => {
         <h1 className="font-display text-lg sm:text-xl truncate">{title}</h1>
       </div>
       <div className="flex items-center gap-4 shrink-0">
+        <button data-testid="feedback-link" onClick={() => setFeedbackOpen(true)}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          title="Share feedback">
+          <MessageSquare size={13} strokeWidth={1.75} />
+          <span className="hidden sm:inline">Feedback</span>
+        </button>
         <button data-testid="credits-balance" onClick={() => navigate('/billing')}
           className="group flex items-center gap-1 font-mono-plex text-xs text-muted-foreground hover:text-foreground transition-colors"
           title="Buy credits">
@@ -40,6 +49,9 @@ export const TopBar = ({ title, backTo }) => {
             <DropdownMenuItem data-testid="buy-credits-menu" onClick={() => navigate('/billing')} className="text-sm cursor-pointer">
               <Plus size={16} strokeWidth={1.75} className="mr-2" /> Buy credits
             </DropdownMenuItem>
+            <DropdownMenuItem data-testid="feedback-menu" onClick={() => setFeedbackOpen(true)} className="text-sm cursor-pointer">
+              <MessageSquare size={16} strokeWidth={1.75} className="mr-2" /> Share feedback
+            </DropdownMenuItem>
             {user?.is_admin && (
               <DropdownMenuItem data-testid="founder-os-menu" onClick={() => navigate('/admin')} className="text-sm cursor-pointer">
                 <LayoutDashboard size={16} strokeWidth={1.75} className="mr-2" /> Founder OS
@@ -52,6 +64,7 @@ export const TopBar = ({ title, backTo }) => {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </header>
   );
 };

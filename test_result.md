@@ -106,7 +106,34 @@ backend:
         agent: "main"
         comment: "llm_complete_action returns ship-ready draft or 10-minute kit JSON. Cost = ceil((in+out)/1000) min 1, charged AFTER call, floor-at-zero overdraft guard. Ledger type action_assist, stats assists_total. Stale artifact cleared on each new turn. Manually verified: 502 no-charge w/ placeholder key, 404, 401. Success path untestable until real ANTHROPIC_API_KEY."
 
+  - task: "User feedback APIs (POST /api/feedback, GET /api/admin/feedback, PATCH /api/admin/feedback/{id})"
+    implemented: true
+    working: true
+    file: "/app/backend/feedback.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (iteration 7). POST /api/feedback (auth user): {rating 1-5, category bug|idea|praise|other, message 1-2000ch} -> stores doc status=new. GET /api/admin/feedback (admin only, 403 otherwise): page/limit/status/category filters + summary {total, by_status, by_category, avg_rating}. PATCH /api/admin/feedback/{id} {status new|reviewed|resolved} -> updated item, 404 if missing. Indexes added in ledger.ensure_startup. Manually verified via curl: submit, list+summary, patch reviewed, 403 non-admin."
+      - working: true
+        agent: "testing"
+        comment: "PASS - All 22 feedback API tests passed successfully. POST /api/feedback: valid submission returns 200 with id, all validation cases work correctly (rating 0/6->422, invalid category->422, empty/missing message->422), no auth->401. GET /api/admin/feedback: returns correct structure with summary (total, by_status, by_category, avg_rating) and items with all required fields (id, user_email, user_name, rating, category, message, status, created_at), newly submitted feedback appears with status='new', filters (status=new, status=resolved) work correctly, pagination works, non-admin->403, no auth->401. PATCH /api/admin/feedback/{id}: status transitions (new->reviewed->resolved) work and persist, invalid status 'archived'->422, unknown id->404, non-admin->403. All endpoints working correctly."
+
 frontend:
+  - task: "Feedback dialog (TopBar link) + Admin Feedback tab (summary, filters, status select)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/FeedbackDialog.js, TopBar.js, /app/frontend/src/pages/AdminPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (iteration 7). Header 'Feedback' link on every TopBar page opens dialog (5 stars, category pills, textarea, sonner toast). Admin /admin Feedback tab: summary stats, All/New/Reviewed/Resolved filters, table w/ stars + category badge + status dropdown (PATCH), pagination. Visually verified full flow via screenshots: submit as demo -> appears in founder Feedback tab."
+
   - task: "Founder OS UI (/admin: Overview/Users/Traffic/Usage tabs, user Q&A drilldown)"
     implemented: true
     working: "NA"
@@ -133,7 +160,7 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.5"
-  test_sequence: 9
+  test_sequence: 10
   run_ui: false
 
 test_plan:
@@ -143,6 +170,14 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: >
+      NEW (iteration 7): Feedback feature. Env was reset at session start: backend/.env + frontend/.env
+      recreated (ANTHROPIC_API_KEY still PLACEHOLDER). Test ONLY the feedback APIs:
+      POST /api/feedback (auth required, validate 422 on bad rating/category/empty message),
+      GET /api/admin/feedback (admin only: summary+items+pagination+status filter),
+      PATCH /api/admin/feedback/{id} (status transitions, 404 unknown id), 403 for non-admin,
+      401 unauthenticated. Credentials in /app/memory/test_credentials.md.
   - agent: "main"
     message: >
       NEW (iteration 6): complete-action endpoint added; only guard paths testable (LLM key placeholder).
@@ -169,4 +204,12 @@ agent_communication:
       Admin overview verified: credits_issued_free=200, credits_issued_paid=100, revenue_inr=399, purchases=1.
       
       READY FOR MAIN AGENT TO SUMMARIZE AND FINISH. All backend functionality is working correctly.
+  - agent: "testing"
+    message: >
+      FEEDBACK APIs TESTED (iteration 7) - All 22 tests passed ✓
+      Comprehensive testing of new feedback feature completed successfully.
+      POST /api/feedback: Valid submission, all validation cases (rating bounds, category, message), auth checks working.
+      GET /api/admin/feedback: Correct structure with summary stats, items with all required fields, filters (status, pagination), auth checks (403 non-admin, 401 no token) working.
+      PATCH /api/admin/feedback/{id}: Status transitions (new->reviewed->resolved) working and persisting, validation (invalid status, unknown id), auth checks (403 non-admin) working.
+      All feedback endpoints are production-ready.
 

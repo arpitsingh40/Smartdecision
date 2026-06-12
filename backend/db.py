@@ -20,3 +20,4 @@ stats_col = db.stats                   # single pre-aggregated counters doc (O(1
 traffic_col = db.traffic_sessions      # visitor sessions: ip/city/country/time-spent
 geo_col = db.geo_cache                 # ip -> city/country (permanent cache, 1 lookup per ip ever)
 orders_col = db.payment_orders         # zoho top-up orders (immutable amounts + status history)
+feedback_col = db.feedback             # user feedback (rating/category/message, founder-reviewed)

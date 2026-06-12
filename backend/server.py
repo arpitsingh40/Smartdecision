@@ -21,6 +21,7 @@ from ledger import record_ledger, inc_stats, ensure_startup
 from tracking import router as tracking_router, client_ip, geo_lookup
 from admin import router as admin_router
 from payments import router as payments_router
+from feedback import router as feedback_router
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
@@ -368,6 +369,7 @@ app.include_router(api)
 app.include_router(tracking_router)
 app.include_router(admin_router)
 app.include_router(payments_router)
+app.include_router(feedback_router)
 
 @app.on_event("startup")
 def _startup():

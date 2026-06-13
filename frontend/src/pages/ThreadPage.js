@@ -337,7 +337,11 @@ export default function ThreadPage() {
                   )
                 ) : null}>
                 <div className="rounded-xl bg-[hsl(var(--accent))]/60 border border-border/70 px-4 py-3">
-                  <p className="font-display text-base md:text-lg leading-snug">{thread.current_next_action}</p>
+                  <p className={`leading-snug ${(thread.current_next_action || '').length > 80
+                    ? 'text-[15px] md:text-base font-medium text-foreground'
+                    : 'font-display text-base md:text-lg'}`}>
+                    {thread.current_next_action}
+                  </p>
                   {thread.current_action_payoff && (
                     <p data-testid="action-payoff" className="mt-2 text-sm leading-6 text-foreground/85">
                       <span className="text-[hsl(var(--ring))] mr-1.5" aria-hidden="true">↳</span>

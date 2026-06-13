@@ -171,7 +171,7 @@ export default function AuthPage() {
                 {isSignup ? (
                   <>
                     <Sparkles size={11} className="text-[#b89165]" />
-                    <span>20 free credits · No card · ~30 seconds</span>
+                    <span>100 free credits · No card · ~30 seconds</span>
                   </>
                 ) : (
                   <span>Pick up the thread you left.</span>

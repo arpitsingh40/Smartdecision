@@ -7,6 +7,7 @@ import { Separator } from '../components/ui/separator';
 import { Skeleton } from '../components/ui/skeleton';
 import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
+import { useAuth } from '../App';
 
 const paceStyle = {
   ahead: 'text-[hsl(var(--success))]',
@@ -22,6 +23,7 @@ const statusStyle = {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [goals, setGoals] = useState(null);
   const [momentum, setMomentum] = useState(null);
 
@@ -97,7 +99,7 @@ export default function DashboardPage() {
                   ['03', 'Be remembered', 'Return anytime — it knows what changed while you were gone.'],
                 ].map(([n, title, line]) => (
                   <div key={n} className="px-4">
-                    <p className="font-mono-plex text-[11px] text-[hsl(var(--ring))] mb-1.5">{n}</p>
+                    <p className="text-[10px] tracking-[0.28em] text-[hsl(var(--ring))] mb-1.5 font-semibold">{n}</p>
                     <p className="text-sm font-medium">{title}</p>
                     <p className="text-xs text-muted-foreground leading-relaxed mt-1">{line}</p>
                   </div>
@@ -108,8 +110,9 @@ export default function DashboardPage() {
                   className="rounded-xl px-8 h-12 text-[15px] shadow-md hover:shadow-lg active:scale-[0.98] transition-all">
                   Open your first thread
                 </Button>
-                <p className="font-mono-plex text-[11px] text-muted-foreground mt-3.5">
-                  2 minutes to start · 100 free credits — your first 20 moves
+                <p className="text-[11px] text-muted-foreground mt-3.5 tracking-wide">
+                  Takes about two minutes
+                  {typeof user?.credits === 'number' ? ` · ${user.credits} free credits ready` : ''}
                 </p>
               </div>
             </CardContent>

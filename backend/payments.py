@@ -265,6 +265,12 @@ def _verify_webhook_signature(raw: bytes, header_value: str, key: str) -> bool:
         ts, sig = parts.get("t"), parts.get("v")
         if not ts or not sig:
             return False
+        # replay protection: reject if timestamp is older than 5 minutes (or unparseable)
+        try:
+            if abs(time.time() - int(ts)) > 300:
+                return False
+        except (ValueError, TypeError):
+            return False
         mac = hmac.new(key.encode(), msg=f"{ts}.{raw.decode()}".encode(), digestmod=hashlib.sha256)
         return hmac.compare_digest(mac.hexdigest(), sig)
     except Exception:

@@ -225,7 +225,10 @@ def create_goal(body: GoalIn, user: dict = Depends(current_user)):
     try:
         out, intent, model, latency, usage = run_pipeline(thread, user, body.why_now.strip())
     except Exception as e:
-        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
+        try:
+            users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
+        except Exception as refund_err:
+            log.error(f"CRITICAL: refund failed after goal-open LLM failure for user={user['id']} reserve={reserve}: {refund_err}")
         threads_col.delete_one({"thread_id": thread["thread_id"]})
         log.error(f"goal creation turn failed: {e}")
         raise HTTPException(502, "The engine could not open this thread. You were not charged — try again.")
@@ -314,7 +317,10 @@ def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
         out, intent, model, latency, usage = run_pipeline(t, user, body.message.strip(), body.mode,
                                                    intent_override="action_adjust" if body.adjust else None)
     except Exception as e:
-        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
+        try:
+            users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
+        except Exception as refund_err:
+            log.error(f"CRITICAL: refund failed after turn LLM failure for user={user['id']} reserve={reserve}: {refund_err}")
         log.error(f"turn failed: {e}")
         raise HTTPException(502, "The engine did not respond. You were not charged — try again.")
     actual = token_cost(usage["input_tokens"], usage["output_tokens"])

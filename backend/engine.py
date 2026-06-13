@@ -122,6 +122,8 @@ ASSIST_REQUIRED = ("kind", "title", "artifact", "handoff")
 
 def llm_complete_action(thread: dict):
     """Generate the ship-ready artifact (or 10-minute kit) for the current next action."""
+    saved_facts = (thread.get("current_file_facts") or "").strip()
+    facts_block = f"FILE_FACTS (from a file the user attached earlier — the artifact must USE these numbers, not ask the user to re-derive them):\n{saved_facts}\n" if saved_facts else ""
     prompt = (
         f"GOAL: {thread['goal']}\n"
         f"WHY IT MATTERS TO THEM: {thread.get('why_now', '(not stated)')}\n"
@@ -130,6 +132,7 @@ def llm_complete_action(thread: dict):
         f"NEXT ACTION TO COMPLETE: {thread['current_next_action']}\n"
         f"PAYOFF WHEN DONE: {thread.get('current_action_payoff') or '(not stated)'}\n"
         f"BIG PICTURE: {thread.get('current_big_picture') or '(not stated)'}\n"
+        f"{facts_block}"
         "Produce the artifact or kit that completes this next action with minimal user effort."
     )
     last_err = None
@@ -274,6 +277,10 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                        "Recalibrate: keep what works about it, redesign it around their input. "
                        "The refreshed_next_action must visibly incorporate their words.\n")
     vision_blocks, file_text = build_attachment_blocks(attachment)
+    # Saved file snapshot from a prior turn (set when the user attached a file earlier).
+    # Inject so the engine reasons on what it already saw, without the user re-uploading.
+    saved_facts = (thread.get("current_file_facts") or "").strip()
+    facts_block = f"\nFILE_FACTS (from a file the user attached earlier — still valid this turn):\n{saved_facts}\n" if saved_facts else ""
     prompt = (
         f"GOAL: {thread['goal']}\n"
         f"WHY IT MATTERS TO THEM (their words at the start): {thread.get('why_now', '(not stated)')}\n"
@@ -284,6 +291,7 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         f"SUBSTRATE: temp={substrate['emotional_temperature']} consistency={substrate['execution_consistency']} pace={substrate['pace_calibration']} streak={substrate.get('streak', 0)} kept actions in a row\n"
         f"INTENT: {intent}\n"
         f"{adjust_note}"
+        f"{facts_block}"
         f"USER MESSAGE: {user_msg}"
         f"{file_text}"
     )

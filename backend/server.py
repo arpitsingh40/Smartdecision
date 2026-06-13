@@ -190,6 +190,10 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
             "last_turn_at": now,
             "snapshot_at_last_turn": new_snapshot,
             "rolling": {k: new_snapshot[k] for k in ("emotional_temperature", "execution_consistency", "pace_calibration")},
+            # Persist file_facts ONLY when the engine produced a new one this turn (i.e. user
+            # attached a file). On turns without an attachment, leave the prior snapshot intact
+            # so the file effectively "stays in the room" across the conversation.
+            **({"current_file_facts": (out.get("file_facts") or "").strip()} if (out.get("file_facts") or "").strip() else {}),
         },
         "$push": {"messages": {"$each": new_msgs}},
     })

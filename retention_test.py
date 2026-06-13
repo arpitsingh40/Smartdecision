@@ -5,7 +5,7 @@ Tests the new momentum strip and accountability features
 import requests
 import sys
 
-BASE_URL = "https://health-check-126.preview.emergentagent.com/api"
+BASE_URL = "https://context-persist-ai.preview.emergentagent.com/api"
 
 def test_retention_features():
     """Test retention loop features with smoke1@test.com"""

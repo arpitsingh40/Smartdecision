@@ -1,17 +1,25 @@
 """Deep Discussion Engine core — proven in POC (Phase 1, all checks passed).
 Pure functions: intent classification, rolling fields, re-engagement.
 Single LLM call per turn: Opus 4.8 primary -> Haiku 4.5 fallback.
-"""
+Multi-modal: attach image / PDF / Excel / CSV / text — engine reads and reasons on the file."""
 import os
+import io
 import json
 import re
 import time
+import base64
+import logging
 from datetime import datetime, timedelta, timezone
 import anthropic
+
+log = logging.getLogger(__name__)
 
 PRIMARY_MODEL = "claude-opus-4-8"
 ULTRA_MODEL = "claude-fable-5"  # ultra thinking: adaptive thinking + high effort
 FALLBACK_MODEL = "claude-haiku-4-5"
+
+IMAGE_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
+MAX_FILE_CHARS = 50000  # cap extracted text — bounds cost; engine doesn't need the whole novel
 
 _client = None
 def client():
@@ -143,6 +151,78 @@ def llm_complete_action(thread: dict):
             last_err = e
     raise RuntimeError(f"All models failed: {last_err}")
 
+# ------------------------------------------------- multi-modal attachments (file/image -> LLM-readable)
+def _extract_pdf(b: bytes) -> str:
+    """PyMuPDF — extract text from first 30 pages, cap at MAX_FILE_CHARS."""
+    import fitz
+    parts = []
+    with fitz.open(stream=b, filetype="pdf") as doc:
+        for i, page in enumerate(doc):
+            if i >= 30:
+                break
+            parts.append(page.get_text())
+    return "\n".join(parts)[:MAX_FILE_CHARS]
+
+
+def _extract_xlsx(b: bytes) -> str:
+    """openpyxl — first 5 sheets, 200 rows each, tab-separated."""
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(b), data_only=True, read_only=True)
+    parts = []
+    for sheet in wb.sheetnames[:5]:
+        ws = wb[sheet]
+        parts.append(f"### Sheet: {sheet}")
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i >= 200:
+                break
+            parts.append("\t".join("" if v is None else str(v) for v in row))
+    return "\n".join(parts)[:MAX_FILE_CHARS]
+
+
+def _extract_csv(b: bytes) -> str:
+    import csv
+    rdr = csv.reader(io.StringIO(b.decode("utf-8", errors="replace")))
+    lines = []
+    for i, row in enumerate(rdr):
+        if i >= 500:
+            break
+        lines.append(",".join(row))
+    return "\n".join(lines)[:MAX_FILE_CHARS]
+
+
+def build_attachment_blocks(attachment: dict | None):
+    """Turn an uploaded file into LLM-ready content.
+    Images -> Anthropic vision content block (the model sees the image).
+    PDF/Excel/CSV/text -> server-side extraction, appended to the text prompt (cheaper + reliable).
+    Returns (vision_blocks, text_appendix). Either or both may be empty.
+    """
+    if not attachment:
+        return [], ""
+    mime = (attachment.get("mime") or "").lower()
+    name = attachment.get("filename") or "file"
+    b64 = attachment.get("base64") or ""
+    if not b64:
+        return [], ""
+    if mime in IMAGE_MIMES:
+        return ([{"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}],
+                f"\n\nATTACHED_IMAGE: {name} — read it as evidence/context for the user's situation.")
+    try:
+        raw = base64.b64decode(b64)
+        lower = name.lower()
+        if mime == "application/pdf" or lower.endswith(".pdf"):
+            text = _extract_pdf(raw)
+        elif "spreadsheet" in mime or lower.endswith((".xlsx", ".xls")):
+            text = _extract_xlsx(raw)
+        elif mime == "text/csv" or lower.endswith(".csv"):
+            text = _extract_csv(raw)
+        else:
+            text = raw.decode("utf-8", errors="replace")[:MAX_FILE_CHARS]
+        return [], f"\n\n--- ATTACHED FILE: {name} ---\n{text}\n--- END FILE ---"
+    except Exception as e:
+        log.warning(f"attachment '{name}' could not be parsed: {e}")
+        return [], f"\n\n[attached file '{name}' could not be read — ignore it and continue]"
+
+
 # ------------------------------------------------- single LLM call per turn
 SYSTEM = """You are the Deep Discussion Engine: a warm, calm, supportive companion holding a user's goal across weeks. Your only purpose: shrink the distance between knowing and doing — while making the user feel safe, understood, and in good hands.
 VOICE (read this first):
@@ -161,6 +241,8 @@ What makes each turn worth returning for:
 - BIG PICTURE: one line of concrete justification tying THIS action to THEIR stated goal - count and quantify where possible ("client #1 of the 3 you need", "removes the last blocker before X"). Generic glue is banned ("every step counts", "this builds momentum"). It must answer: why does this small move matter to the big thing?
 - BOLDER PLAY: when a genuinely unconventional, higher-leverage move exists - lateral, game-changing, NOT just 'do more' - name it in 1-2 lines: bigger risk, much bigger payoff, something they would not think of themselves. Frame it as an option, not a demand. The easiest path stays the default; this is the door they did not see. If nothing genuinely bold exists this turn, return null - a forced bold move destroys trust.
 - BREVITY: short enough to always read fully, dense enough that every line earns its place. No filler, no padding, no "I hope this helps". The user's eyes should glide.
+- REQUESTED_INPUT (use sparingly): if the next action you just assigned will produce a piece of evidence the user can bring back (a reply, a screenshot, a number, a file), set requested_input to a short warm line asking them to share it next turn. When the action is purely internal (think about, decide, feel), set requested_input to null. Never use this as a homework demand; it's an invitation to bring back what they found.
+- ATTACHED FILE / IMAGE: when the user sends a file or image with their message, treat it as PRIMARY EVIDENCE — quote one specific detail from it in your mirror or acknowledgment so they know you actually read it, and let what you saw shape the next action.
 Return ONLY valid JSON, no markdown fences:
 {"acknowledgment": "1-3 short, warm sentences in companion voice that respond to their message",
  "mirror": "1 gentle sentence: what they didn't say but is true beneath the message",
@@ -169,6 +251,7 @@ Return ONLY valid JSON, no markdown fences:
  "action_payoff": "1 easy-to-picture line: the concrete thing they hold within 48h of doing it",
  "big_picture_link": "1 line: how this action moves their stated goal, quantified where possible",
  "bold_move": "1-2 lines: the unconventional higher-leverage play, framed as an option, or null if none genuinely exists",
+ "requested_input": "0-1 line OR null. ONLY when the next action's success requires a concrete piece of evidence the user can bring back next turn (a reply received, a screenshot, a number, a photo, a file). Be specific and warm: 'When Sara replies, paste her exact words here — I want to read them with you.' or 'Snap a photo of the page when you're done and drop it on me.' Return null when no evidence is needed.",
  "refreshed_open_question": "1 line: the single unresolved tension, gentle, specific, sticky",
  "skip_list": ["0-2 things to deliberately ignore right now"],
  "state_summary": "3 short lines (\\n separated): where they are right now, in their own register",
@@ -178,13 +261,15 @@ REQUIRED_KEYS = ("acknowledgment", "refreshed_easiest_path", "refreshed_next_act
                  "refreshed_open_question", "state_summary", "signals",
                  "action_payoff", "big_picture_link")
 
-def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal"):
+def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal",
+             attachment: dict | None = None):
     adjust_note = ""
     if intent == "action_adjust":
         adjust_note = ("ADJUSTMENT: the user is pushing back on the PRIOR NEXT ACTION above - "
                        "their message holds an obstacle or their own version of the step. Do not mark it done. "
                        "Recalibrate: keep what works about it, redesign it around their input. "
                        "The refreshed_next_action must visibly incorporate their words.\n")
+    vision_blocks, file_text = build_attachment_blocks(attachment)
     prompt = (
         f"GOAL: {thread['goal']}\n"
         f"WHY IT MATTERS TO THEM (their words at the start): {thread.get('why_now', '(not stated)')}\n"
@@ -196,7 +281,9 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         f"INTENT: {intent}\n"
         f"{adjust_note}"
         f"USER MESSAGE: {user_msg}"
+        f"{file_text}"
     )
+    user_content = vision_blocks + [{"type": "text", "text": prompt}] if vision_blocks else prompt
     # mode "ultra": Fable 5 with adaptive thinking, then graceful fallback to the normal chain
     chain = (ULTRA_MODEL, PRIMARY_MODEL, FALLBACK_MODEL) if mode == "ultra" else (PRIMARY_MODEL, FALLBACK_MODEL)
     last_err = None
@@ -207,7 +294,7 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
     for model in chain:
         try:
             kwargs = {"model": model, "max_tokens": 1200, "system": system_blocks,
-                      "messages": [{"role": "user", "content": prompt}]}
+                      "messages": [{"role": "user", "content": user_content}]}
             if model == ULTRA_MODEL:
                 kwargs["max_tokens"] = 8000  # room for thinking + JSON output
                 kwargs["thinking"] = {"type": "adaptive"}

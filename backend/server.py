@@ -32,6 +32,7 @@ CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
 TURN_RESERVE_NORMAL = int(os.environ.get("TURN_RESERVE_NORMAL", "8"))     # covers ~4k tokens (normal turn cap)
 TURN_RESERVE_ULTRA = int(os.environ.get("TURN_RESERVE_ULTRA", "24"))      # covers ~12k tokens (ultra with thinking)
 ASSIST_RESERVE = int(os.environ.get("ASSIST_RESERVE", "10"))              # covers ~5k tokens (complete-action cap)
+TURN_RESERVE_VISION = int(os.environ.get("TURN_RESERVE_VISION", "40"))    # covers ~20k tokens (image + PDF + thinking)
 
 
 def token_cost(tokens_in: int, tokens_out: int) -> int:
@@ -81,6 +82,10 @@ class TurnIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     mode: str = "normal"  # normal (Opus 4.8) | ultra (Fable 5 ultra thinking)
     adjust: bool = False  # true = user is reshaping the current next action (obstacle / their version)
+    # multi-modal: optional file / image attachment, base64-encoded (≤ 8 MB raw)
+    attachment_base64: str | None = None
+    attachment_filename: str | None = None
+    attachment_mime: str | None = None
 
 class StatusIn(BaseModel):
     status: str  # active | paused | graduated | released
@@ -126,9 +131,10 @@ def me(user: dict = Depends(current_user)):
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
-                 intent_override: str = None):
+                 intent_override: str = None, attachment: dict | None = None):
     """Runs the full turn. Returns (out, intent, model, latency, usage).
-    Credit deduction is handled by the caller (reserve-and-reconcile against real token usage)."""
+    Credit deduction is handled by the caller (reserve-and-reconcile against real token usage).
+    `attachment` (optional dict): {filename, mime, base64} — file/image the user uploaded with this turn."""
     t0 = time.time()
     now = now_utc()
     last_at = as_aware(thread.get("last_turn_at")) or as_aware(thread["opened_at"])
@@ -150,7 +156,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
     # step 3: intent (pure; explicit override wins - e.g. action_adjust from the next-action block)
     intent = intent_override or classify_intent(message, days_gap)
     # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5)
-    out, model, usage = llm_turn(thread, substrate, message, intent, mode)
+    out, model, usage = llm_turn(thread, substrate, message, intent, mode, attachment=attachment)
     sig = out["signals"]
     # step 5: state update
     events_col.insert_one({
@@ -177,6 +183,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
             "current_action_payoff": (out.get("action_payoff") or "").strip() or None,
             "current_big_picture": (out.get("big_picture_link") or "").strip() or None,
             "current_bold_move": (out.get("bold_move") or "").strip() or None,
+            "current_requested_input": (out.get("requested_input") or "").strip() or None,
             "current_mirror": out.get("mirror"),
             "current_action_artifact": None,  # new action -> old "Do it for me" draft is stale
             "skip_list": out.get("skip_list", []),
@@ -303,7 +310,20 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
 def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
     if body.mode not in ("normal", "ultra"):
         raise HTTPException(422, "mode must be 'normal' or 'ultra'")
-    reserve = TURN_RESERVE_ULTRA if body.mode == "ultra" else TURN_RESERVE_NORMAL
+    # Attachment? Use a larger reserve (vision + extracted file text both inflate token usage).
+    attachment = None
+    if body.attachment_base64:
+        if len(body.attachment_base64) > 12_000_000:  # ~9 MB raw cap to keep memory + token cost sane
+            raise HTTPException(413, "Attachment too large. Keep files under 8 MB.")
+        attachment = {"base64": body.attachment_base64,
+                      "filename": body.attachment_filename or "attachment",
+                      "mime": body.attachment_mime or ""}
+    if attachment:
+        reserve = TURN_RESERVE_VISION
+    elif body.mode == "ultra":
+        reserve = TURN_RESERVE_ULTRA
+    else:
+        reserve = TURN_RESERVE_NORMAL
     t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
     if not t:
         raise HTTPException(404, "Thread not found")
@@ -315,7 +335,8 @@ def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
         raise HTTPException(402, "Not enough credits")
     try:
         out, intent, model, latency, usage = run_pipeline(t, user, body.message.strip(), body.mode,
-                                                   intent_override="action_adjust" if body.adjust else None)
+                                                   intent_override="action_adjust" if body.adjust else None,
+                                                   attachment=attachment)
     except Exception as e:
         try:
             users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
@@ -329,12 +350,14 @@ def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
         u = users_col.find_one_and_update({"id": user["id"]}, {"$inc": {"credits": refund}},
                                           return_document=ReturnDocument.AFTER)
     record_ledger(user["id"], "turn_spend", -actual, thread_id=thread_id, mode=body.mode,
-                  tokens=usage["input_tokens"] + usage["output_tokens"])
+                  tokens=usage["input_tokens"] + usage["output_tokens"],
+                  reason="vision_turn" if attachment else None)
     inc_stats({"credits_spent": actual})
     fresh = threads_col.find_one({"thread_id": thread_id})
     return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"],
             "intent": intent, "credits": u["credits"], "model": model, "mode": body.mode,
-            "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"]}
+            "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"],
+            "had_attachment": bool(attachment)}
 
 # ----------------------------------------------------------------- "Do it for me": ship-ready artifact for the next action
 # Token-based billing: 2 credits per 1,000 tokens (input+output). Reserve-and-reconcile so unused tokens are refunded.

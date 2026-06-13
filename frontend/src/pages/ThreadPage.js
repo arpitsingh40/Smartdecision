@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Wand2, Copy, Mail, MessageCircle, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wand2, Copy, Mail, MessageCircle, SlidersHorizontal, Paperclip, X as XIcon } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
@@ -71,7 +71,26 @@ export default function ThreadPage() {
   const [adjustChip, setAdjustChip] = useState(null);
   const [adjustText, setAdjustText] = useState('');
   const [artifactEdit, setArtifactEdit] = useState(null); // { key, text } — local edits per generated artifact
+  const [attachment, setAttachment] = useState(null); // { file, dataUrl, name, mime } | null
   const composerRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const MAX_ATTACH_BYTES = 8 * 1024 * 1024; // 8 MB hard cap matches backend
+  const ACCEPTED_TYPES = 'image/png,image/jpeg,image/jpg,image/webp,image/gif,application/pdf,.pdf,.xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.txt';
+
+  const pickFile = (file) => {
+    if (!file) return;
+    if (file.size > MAX_ATTACH_BYTES) {
+      toast.error('File is too large. Keep it under 8 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAttachment({
+      name: file.name, mime: file.type || '', dataUrl: reader.result,
+    });
+    reader.onerror = () => toast.error('Could not read that file.');
+    reader.readAsDataURL(file);
+  };
 
   // live ticker for the action countdown (1-minute resolution)
   useEffect(() => {
@@ -94,15 +113,26 @@ export default function ThreadPage() {
     if (!msg || thinking) return false;
     setThinking(true);
     try {
-      const r = await api.post(`/threads/${threadId}/turn`, {
-        message: msg, mode: adjust ? 'normal' : mode, adjust,
-      });
+      const body = { message: msg, mode: adjust ? 'normal' : mode, adjust };
+      if (attachment && !adjust) {
+        // strip the data URL prefix so the backend gets the raw base64
+        const idx = (attachment.dataUrl || '').indexOf(',');
+        body.attachment_base64 = idx >= 0 ? attachment.dataUrl.slice(idx + 1) : attachment.dataUrl;
+        body.attachment_filename = attachment.name;
+        body.attachment_mime = attachment.mime;
+      }
+      const r = await api.post(`/threads/${threadId}/turn`, body);
       setThread(r.data.thread);
       setCredits(r.data.credits);
       setMessage('');
+      setAttachment(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setReengagement(null);
       setActionOverdue(false);
       setRefreshKey((k) => k + 1);
+      if (r.data.had_attachment) {
+        toast.success(`Read your file — ${r.data.cost} credit${r.data.cost > 1 ? 's' : ''} (${(r.data.tokens || 0).toLocaleString()} tokens).`);
+      }
       return true;
     } catch (err) {
       const msg402 = err.response?.status === 402;
@@ -111,7 +141,7 @@ export default function ThreadPage() {
     } finally {
       setThinking(false);
     }
-  }, [thinking, threadId, setCredits, mode]);
+  }, [thinking, threadId, setCredits, mode, attachment]);
 
   const send = useCallback(() => sendText(message), [sendText, message]);
 
@@ -320,6 +350,16 @@ export default function ThreadPage() {
                       {thread.current_big_picture}
                     </p>
                   )}
+                  {thread.current_requested_input && (
+                    <p data-testid="action-requested-input"
+                      className="mt-2.5 pt-2.5 border-t border-border/60 text-xs leading-5 text-foreground/85 flex items-start gap-2">
+                      <Paperclip size={11} strokeWidth={2} className="mt-0.5 shrink-0 text-[hsl(var(--ring))]" />
+                      <span>
+                        <span className="uppercase tracking-[0.12em] text-[10px] mr-2 text-[hsl(var(--ring))]">Bring back</span>
+                        {thread.current_requested_input}
+                      </span>
+                    </p>
+                  )}
                   {!inactive && (
                     <div className="mt-3 pt-3 border-t border-border/60 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
@@ -458,21 +498,55 @@ export default function ThreadPage() {
               <Textarea ref={composerRef} data-testid="composer-textarea"
                 value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={onKeyDown}
                 disabled={thinking || inactive}
-                placeholder={inactive ? `This thread is ${thread.status}. Reactivate it to continue.` : 'Say where things actually are. Enter to send · Shift+Enter for a new line.'}
+                placeholder={inactive ? `This thread is ${thread.status}. Reactivate it to continue.` : 'Say where things actually are. Attach a file, photo, or screenshot if it helps. Enter to send · Shift+Enter for a new line.'}
                 className="min-h-[96px] rounded-xl bg-white border border-border/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]" />
+
+              {attachment && (
+                <div data-testid="attachment-preview"
+                  className="mt-2 flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-[hsl(var(--accent))]/40 border border-border/60">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Paperclip size={13} strokeWidth={1.75} className="text-muted-foreground shrink-0" />
+                    <span className="text-xs truncate text-foreground/85">{attachment.name}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0 font-mono-plex">
+                      {(attachment.mime || '').split('/')[1]?.toUpperCase() || 'FILE'}
+                    </span>
+                  </div>
+                  <button type="button" data-testid="attachment-clear"
+                    onClick={() => { setAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                    className="text-muted-foreground hover:text-foreground transition-colors p-1 -m-1 rounded"
+                    aria-label="Remove attachment">
+                    <XIcon size={13} strokeWidth={2} />
+                  </button>
+                </div>
+              )}
+
+              <input ref={fileInputRef} type="file" data-testid="attachment-file-input"
+                className="hidden" accept={ACCEPTED_TYPES}
+                onChange={(e) => pickFile(e.target.files?.[0])} />
+
               <div className="flex items-center justify-between mt-3 gap-3">
-                <div data-testid="mode-toggle"
-                  className="flex items-center rounded-xl border border-border/70 bg-white p-0.5">
-                  <button type="button" data-testid="mode-normal-button"
-                    onClick={() => setMode('normal')} disabled={thinking}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'normal' ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                    Normal · 5
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button type="button" data-testid="attachment-button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={thinking || inactive}
+                    title="Attach file, photo, PDF or spreadsheet"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-border/70 bg-white text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50">
+                    <Paperclip size={12} strokeWidth={1.75} />
+                    {attachment ? 'Replace file' : 'Attach file or photo'}
                   </button>
-                  <button type="button" data-testid="mode-ultra-button"
-                    onClick={() => setMode('ultra')} disabled={thinking}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'ultra' ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                    Ultra thinking · 10
-                  </button>
+                  <div data-testid="mode-toggle"
+                    className="flex items-center rounded-xl border border-border/70 bg-white p-0.5">
+                    <button type="button" data-testid="mode-normal-button"
+                      onClick={() => setMode('normal')} disabled={thinking}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'normal' ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                      Normal
+                    </button>
+                    <button type="button" data-testid="mode-ultra-button"
+                      onClick={() => setMode('ultra')} disabled={thinking}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'ultra' ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                      Ultra thinking
+                    </button>
+                  </div>
                 </div>
                 <Button onClick={send} disabled={thinking || inactive || !message.trim()}
                   data-testid="composer-send-button" className="rounded-xl active:scale-[0.98] transition-colors">

@@ -28,9 +28,35 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 log = logging.getLogger("payments")
 
 PACKS = {
-    "pack_10": {"credits": 10, "amount_inr": 49, "label": "10 credits", "tag": "Try it"},
-    "pack_100": {"credits": 100, "amount_inr": 399, "label": "100 credits"},
-    "pack_500": {"credits": 500, "amount_inr": 999, "label": "500 credits", "tag": "Best value"},
+    "pack_10": {
+        "credits": 10, "amount_inr": 49, "label": "Starter", "tag": None,
+        "headline": "Try it out",
+        "features": [
+            "Basic AI conversation",
+            "Limited memory",
+            "10 credits (~3 normal turns)",
+        ],
+    },
+    "pack_50": {
+        "credits": 50, "amount_inr": 399, "label": "Pro", "tag": None,
+        "headline": "For regular use",
+        "features": [
+            "Better reasoning",
+            "Short-term memory",
+            "50 credits (~16 normal turns)",
+        ],
+    },
+    "pack_500": {
+        "credits": 500, "amount_inr": 999, "label": "Elite", "tag": "Best Value",
+        "headline": "For serious users",
+        "features": [
+            "Deep reasoning mode",
+            "Long-term memory",
+            "Priority processing",
+            "Advanced reports & file analysis",
+            "500 credits (10× the Pro plan for 2.5× the price)",
+        ],
+    },
 }
 
 STALE_ORDER_MINUTES = int(os.environ.get("ORDER_STALE_MINUTES", "30"))

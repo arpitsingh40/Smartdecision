@@ -21,13 +21,43 @@
         work correctly both with client-side routing and a non-root public URL.
         Learn how to configure a non-root public URL by running `npm run build`.
         -->
-        <title>Emergent | Fullstack App</title>
+        <title>SmartDecigen — Decision AI that helps you actually do it</title>
+        <meta name="description" content="SmartDecigen is a decision AI that turns indecision into action. One goal, one next step, real progress — held across weeks. Built for founders, freelancers, and operators who already know what to do." />
+        <meta name="keywords" content="decision ai, smartdecigen, decigen, action planner ai, goal companion, decision engine, executive coach ai, productivity ai, ai accountability, next action ai" />
+        <meta name="robots" content="index, follow" />
+        <meta name="author" content="SmartDecigen" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="SmartDecigen — Decision AI that helps you actually do it" />
+        <meta property="og:description" content="The distance between knowing and doing — closed. A decision AI companion that holds your goal across weeks." />
+        <meta property="og:site_name" content="SmartDecigen" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="SmartDecigen — Decision AI" />
+        <meta name="twitter:description" content="Decision AI that turns indecision into action." />
+        <link rel="canonical" href="https://smartdecigen.com/" />
+        <style>
+          /* Subscribed plan: also hide via CSS as a first line of defence (badge uses inline style; JS below removes the node entirely). */
+          #emergent-badge { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
+        </style>
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
         <div id="root"></div>
+        <script>
+          /* Subscribed tier: physically remove the badge node (CSS alone is overridden by the badge's inline !important display). Idempotent + cheap. */
+          (function removeEmergentBadge() {
+            var b = document.getElementById('emergent-badge');
+            if (b) { b.parentNode && b.parentNode.removeChild(b); return; }
+            setTimeout(removeEmergentBadge, 120);
+          })();
+          /* Keep removing if re-injected (some platform versions re-mount on route changes). */
+          var _sdgBadgeObs = new MutationObserver(function(){
+            var b = document.getElementById('emergent-badge');
+            if (b) b.parentNode && b.parentNode.removeChild(b);
+          });
+          _sdgBadgeObs.observe(document.documentElement, { childList: true, subtree: true });
+        </script>
         <!--
       This HTML file is a template.
       If you open it directly in the browser, you will see an empty page.

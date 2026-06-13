@@ -63,3 +63,151 @@ textarea:focus-visible, input:focus-visible {
 ::selection {
   background: hsl(186 42% 88%);
 }
+
+
+/* ===========================
+   Landing hero — coded cliff scene
+   Recreates the SmartDeciGen ad creative in pure HTML/CSS/SVG.
+   No external image required.
+   =========================== */
+.hero-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* warm sunrise sky */
+  background:
+    radial-gradient(circle at 70% 40%, rgba(255, 228, 178, 0.75), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(180deg, #f8f5ef 0%, #f1e6d3 45%, #d9c4a4 100%);
+}
+
+/* layered mountain silhouettes drawn inline via SVG so they stay crisp */
+.hero-scene .mountains {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' preserveAspectRatio='none'%3E%3Cpath fill='%23b89c7a' opacity='.22' d='M0 560 L160 510 L360 590 L620 460 L920 610 L1220 510 L1600 580 L1600 900 L0 900 Z'/%3E%3Cpath fill='%23876f57' opacity='.32' d='M0 660 L260 580 L520 710 L860 530 L1220 700 L1600 600 L1600 900 L0 900 Z'/%3E%3Cpath fill='%23574635' opacity='.45' d='M0 760 L300 700 L600 770 L960 650 L1300 760 L1600 700 L1600 900 L0 900 Z'/%3E%3C/svg%3E")
+    center bottom / 100% 100% no-repeat;
+}
+
+/* left cliff — the larger one the person stands on */
+.hero-scene .left-cliff {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 56%;
+  height: 48%;
+  background: linear-gradient(180deg, #232a36 0%, #161b25 60%, #0d1118 100%);
+  clip-path: polygon(0 30%, 100% 18%, 88% 100%, 0 100%);
+  box-shadow: inset -16px 0 30px rgba(0, 0, 0, 0.25);
+}
+
+/* right cliff — the destination, shorter, with the ACTION flag */
+.hero-scene .right-cliff {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 32%;
+  height: 44%;
+  background: linear-gradient(180deg, #1c222d 0%, #11151d 65%, #080a0f 100%);
+  clip-path: polygon(0 22%, 100% 8%, 100% 100%, 12% 100%);
+  box-shadow: inset 16px 0 30px rgba(0, 0, 0, 0.28);
+}
+
+/* person standing on the left cliff edge — head + body */
+.hero-scene .person {
+  position: absolute;
+  /* sit on the high lip of the left cliff (~30% from top of that cliff) */
+  left: calc(56% - 60px);
+  bottom: calc(48% - 8px);
+  width: 14px;
+  height: 46px;
+  background: #0a0e15;
+  border-radius: 6px 6px 4px 4px;
+  z-index: 2;
+}
+.hero-scene .person::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -16px;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #0a0e15;
+}
+
+/* dashed line between the cliffs — drawn with SVG so we get a real dashed stroke */
+.hero-scene .action-line {
+  position: absolute;
+  left: 50%;
+  /* aligns visually to the person's chest / flag base */
+  top: 42%;
+  width: 32%;
+  height: 24px;
+  z-index: 1;
+}
+
+/* the flag chip — pole + triangular flag + ACTION label, positioned at the END of the dashed line */
+.hero-scene .flag-group {
+  position: absolute;
+  /* sits at the right end of the dashed line, on the high lip of the right cliff */
+  right: 8%;
+  top: calc(42% - 6px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
+  color: #0a0e15;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  font-size: 13px;
+}
+.hero-scene .flag-group .flag-icon {
+  position: relative;
+  width: 24px;
+  height: 64px;
+}
+.hero-scene .flag-group .flag-icon::before {
+  /* the pole */
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0;
+  width: 2.5px;
+  height: 100%;
+  background: #0a0e15;
+}
+.hero-scene .flag-group .flag-icon::after {
+  /* the triangular pennant attached at the top of the pole */
+  content: "";
+  position: absolute;
+  left: 4.5px;
+  top: 0;
+  width: 18px;
+  height: 14px;
+  background: #0a0e15;
+  clip-path: polygon(0 0, 100% 35%, 0 100%);
+}
+
+/* soft cream fade on the left edge so the seam with the text column feels organic */
+.hero-scene .seam-fade {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 18%;
+  pointer-events: none;
+  background: linear-gradient(to right, hsl(var(--background)) 0%, hsl(var(--background) / 0) 100%);
+}
+
+/* tablet & mobile tuning */
+@media (max-width: 768px) {
+  .hero-scene .left-cliff { width: 60%; height: 38%; }
+  .hero-scene .right-cliff { width: 38%; height: 32%; }
+  .hero-scene .action-line { width: 26%; left: 54%; top: 52%; }
+  .hero-scene .flag-group { right: 6%; top: calc(52% - 6px); font-size: 10px; gap: 5px; }
+  .hero-scene .flag-group .flag-icon { width: 18px; height: 46px; }
+  .hero-scene .flag-group .flag-icon::after { width: 13px; height: 10px; }
+  .hero-scene .person { left: calc(60% - 44px); bottom: calc(38% - 6px); transform: scale(0.82); }
+}

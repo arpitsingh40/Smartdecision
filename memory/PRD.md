@@ -73,6 +73,8 @@ A thread holds the user's pursuit across weeks. Every turn refreshes "the easies
   * **Old token-cost text removed** from ThreadPage: mode-toggle labels are now plain "Normal" / "Ultra thinking" (was "Normal · 5" / "Ultra thinking · 10").
   * **Marketing labels vs. real product gating**: tier features ("Long-term memory", "Deep reasoning mode", "Priority processing", "Advanced reports") are MARKETING COPY on the billing page — actual product behaviour does NOT yet differ by tier (all users get the same engine + same models). Founder needs to decide whether to enforce tier gating before scaling ad spend; recommend doing that in iteration 8 or accept this as honest growth-stage pricing psychology.
 
+- Landing page rebuilt to match the ad creative (iteration 8b, Feb 2026): DONE, self-verified. AuthPage hero is now 2-column with the entire cliff/sunrise scene recreated in pure code (HTML+CSS+SVG) — layered mountain silhouettes, two dark cliffs, person silhouette on left cliff, dashed line ending at a small flag chip + "ACTION" label on the right cliff, warm sunrise gradient. No external image dependency. Auth form moved into a shadcn Dialog opened by the "Start Free" CTA; "Already with us? Sign in" link opens the same dialog in login mode. Mobile responsive via media query (cliffs/flag/person rescale). Also restored missing `/app/frontend/.env` (was blocking production deployment).
+
 ## Design rules (non-negotiable)
 1. Memory felt, never announced. 2. Surface delta, not recap. 3. One open question always visible. 4. No chat-log primary UI. 5. Silence named after 14d. 6. Re-engagement may be NULL.
 

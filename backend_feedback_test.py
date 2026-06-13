@@ -7,7 +7,7 @@ import requests
 import sys
 
 # Backend URL from frontend/.env
-BASE_URL = "https://9dcb5e32-30b9-4fe7-bb63-a9c770f105ea.preview.emergentagent.com/api"
+BASE_URL = "https://health-check-126.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 DEMO_EMAIL = "demo@smartdecigen.com"

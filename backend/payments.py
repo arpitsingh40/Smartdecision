@@ -206,6 +206,60 @@ def test_complete(body: TestCompleteIn, user: dict = Depends(current_user)):
     return {"status": o["status"], "credits": fresh.get("credits", 0)}
 
 
+@router.get("/public/status/{order_id}")
+def public_order_status(order_id: str):
+    """Public status check — no auth required. The order_id is a UUID (unguessable enough).
+    Critical for the post-payment redirect: if the user's browser session was lost during the
+    Zoho roundtrip (mobile tab eviction, incognito, different browser), they still land on
+    /pay/result and we must still confirm + fulfil their payment. Idempotent.
+    Returns the same shape as /status/{id} but never leaks user identity."""
+    order = orders_col.find_one({"order_id": order_id})
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if not _test_mode() and order["status"] == "created" and order.get("zoho_session_id"):
+        try:
+            resp = _zoho_api("GET", f"/paymentsessions/{order['zoho_session_id']}")
+            data = resp.get("payments_session") or resp.get("data") or resp
+            pay_status = (data.get("payment_status") or data.get("status") or "").lower()
+            pays = data.get("payments") or []
+            payment_id = (pays[0].get("payment_id") if pays and isinstance(pays[0], dict)
+                          else data.get("payment_id"))
+            if payment_id:
+                orders_col.update_one({"order_id": order_id}, {"$set": {"zoho_payment_id": payment_id}})
+            if pay_status in ("succeeded", "success", "captured", "paid"):
+                fulfil_order(order_id, "public_status_poll")
+            elif pay_status in ("failed", "cancelled"):
+                _mark_failed(order_id, f"zoho status {pay_status}")
+        except Exception as e:
+            log.warning(f"zoho status check failed for {order_id}: {e}")
+    # auto-fail stale 'created' orders so abandoned checkouts settle into a final state
+    from datetime import timedelta
+    order = orders_col.find_one({"order_id": order_id})
+    if order["status"] == "created":
+        created_at = order["created_at"]
+        if hasattr(created_at, "tzinfo") and created_at.tzinfo is None:
+            from datetime import timezone
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if (now_utc() - created_at) > timedelta(minutes=STALE_ORDER_MINUTES):
+            _mark_failed(order_id, f"abandoned after {STALE_ORDER_MINUTES}m without payment")
+    order = orders_col.find_one({"order_id": order_id})
+    user = users_col.find_one({"id": order["user_id"]}, {"_id": 0, "credits": 1, "email": 1})
+    return {"order_id": order_id, "status": order["status"], "credits_added": order["credits"],
+            "amount_inr": order["amount_inr"], "pack_id": order["pack_id"],
+            "test": order.get("test", False),
+            "user_email_masked": _mask_email(user.get("email", "") if user else ""),
+            "balance": user.get("credits", 0) if user else 0}
+
+
+def _mask_email(email: str) -> str:
+    """ar…@gmail.com — enough for the user to recognise their own account, not enough to enumerate."""
+    if not email or "@" not in email:
+        return ""
+    local, domain = email.split("@", 1)
+    keep = min(2, max(1, len(local) - 1))
+    return local[:keep] + "…@" + domain
+
+
 @router.get("/status/{order_id}")
 def order_status(order_id: str, user: dict = Depends(current_user)):
     order = orders_col.find_one({"order_id": order_id, "user_id": user["id"]})

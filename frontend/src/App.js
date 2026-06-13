@@ -34,6 +34,7 @@ function App() {
   const logout = useCallback(() => {
     localStorage.removeItem('sdg_token');
     localStorage.removeItem('sdg_user');
+    localStorage.removeItem('sdg_last_thread');
     setAuthToken(null);
     setToken(null);
     setUser(null);
@@ -78,7 +79,7 @@ function App() {
             <Route path="/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
             <Route path="/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/test-checkout" element={token ? <TestCheckoutPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/pay/result" element={token ? <PaymentResultPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/pay/result" element={<PaymentResultPage />} />
             <Route path="/admin" element={token ? <AdminPage /> : <Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

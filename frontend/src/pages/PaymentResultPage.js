@@ -1,17 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
 
+const POLL_INTERVAL_MS = 3000;
+const MAX_ATTEMPTS = 20; // 20 × 3s = 60s window — Zoho can take 30–45s to settle
+const AUTO_REDIRECT_DELAY_MS = 2500;
+
 export default function PaymentResultPage() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const orderId = params.get('order_id');
-  const { setCredits } = useAuth();
+  const auth = useAuth();
+  const setCredits = auth?.setCredits;
+  const isLoggedIn = !!auth?.token;
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const attempts = useRef(0);
+  const [attempts, setAttempts] = useState(0);
+  const attemptsRef = useRef(0);
   const missingRef = !orderId;
 
   useEffect(() => {
@@ -19,17 +27,19 @@ export default function PaymentResultPage() {
     let timer;
     const check = async () => {
       try {
-        const r = await api.get(`/payments/status/${orderId}`);
+        // Public endpoint — works even if the browser lost auth during the Zoho roundtrip.
+        const r = await api.get(`/payments/public/status/${orderId}`);
         if (r.data.status === 'paid') {
           setResult(r.data);
-          setCredits(r.data.balance);
+          if (isLoggedIn && setCredits) setCredits(r.data.balance);
         } else if (r.data.status === 'failed') {
           setResult(r.data);
-        } else if (attempts.current < 6) {
-          attempts.current += 1;
-          timer = setTimeout(check, 2500); // live mode: gateway confirmation can lag
+        } else if (attemptsRef.current < MAX_ATTEMPTS) {
+          attemptsRef.current += 1;
+          setAttempts(attemptsRef.current);
+          timer = setTimeout(check, POLL_INTERVAL_MS);
         } else {
-          setResult(r.data);
+          setResult(r.data); // gave up — show pending state with retry option
         }
       } catch {
         setError('Could not verify the payment. Your order history has the latest status.');
@@ -37,8 +47,23 @@ export default function PaymentResultPage() {
     };
     check();
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId]);
+  }, [orderId, isLoggedIn, setCredits]);
+
+  // Auto-redirect on success: take the user back to where they were (last thread) or dashboard.
+  useEffect(() => {
+    if (result?.status !== 'paid') return undefined;
+    const lastThread = localStorage.getItem('sdg_last_thread');
+    const dest = lastThread ? `/thread/${lastThread}` : '/';
+    const t = setTimeout(() => {
+      if (isLoggedIn) {
+        navigate(dest, { replace: true });
+      } else {
+        // session lost during Zoho hop — bounce through /auth so they sign in fresh and find their credits waiting
+        navigate('/auth', { replace: true });
+      }
+    }, AUTO_REDIRECT_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [result, isLoggedIn, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
@@ -48,26 +73,49 @@ export default function PaymentResultPage() {
         {!missingRef && !error && !result && (
           <div data-testid="payment-verifying">
             <Loader2 size={28} strokeWidth={1.5} className="mx-auto animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground mt-4">Verifying your payment…</p>
+            <p className="text-sm text-muted-foreground mt-4">Confirming your payment with the bank…</p>
+            <p className="text-[11px] text-muted-foreground mt-2 font-mono-plex">This can take up to a minute. Please don&apos;t close this tab.</p>
+            {attempts > 3 && (
+              <p data-testid="payment-attempt" className="text-[11px] text-muted-foreground/70 mt-1">Still checking… ({attempts}/{MAX_ATTEMPTS})</p>
+            )}
           </div>
         )}
         {result && result.status === 'paid' && (
           <div data-testid="payment-success">
             <CheckCircle2 size={32} strokeWidth={1.5} className="mx-auto text-[hsl(var(--success))]" />
-            <h1 className="font-display text-2xl mt-4">Credits added</h1>
+            <h1 className="font-display text-2xl mt-4">You&apos;re all set</h1>
             <p className="text-sm text-muted-foreground mt-2">
-              <span className="font-mono-plex text-foreground">+{result.credits_added}</span> credits ·
-              new balance <span data-testid="payment-new-balance" className="font-mono-plex text-foreground">{result.balance}</span>
+              <span className="font-mono-plex text-foreground">+{result.credits_added}</span> credits added to <span className="font-mono-plex text-foreground">{result.user_email_masked || 'your account'}</span>.
             </p>
-            <Button asChild className="mt-6 rounded-xl w-full"><Link to="/" data-testid="payment-back-home">Back to your pursuits</Link></Button>
+            <p className="text-sm text-muted-foreground mt-1">
+              New balance: <span data-testid="payment-new-balance" className="font-mono-plex text-foreground">{result.balance}</span>
+            </p>
+            <p className="text-[11px] text-muted-foreground/70 mt-4">{isLoggedIn ? 'Taking you back to your goal…' : 'Sign in to continue from where you left off.'}</p>
+            <Button asChild className="mt-5 rounded-xl w-full">
+              <Link to={isLoggedIn ? (localStorage.getItem('sdg_last_thread') ? `/thread/${localStorage.getItem('sdg_last_thread')}` : '/') : '/auth'} data-testid="payment-continue-now">
+                {isLoggedIn ? 'Continue now' : 'Sign in'}
+              </Link>
+            </Button>
           </div>
         )}
-        {result && result.status !== 'paid' && (
+        {result && result.status === 'failed' && (
           <div data-testid="payment-failed">
             <XCircle size={32} strokeWidth={1.5} className="mx-auto text-[hsl(var(--destructive))]" />
-            <h1 className="font-display text-2xl mt-4">Payment not completed</h1>
-            <p className="text-sm text-muted-foreground mt-2">You were not charged. No credits were added.</p>
-            <Button asChild variant="outline" className="mt-6 rounded-xl w-full"><Link to="/billing" data-testid="payment-retry">Try again</Link></Button>
+            <h1 className="font-display text-2xl mt-4">Payment didn&apos;t go through</h1>
+            <p className="text-sm text-muted-foreground mt-2">You weren&apos;t charged. No credits added.</p>
+            <Button asChild variant="outline" className="mt-6 rounded-xl w-full">
+              <Link to="/billing" data-testid="payment-retry">Try again</Link>
+            </Button>
+          </div>
+        )}
+        {result && result.status === 'created' && (
+          <div data-testid="payment-pending">
+            <Loader2 size={28} strokeWidth={1.5} className="mx-auto text-muted-foreground" />
+            <h1 className="font-display text-2xl mt-4">Still verifying</h1>
+            <p className="text-sm text-muted-foreground mt-2">The bank is taking longer than usual. Your credits will appear once it confirms — check the billing page in a minute.</p>
+            <Button asChild variant="outline" className="mt-6 rounded-xl w-full">
+              <Link to="/billing" data-testid="payment-check-history">See order history</Link>
+            </Button>
           </div>
         )}
       </div>

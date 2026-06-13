@@ -80,6 +80,8 @@ export default function ThreadPage() {
   }, []);
 
   useEffect(() => {
+    // remember the most recently opened thread so post-payment redirect can take the user back here
+    try { localStorage.setItem('sdg_last_thread', threadId); } catch { /* storage disabled — non-fatal */ }
     api.get(`/threads/${threadId}`).then((r) => {
       setThread(r.data.thread);
       setReengagement(r.data.reengagement_line);
@@ -336,9 +338,6 @@ export default function ThreadPage() {
                           Adjust this step
                         </Button>
                       </div>
-                      {!artifact && (
-                        <span className="font-mono-plex text-[10px] text-muted-foreground">~1 credit / 1k tokens</span>
-                      )}
                     </div>
                   )}
                   {adjustOpen && !inactive && (

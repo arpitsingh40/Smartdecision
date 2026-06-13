@@ -123,9 +123,12 @@ def llm_complete_action(thread: dict):
         "Produce the artifact or kit that completes this next action with minimal user effort."
     )
     last_err = None
+    # System block is cached (prompt caching = 90% cheaper from 2nd call onward, identical block).
+    system_blocks = [{"type": "text", "text": ASSIST_SYSTEM,
+                      "cache_control": {"type": "ephemeral"}}]
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            r = client().messages.create(model=model, max_tokens=3000, system=ASSIST_SYSTEM,
+            r = client().messages.create(model=model, max_tokens=3000, system=system_blocks,
                                          messages=[{"role": "user", "content": prompt}])
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
             txt = re.sub(r"^```(json)?|```$", "", txt, flags=re.M).strip()
@@ -190,9 +193,13 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
     # mode "ultra": Fable 5 with adaptive thinking, then graceful fallback to the normal chain
     chain = (ULTRA_MODEL, PRIMARY_MODEL, FALLBACK_MODEL) if mode == "ultra" else (PRIMARY_MODEL, FALLBACK_MODEL)
     last_err = None
+    # System block is cached: SYSTEM is large and identical across turns, prompt caching cuts
+    # ~90% off its repeated read cost from the 2nd turn onward (same model + same content).
+    system_blocks = [{"type": "text", "text": SYSTEM,
+                      "cache_control": {"type": "ephemeral"}}]
     for model in chain:
         try:
-            kwargs = {"model": model, "max_tokens": 1200, "system": SYSTEM,
+            kwargs = {"model": model, "max_tokens": 1200, "system": system_blocks,
                       "messages": [{"role": "user", "content": prompt}]}
             if model == ULTRA_MODEL:
                 kwargs["max_tokens"] = 8000  # room for thinking + JSON output

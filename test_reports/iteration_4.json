@@ -1,0 +1,25 @@
+{
+  "summary": "Backend regression for SmartDecigen token-based billing + payments updates. All 13 tests pass against the live preview backend (LIVE Anthropic + LIVE Zoho).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_token_billing_and_packs.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~420 lines — still under 700-line threshold, but turn/complete-action endpoints share reserve+refund boilerplate that could be factored into a helper for DRY-ness.",
+    "payments.order_status: live-mode branch swallows exceptions from Zoho (log.warning) and still runs the stale-check fallback — good defensive design; consider surfacing repeated Zoho failures via inc_stats for ops visibility.",
+    "payments._verify_webhook_signature parses 't=...,v=...' but does not check timestamp freshness — a replayed body within the HMAC window would still validate. Consider rejecting if |now - t| > 5 min.",
+    "Refund-on-LLM-failure path uses fire-and-forget users_col.update_one with no error handling — if Mongo write fails after a 502, the user is charged the full reserve. Wrap refund in try/except and log loudly. (Low likelihood but high impact.)",
+    "GET /api/payments/status/{id} returns credits_added even when status='failed'/'created' — field name is slightly misleading; consider renaming to pack_credits in a future iteration."
+  ],
+  "updated_files": ["/app/backend/tests/test_token_billing_and_packs.py"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "n/a (backend-only review)"},
+  "test_credentials": "demo@smartdecigen.com / Demo1234!  ; ceo@smartdecigen.com / FounderOS@2026 (both verified working)",
+  "seed_data_creation": "Test creates one ephemeral signup user per run (TEST_low...) to exercise the 402 insufficient-credits path; cleaned up at end of test via direct Mongo delete. Two short-lived live Zoho payment sessions are created for stale-order tests; they auto-fail after backdating and are visible in demo user's payment history.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pytest suite at /app/backend/tests/test_token_billing_and_packs.py is the canonical regression for this feature batch. It covers: auth (demo+founder), packs ordering/amounts/tags + live test_mode flag, /api/credits new fields (credits_per_1k_tokens=2, turn_reserve_normal=8, turn_reserve_ultra=24, assist_reserve=10), normal+ultra turn token billing (asserts cost==max(1, ceil(tokens/1000)*2) and net deduction==cost not reserve), complete-action token billing, live Zoho hosted-checkout URL creation + history visibility, stale-order auto-fail via Mongo backdating on BOTH /status/{id} and /history endpoints, 422 invalid mode, 402 insufficient credits via Mongo credit forcing. Mongo collection for orders is db.payment_orders (not 'orders') — important for any new tests that need to manipulate orders directly. The LLM-failure full-refund path is only verified by source inspection (would require breaking the live key to actually trigger). All turns ran against live Anthropic Opus 4.8/Fable 5 and consumed real demo-user credits — re-run /app/scripts/seed_demo.py before another full pass if demo credits get depleted (demo started at 75 after this run).",
+  "rca of the issue": "Initial test run failed two stale-order auto-fail assertions because the test used Mongo collection name 'orders' while server uses db.payment_orders (per /app/backend/db.py line: orders_col = db.payment_orders). Fixed by switching to mongo['payment_orders'] and adding a matched_count==1 sanity assert on backdate. After fix, both stale-fail paths (/api/payments/status/{id} and /api/payments/history) correctly transition created -> failed when created_at is older than ORDER_STALE_MINUTES (30). Mitigation: documented collection name in context_for_next_testing_agent."
+}

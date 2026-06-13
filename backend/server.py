@@ -26,6 +26,18 @@ from feedback import router as feedback_router
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
 SIGNUP_CREDITS = int(os.environ.get("SIGNUP_CREDITS", "100"))
+# Token-based billing (founder spec): 2 credits per 1,000 tokens (input+output combined).
+# Pre-reserve the maximum a turn could cost, run the LLM, then refund the unused portion.
+CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
+TURN_RESERVE_NORMAL = int(os.environ.get("TURN_RESERVE_NORMAL", "8"))     # covers ~4k tokens (normal turn cap)
+TURN_RESERVE_ULTRA = int(os.environ.get("TURN_RESERVE_ULTRA", "24"))      # covers ~12k tokens (ultra with thinking)
+ASSIST_RESERVE = int(os.environ.get("ASSIST_RESERVE", "10"))              # covers ~5k tokens (complete-action cap)
+
+
+def token_cost(tokens_in: int, tokens_out: int) -> int:
+    """Actual credit cost from real token usage. Minimum 1 credit so trivial turns aren't free."""
+    total = (tokens_in or 0) + (tokens_out or 0)
+    return max(1, math.ceil(total / 1000) * CREDITS_PER_1K_TOKENS)
 
 app = FastAPI(title="SmartDecigen Deep Discussion Engine")
 api = APIRouter(prefix="/api")
@@ -113,10 +125,11 @@ def me(user: dict = Depends(current_user)):
     return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin"))}
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
-def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal", cost: int = None,
+def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
                  intent_override: str = None):
+    """Runs the full turn. Returns (out, intent, model, latency, usage).
+    Credit deduction is handled by the caller (reserve-and-reconcile against real token usage)."""
     t0 = time.time()
-    cost = cost if cost is not None else (ULTRA_TURN_COST if mode == "ultra" else TURN_COST)
     now = now_utc()
     last_at = as_aware(thread.get("last_turn_at")) or as_aware(thread["opened_at"])
     days_gap = (now - last_at).total_seconds() / 86400
@@ -175,9 +188,10 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal", c
     })
     # step 6: telemetry + usage counters (pre-aggregated -> Founder OS reads stay O(1))
     latency = round(time.time() - t0, 2)
+    actual_cost = token_cost(usage["input_tokens"], usage["output_tokens"])
     telemetry_col.insert_one({"id": str(uuid.uuid4()), "type": "discussion_turn", "user_id": user["id"],
                               "thread_id": thread["thread_id"], "intent": intent, "model": model,
-                              "mode": mode, "cost": cost,
+                              "mode": mode, "cost": actual_cost,
                               "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"],
                               "latency_s": latency, "response_len": len(out["acknowledgment"]), "at": now})
     users_col.update_one({"id": user["id"]}, {
@@ -185,14 +199,15 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal", c
         "$set": {"last_active_at": now}})
     inc_stats({"questions_total": 1, ("turns_ultra" if mode == "ultra" else "turns_normal"): 1,
                "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]})
-    return out, intent, model, latency
+    return out, intent, model, latency, usage
 
 # ----------------------------------------------------------------- goals & threads
 @api.post("/goals")
 def create_goal(body: GoalIn, user: dict = Depends(current_user)):
-    # atomic credit deduction (creation includes the first engine turn)
-    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": TURN_COST}},
-                                      {"$inc": {"credits": -TURN_COST}}, return_document=ReturnDocument.AFTER)
+    # reserve the max a normal turn could cost; reconcile to actual after the LLM responds
+    reserve = TURN_RESERVE_NORMAL
+    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
+                                      {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
     if not u:
         raise HTTPException(402, "Not enough credits")
     now = now_utc()
@@ -208,16 +223,24 @@ def create_goal(body: GoalIn, user: dict = Depends(current_user)):
     }
     threads_col.insert_one(thread)
     try:
-        out, intent, model, latency = run_pipeline(thread, user, body.why_now.strip())
+        out, intent, model, latency, usage = run_pipeline(thread, user, body.why_now.strip())
     except Exception as e:
-        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": TURN_COST}})  # refund
+        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
         threads_col.delete_one({"thread_id": thread["thread_id"]})
         log.error(f"goal creation turn failed: {e}")
         raise HTTPException(502, "The engine could not open this thread. You were not charged — try again.")
-    record_ledger(user["id"], "turn_spend", -TURN_COST, thread_id=thread["thread_id"], mode="normal", reason="goal_opening")
-    inc_stats({"credits_spent": TURN_COST})
+    # reconcile: refund reserved - actual
+    actual = token_cost(usage["input_tokens"], usage["output_tokens"])
+    refund = max(0, reserve - actual)
+    if refund:
+        u = users_col.find_one_and_update({"id": user["id"]}, {"$inc": {"credits": refund}},
+                                          return_document=ReturnDocument.AFTER)
+    record_ledger(user["id"], "turn_spend", -actual, thread_id=thread["thread_id"], mode="normal",
+                  tokens=usage["input_tokens"] + usage["output_tokens"], reason="goal_opening")
+    inc_stats({"credits_spent": actual})
     fresh = threads_col.find_one({"thread_id": thread["thread_id"]})
-    return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"], "credits": u["credits"]}
+    return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"], "credits": u["credits"],
+            "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"]}
 
 @api.get("/goals")
 def list_goals(user: dict = Depends(current_user)):
@@ -277,31 +300,38 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
 def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
     if body.mode not in ("normal", "ultra"):
         raise HTTPException(422, "mode must be 'normal' or 'ultra'")
-    cost = ULTRA_TURN_COST if body.mode == "ultra" else TURN_COST  # ultra thinking costs double
+    reserve = TURN_RESERVE_ULTRA if body.mode == "ultra" else TURN_RESERVE_NORMAL
     t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
     if not t:
         raise HTTPException(404, "Thread not found")
     if t["status"] != "active":
         raise HTTPException(400, f"This thread is {t['status']}. Reactivate it to continue.")
-    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": cost}},
-                                      {"$inc": {"credits": -cost}}, return_document=ReturnDocument.AFTER)
+    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
+                                      {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
     if not u:
         raise HTTPException(402, "Not enough credits")
     try:
-        out, intent, model, latency = run_pipeline(t, user, body.message.strip(), body.mode, cost,
+        out, intent, model, latency, usage = run_pipeline(t, user, body.message.strip(), body.mode,
                                                    intent_override="action_adjust" if body.adjust else None)
     except Exception as e:
-        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": cost}})  # refund
+        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
         log.error(f"turn failed: {e}")
         raise HTTPException(502, "The engine did not respond. You were not charged — try again.")
-    record_ledger(user["id"], "turn_spend", -cost, thread_id=thread_id, mode=body.mode)
-    inc_stats({"credits_spent": cost})
+    actual = token_cost(usage["input_tokens"], usage["output_tokens"])
+    refund = max(0, reserve - actual)
+    if refund:
+        u = users_col.find_one_and_update({"id": user["id"]}, {"$inc": {"credits": refund}},
+                                          return_document=ReturnDocument.AFTER)
+    record_ledger(user["id"], "turn_spend", -actual, thread_id=thread_id, mode=body.mode,
+                  tokens=usage["input_tokens"] + usage["output_tokens"])
+    inc_stats({"credits_spent": actual})
     fresh = threads_col.find_one({"thread_id": thread_id})
     return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"],
-            "intent": intent, "credits": u["credits"], "model": model, "mode": body.mode, "cost": cost}
+            "intent": intent, "credits": u["credits"], "model": model, "mode": body.mode,
+            "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"]}
 
 # ----------------------------------------------------------------- "Do it for me": ship-ready artifact for the next action
-# Pricing (founder): 1 credit per 1,000 tokens (input+output combined), minimum 1.
+# Token-based billing: 2 credits per 1,000 tokens (input+output). Reserve-and-reconcile so unused tokens are refunded.
 @api.post("/threads/{thread_id}/complete-action")
 def complete_action(thread_id: str, user: dict = Depends(current_user)):
     t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
@@ -311,25 +341,25 @@ def complete_action(thread_id: str, user: dict = Depends(current_user)):
         raise HTTPException(400, f"This thread is {t['status']}. Reactivate it to continue.")
     if not t.get("current_next_action") or t["current_next_action"].startswith("(none"):
         raise HTTPException(400, "No next action to complete yet.")
-    if user.get("credits", 0) < 1:
+    reserve = ASSIST_RESERVE
+    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
+                                      {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
+    if not u:
         raise HTTPException(402, "Not enough credits")
     t0 = time.time()
     try:
         out, model, usage = llm_complete_action(t)
     except Exception as e:
+        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
         log.error(f"complete-action failed: {e}")
         raise HTTPException(502, "The engine could not prepare this. You were not charged — try again.")
     total_tokens = usage["input_tokens"] + usage["output_tokens"]
-    cost = max(1, math.ceil(total_tokens / 1000))
+    cost = token_cost(usage["input_tokens"], usage["output_tokens"])
+    refund = max(0, reserve - cost)
+    if refund:
+        u = users_col.find_one_and_update({"id": user["id"]}, {"$inc": {"credits": refund}},
+                                          return_document=ReturnDocument.AFTER)
     now = now_utc()
-    # charge actual usage; balance never goes below zero
-    u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": cost}},
-                                      {"$inc": {"credits": -cost}}, return_document=ReturnDocument.AFTER)
-    if not u:
-        u = users_col.find_one_and_update(
-            {"id": user["id"]},
-            [{"$set": {"credits": {"$max": [0, {"$subtract": ["$credits", cost]}]}}}],
-            return_document=ReturnDocument.AFTER)
     users_col.update_one({"id": user["id"]}, {
         "$inc": {"tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
         "$set": {"last_active_at": now}})
@@ -349,7 +379,8 @@ def complete_action(thread_id: str, user: dict = Depends(current_user)):
                               "thread_id": thread_id, "model": model, "cost": cost,
                               "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"],
                               "latency_s": round(time.time() - t0, 2), "at": now})
-    return {"artifact": serialize(artifact), "credits": u.get("credits", 0), "cost": cost}
+    return {"artifact": serialize(artifact), "credits": u.get("credits", 0), "cost": cost,
+            "tokens": total_tokens}
 
 @api.patch("/threads/{thread_id}/status")
 def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user)):
@@ -362,7 +393,12 @@ def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user
 
 @api.get("/credits")
 def credits(user: dict = Depends(current_user)):
-    return {"credits": user.get("credits", 0), "turn_cost": TURN_COST, "ultra_turn_cost": ULTRA_TURN_COST}
+    return {"credits": user.get("credits", 0),
+            "turn_cost": TURN_COST, "ultra_turn_cost": ULTRA_TURN_COST,
+            "credits_per_1k_tokens": CREDITS_PER_1K_TOKENS,
+            "turn_reserve_normal": TURN_RESERVE_NORMAL,
+            "turn_reserve_ultra": TURN_RESERVE_ULTRA,
+            "assist_reserve": ASSIST_RESERVE}
 
 @api.get("/")
 def root():

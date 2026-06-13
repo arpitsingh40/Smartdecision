@@ -28,9 +28,12 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 log = logging.getLogger("payments")
 
 PACKS = {
+    "pack_10": {"credits": 10, "amount_inr": 49, "label": "10 credits", "tag": "Try it"},
     "pack_100": {"credits": 100, "amount_inr": 399, "label": "100 credits"},
     "pack_500": {"credits": 500, "amount_inr": 999, "label": "500 credits", "tag": "Best value"},
 }
+
+STALE_ORDER_MINUTES = int(os.environ.get("ORDER_STALE_MINUTES", "30"))
 
 
 def _test_mode() -> bool:
@@ -101,6 +104,18 @@ def _mark_failed(order_id: str, reason: str):
         {"order_id": order_id, "status": {"$ne": "paid"}},
         {"$set": {"status": "failed", "updated_at": now},
          "$push": {"status_history": {"status": "failed", "at": now, "reason": reason}}})
+
+
+def _expire_stale_for_user(user_id: str):
+    """Auto-fail orders left in 'created' beyond STALE_ORDER_MINUTES — keeps history accurate.
+    A user who closed the checkout tab without paying must see the order as 'failed', not stuck 'created'."""
+    from datetime import timedelta
+    cutoff = now_utc() - timedelta(minutes=STALE_ORDER_MINUTES)
+    stale = list(orders_col.find(
+        {"user_id": user_id, "status": "created", "created_at": {"$lt": cutoff}},
+        {"order_id": 1}))
+    for o in stale:
+        _mark_failed(o["order_id"], f"abandoned after {STALE_ORDER_MINUTES}m without payment")
 
 
 # ----------------------------------------------------------------- endpoints
@@ -213,6 +228,17 @@ def order_status(order_id: str, user: dict = Depends(current_user)):
                 _mark_failed(order_id, f"zoho status {pay_status}")
         except Exception as e:
             log.warning(f"zoho status check failed for {order_id}: {e}")
+    # second guard: if order is still 'created' and has aged past the stale threshold, mark failed
+    # (covers abandoned checkouts where the gateway never reports back)
+    from datetime import timedelta
+    order = orders_col.find_one({"order_id": order_id})
+    if order["status"] == "created":
+        created_at = order["created_at"]
+        if hasattr(created_at, "tzinfo") and created_at.tzinfo is None:
+            from datetime import timezone
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if (now_utc() - created_at) > timedelta(minutes=STALE_ORDER_MINUTES):
+            _mark_failed(order_id, f"abandoned after {STALE_ORDER_MINUTES}m without payment")
     order = orders_col.find_one({"order_id": order_id}, {"_id": 0, "status_history": 0})
     fresh = users_col.find_one({"id": user["id"]})
     return {"order_id": order_id, "status": order["status"], "credits_added": order["credits"],
@@ -222,6 +248,7 @@ def order_status(order_id: str, user: dict = Depends(current_user)):
 
 @router.get("/history")
 def history(user: dict = Depends(current_user)):
+    _expire_stale_for_user(user["id"])
     items = []
     for o in orders_col.find({"user_id": user["id"]}, {"_id": 0, "status_history": 0}).sort("created_at", -1).limit(50):
         o["created_at"] = o["created_at"].isoformat() if hasattr(o["created_at"], "isoformat") else o["created_at"]

@@ -41,8 +41,8 @@ export default function BillingPage() {
             Test mode — payments are simulated until the live gateway is connected. No money moves.
           </div>
         )}
-        <p className="text-sm text-muted-foreground">One-time top-up, no subscription. A normal turn costs <span className="font-mono-plex">5</span> credits, ultra thinking costs <span className="font-mono-plex">10</span>.</p>
-        <div className="grid sm:grid-cols-2 gap-4 mt-6">
+        <p className="text-sm text-muted-foreground">One-time top-up, no subscription. Pay for what you use — <span className="font-mono-plex">2 credits per 1,000 tokens</span> (input+output). A typical normal turn uses 2–4 credits, ultra thinking 8–20.</p>
+        <div className="grid sm:grid-cols-3 gap-4 mt-6">
           {packs.map((p) => (
             <div key={p.pack_id} data-testid={`pack-card-${p.pack_id}`}
               className={`relative bg-white border rounded-xl p-6 ${p.tag ? 'border-[hsl(var(--ring))]/50' : 'border-border/70'}`}>
@@ -50,7 +50,7 @@ export default function BillingPage() {
               <p className="font-display text-2xl">{p.credits} credits</p>
               <p className="font-mono-plex text-lg mt-2">₹{p.amount_inr}</p>
               <p className="text-[11px] text-muted-foreground mt-1">
-                {Math.floor(p.credits / 5)} normal turns · {Math.floor(p.credits / 10)} ultra
+                ~{Math.round(p.credits / 3)} normal turns · ~{Math.round(p.credits / 10)} ultra
               </p>
               <Button data-testid={`buy-${p.pack_id}`} onClick={() => buy(p.pack_id)} disabled={buying !== null}
                 className="w-full mt-5 rounded-xl active:scale-[0.98]">

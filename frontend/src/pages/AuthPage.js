@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ArrowRight, Target, CheckCircle2, RefreshCw,
   Sparkles, Lock, Mail, User, ShieldCheck
@@ -39,6 +39,11 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [signupCredits, setSignupCredits] = useState(null);
+
+  useEffect(() => {
+    api.get('/config').then(r => setSignupCredits(r.data?.signup_credits)).catch(() => {});
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -171,7 +176,7 @@ export default function AuthPage() {
                 {isSignup ? (
                   <>
                     <Sparkles size={11} className="text-[#b89165]" />
-                    <span>100 free credits · No card · ~30 seconds</span>
+                    <span>{signupCredits ?? '—'} free credits · No card · ~30 seconds</span>
                   </>
                 ) : (
                   <span>Pick up the thread you left.</span>

@@ -90,6 +90,14 @@ class TurnIn(BaseModel):
 class StatusIn(BaseModel):
     status: str  # active | paused | graduated | released
 
+
+# ----------------------------------------------------------------- public config
+@api.get("/config")
+def public_config():
+    """Public, unauthenticated. Lets the marketing surfaces show the live signup grant."""
+    return {"signup_credits": int(os.environ.get("SIGNUP_CREDITS", 100))}
+
+
 # ----------------------------------------------------------------- auth
 @api.post("/auth/signup")
 def signup(body: SignupIn, request: Request):

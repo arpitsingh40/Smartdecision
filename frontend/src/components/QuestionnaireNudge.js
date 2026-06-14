@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Sparkles, ArrowRight, X } from 'lucide-react';
-import { Dialog, DialogContent } from './ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { useAuth } from '../App';
 
@@ -25,6 +25,10 @@ export function QuestionnaireNudge() {
   const [open, setOpen] = useState(false);
 
   const completed = !!user?.questionnaire_completed;
+  const onAuthRoute = location.pathname === '/auth' || location.pathname.startsWith('/questionnaire');
+  let dismissed = false;
+  try { dismissed = typeof window !== 'undefined' && localStorage.getItem(DISMISS_KEY) === '1'; } catch (_e) { /* noop */ }
+  const eligible = !!token && !!user && !completed && !onAuthRoute && !dismissed;
 
   useEffect(() => {
     // wipe the dismiss flag when completed -> next account on same browser still gets nudged
@@ -34,17 +38,11 @@ export function QuestionnaireNudge() {
   }, [completed]);
 
   useEffect(() => {
-    if (!token || !user) return setOpen(false);
-    if (completed) return setOpen(false);
-    const onAuthRoute = location.pathname === '/auth' || location.pathname.startsWith('/questionnaire');
-    if (onAuthRoute) return setOpen(false);
-    let dismissed = false;
-    try { dismissed = localStorage.getItem(DISMISS_KEY) === '1'; } catch (_e) { /* noop */ }
-    if (dismissed) return setOpen(false);
+    if (!eligible) return undefined;
     // tiny delay so it appears after the dashboard renders, not on top of route transition
     const t = setTimeout(() => setOpen(true), 450);
     return () => clearTimeout(t);
-  }, [token, user, completed, location.pathname]);
+  }, [eligible]);
 
   const dismiss = () => {
     try { localStorage.setItem(DISMISS_KEY, '1'); } catch (_e) { /* noop */ }
@@ -56,12 +54,17 @@ export function QuestionnaireNudge() {
     navigate('/questionnaire');
   };
 
+  if (!eligible) return null;
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) dismiss(); }}>
       <DialogContent
         data-testid="questionnaire-nudge-modal"
         className="sm:max-w-md rounded-2xl border border-border/70 p-0 overflow-hidden"
       >
+        {/* a11y: Radix requires a DialogTitle inside DialogContent. Visually hidden — the
+            real headline (the H3 below) carries the design weight. */}
+        <DialogTitle className="sr-only">Unlock ₹399 worth of credits — free</DialogTitle>
         {/* gold corner glow */}
         <div
           aria-hidden="true"

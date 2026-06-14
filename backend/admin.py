@@ -1,6 +1,7 @@
 """Founder OS API - admin-only (ceo@smartdecigen.com).
 Every list is paginated + index-backed; summaries read pre-aggregated counters,
 so these endpoints stay O(1)/O(page) even at millions of users."""
+import os
 import re
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,6 +10,33 @@ from security import require_admin, now_utc, as_aware
 from ledger import get_stats
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+# ----------------------------------------------------------------- model pricing
+# USD per 1M tokens. Sourced from Anthropic public pricing tiers (opus / haiku).
+# Fable 5 (ultra-thinking) is priced as opus-tier here; thinking tokens are
+# already counted into output_tokens by the SDK. All values overridable via env
+# so the founder can retune without a code change.
+def _f(env_key: str, default: float) -> float:
+    try:
+        return float(os.environ.get(env_key, default))
+    except (TypeError, ValueError):
+        return default
+
+USD_TO_INR = _f("USD_TO_INR", 83.0)
+
+# {model_id: (input_usd_per_M, output_usd_per_M, label)}
+MODEL_PRICING = {
+    "claude-opus-4-8":  (_f("PRICE_OPUS_IN",  15.0), _f("PRICE_OPUS_OUT",  75.0), "Opus 4.8 (primary)"),
+    "claude-fable-5":   (_f("PRICE_FABLE_IN", 15.0), _f("PRICE_FABLE_OUT", 75.0), "Fable 5 (ultra)"),
+    "claude-haiku-4-5": (_f("PRICE_HAIKU_IN",  1.0), _f("PRICE_HAIKU_OUT",  5.0), "Haiku 4.5 (fallback)"),
+}
+UNKNOWN_PRICING = (_f("PRICE_OPUS_IN", 15.0), _f("PRICE_OPUS_OUT", 75.0), "Unknown")
+
+
+def _price_inr(model: str, tokens_in: int, tokens_out: int) -> float:
+    p_in, p_out, _ = MODEL_PRICING.get(model, UNKNOWN_PRICING)
+    usd = (tokens_in / 1_000_000.0) * p_in + (tokens_out / 1_000_000.0) * p_out
+    return round(usd * USD_TO_INR, 2)
 
 USER_PROJ = {"_id": 0, "password_hash": 0}
 
@@ -137,6 +165,77 @@ def usage(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
              .sort([("questions_asked", -1), ("created_at", -1)]).skip((page - 1) * limit).limit(limit)]
     return {"summary": summary, "items": items, "total": total, "page": page,
             "pages": max(1, -(-total // limit))}
+
+
+@router.get("/usage/models")
+def usage_by_model(admin: dict = Depends(require_admin)):
+    """Per-model token + cost + margin breakdown. Reads telemetry_col (one doc
+    per LLM call), so the snapshot is always live and matches reality.
+    Note: estimated_inr is illustrative only — actual Anthropic billing is
+    authoritative. Tune via env vars PRICE_OPUS_IN/OUT, PRICE_HAIKU_IN/OUT,
+    PRICE_FABLE_IN/OUT, USD_TO_INR."""
+    pipeline = [
+        {"$match": {"type": {"$in": ["discussion_turn", "action_assist"]},
+                    "model": {"$ne": None}}},
+        {"$group": {
+            "_id": "$model",
+            "turns": {"$sum": 1},
+            "tokens_in": {"$sum": {"$ifNull": ["$tokens_in", 0]}},
+            "tokens_out": {"$sum": {"$ifNull": ["$tokens_out", 0]}},
+            "credits": {"$sum": {"$ifNull": ["$cost", 0]}},
+        }},
+        {"$sort": {"turns": -1}},
+    ]
+    rows = list(telemetry_col.aggregate(pipeline))
+    items = []
+    total_in_tokens = 0
+    total_out_tokens = 0
+    total_credits_spent = 0
+    total_api_inr = 0.0
+    for r in rows:
+        model = r["_id"] or "unknown"
+        ti = int(r.get("tokens_in") or 0)
+        to = int(r.get("tokens_out") or 0)
+        inr = _price_inr(model, ti, to)
+        _, _, label = MODEL_PRICING.get(model, UNKNOWN_PRICING)
+        items.append({
+            "model": model,
+            "label": label,
+            "turns": int(r.get("turns") or 0),
+            "tokens_in": ti,
+            "tokens_out": to,
+            "credits_spent": int(r.get("credits") or 0),
+            "estimated_inr": inr,
+        })
+        total_in_tokens += ti
+        total_out_tokens += to
+        total_credits_spent += int(r.get("credits") or 0)
+        total_api_inr += inr
+
+    s = get_stats()
+    revenue_inr = float(s.get("revenue_inr", 0) or 0)
+    margin_inr = round(revenue_inr - total_api_inr, 2)
+    margin_pct = round((margin_inr / revenue_inr) * 100, 1) if revenue_inr > 0 else None
+
+    # pricing table the UI uses for transparency
+    pricing = [{"model": m, "label": lbl, "input_usd_per_m": p_in, "output_usd_per_m": p_out}
+               for m, (p_in, p_out, lbl) in MODEL_PRICING.items()]
+
+    return {
+        "items": items,
+        "totals": {
+            "turns": sum(i["turns"] for i in items),
+            "tokens_in": total_in_tokens,
+            "tokens_out": total_out_tokens,
+            "credits_spent": total_credits_spent,
+            "estimated_api_inr": round(total_api_inr, 2),
+            "revenue_inr": revenue_inr,
+            "margin_inr": margin_inr,
+            "margin_pct": margin_pct,
+        },
+        "pricing": pricing,
+        "usd_to_inr": USD_TO_INR,
+    }
 
 
 @router.get("/purchases")

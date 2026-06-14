@@ -236,10 +236,13 @@ function TrafficTab() {
 // ---------------------------------------------------------------- Usage
 function UsageTab() {
   const [data, setData] = useState(null);
+  const [models, setModels] = useState(null);
   const [page, setPage] = useState(1);
   useEffect(() => { api.get('/admin/usage', { params: { page, limit: 25 } }).then((r) => setData(r.data)).catch(() => {}); }, [page]);
+  useEffect(() => { api.get('/admin/usage/models').then((r) => setModels(r.data)).catch(() => {}); }, []);
   if (!data) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
   const s = data.summary;
+  const inr = (n) => `₹${fmt(Math.round(n || 0))}`;
   return (
     <div data-testid="admin-usage" className="mt-6">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -248,7 +251,66 @@ function UsageTab() {
         <Stat testId="usage-tokens" label="Input / output tokens" value={`${fmt(s.tokens.input_total)} / ${fmt(s.tokens.output_total)}`} />
         <Stat label="Revenue" value={`₹${fmt(s.revenue.total_inr)}`} sub={`${fmt(s.turns.normal)} normal · ${fmt(s.turns.ultra)} ultra turns`} />
       </div>
-      <div className="mt-4 bg-white border border-border/70 rounded-xl overflow-x-auto">
+
+      {/* Cost & margin */}
+      {models && (
+        <div className="mt-6" data-testid="admin-usage-cost">
+          <div className="flex items-baseline justify-between mb-2">
+            <h3 className="text-sm font-semibold text-foreground">Cost &amp; margin · per model</h3>
+            <span className="text-[11px] text-muted-foreground">USD→INR @ {models.usd_to_inr} · estimates, not invoiced totals</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Stat label="Revenue earned" value={inr(models.totals.revenue_inr)} />
+            <Stat label="Est. API cost" value={inr(models.totals.estimated_api_inr)} sub={`${fmt(models.totals.tokens_in)} in · ${fmt(models.totals.tokens_out)} out`} />
+            <Stat label="Margin" value={inr(models.totals.margin_inr)} sub={models.totals.margin_pct == null ? '—' : `${models.totals.margin_pct}% of revenue`} />
+            <Stat label="Total LLM calls" value={fmt(models.totals.turns)} sub={`${fmt(models.totals.credits_spent)} credits charged`} />
+          </div>
+          <div className="mt-3 bg-white border border-border/70 rounded-xl overflow-x-auto">
+            <table className="w-full" data-testid="admin-usage-models-table">
+              <thead className="border-b border-border/70">
+                <tr>
+                  <Th>Model</Th>
+                  <Th right>Turns</Th>
+                  <Th right>Tokens in</Th>
+                  <Th right>Tokens out</Th>
+                  <Th right>Credits charged</Th>
+                  <Th right>Est. ₹ API cost</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {models.items.length === 0 && (
+                  <tr><td colSpan={6} className="px-3 py-3 text-[12px] text-muted-foreground">No LLM calls yet — once users start chatting, model usage will appear here.</td></tr>
+                )}
+                {models.items.map((m) => (
+                  <tr key={m.model} className="border-b border-border/40 last:border-0">
+                    <Td>
+                      <div className="text-[12px] font-medium">{m.label}</div>
+                      <div className="text-[10px] text-muted-foreground font-mono">{m.model}</div>
+                    </Td>
+                    <Td right mono>{fmt(m.turns)}</Td>
+                    <Td right mono>{fmt(m.tokens_in)}</Td>
+                    <Td right mono>{fmt(m.tokens_out)}</Td>
+                    <Td right mono>{fmt(m.credits_spent)}</Td>
+                    <Td right mono>{inr(m.estimated_inr)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-2 text-[11px] text-muted-foreground">
+            Pricing assumed (USD per 1M tokens):{' '}
+            {models.pricing.map((p, i) => (
+              <span key={p.model}>
+                {i > 0 && ' · '}
+                <span className="font-mono">{p.label}</span> ${p.input_usd_per_m}/${p.output_usd_per_m}
+              </span>
+            ))}
+            . Override via env vars <span className="font-mono">PRICE_OPUS_IN/OUT</span>, <span className="font-mono">PRICE_FABLE_IN/OUT</span>, <span className="font-mono">PRICE_HAIKU_IN/OUT</span>, <span className="font-mono">USD_TO_INR</span>.
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6 bg-white border border-border/70 rounded-xl overflow-x-auto">
         <table className="w-full" data-testid="admin-usage-table">
           <thead className="border-b border-border/70">
             <tr><Th>User</Th><Th right>Questions</Th><Th right>Free issued</Th><Th right>Paid issued</Th><Th right>Balance</Th><Th right>Tokens in/out</Th></tr>

@@ -22,6 +22,7 @@ from tracking import router as tracking_router, client_ip, geo_lookup
 from admin import router as admin_router
 from payments import router as payments_router
 from feedback import router as feedback_router
+from questionnaire import router as questionnaire_router
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
@@ -119,7 +120,7 @@ def signup(body: SignupIn, request: Request):
     users_col.insert_one(user)
     record_ledger(user["id"], "free_grant", SIGNUP_CREDITS, reason="signup")
     inc_stats({"credits_issued_free": SIGNUP_CREDITS})
-    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False}}
+    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False}}
 
 @api.post("/auth/login")
 def login(body: LoginIn, request: Request):
@@ -131,11 +132,11 @@ def login(body: LoginIn, request: Request):
     if not user.get("country"):
         geo = geo_lookup(ip)
         users_col.update_one({"id": user["id"]}, {"$set": {"country": geo["country"], "city": geo["city"]}})
-    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin"))}}
+    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed"))}}
 
 @api.get("/auth/me")
 def me(user: dict = Depends(current_user)):
-    return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin"))}
+    return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed"))}
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
@@ -164,7 +165,9 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
     # step 3: intent (pure; explicit override wins - e.g. action_adjust from the next-action block)
     intent = intent_override or classify_intent(message, days_gap)
     # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5)
-    out, model, usage = llm_turn(thread, substrate, message, intent, mode, attachment=attachment)
+    # Refresh the user doc so any newly-saved questionnaire answers are part of the system context.
+    user_doc = users_col.find_one({"id": user["id"]}) or user
+    out, model, usage = llm_turn(thread, substrate, message, intent, mode, attachment=attachment, user_doc=user_doc)
     sig = out["signals"]
     # step 5: state update
     events_col.insert_one({
@@ -389,7 +392,8 @@ def complete_action(thread_id: str, user: dict = Depends(current_user)):
         raise HTTPException(402, "Not enough credits")
     t0 = time.time()
     try:
-        out, model, usage = llm_complete_action(t)
+        fresh_user = users_col.find_one({"id": user["id"]}) or user
+        out, model, usage = llm_complete_action(t, user_doc=fresh_user)
     except Exception as e:
         users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
         log.error(f"complete-action failed: {e}")
@@ -450,6 +454,7 @@ app.include_router(tracking_router)
 app.include_router(admin_router)
 app.include_router(payments_router)
 app.include_router(feedback_router)
+app.include_router(questionnaire_router)
 
 @app.on_event("startup")
 def _startup():

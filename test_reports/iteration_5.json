@@ -1,0 +1,38 @@
+{
+  "summary": "Comprehensive backend + frontend testing of Meta Pixel events, Questionnaire flow, signup credits=50, +100 idempotent bonus, and LLM regression. 13/13 pytest passed; all critical frontend flows verified via Playwright including Lead/CompleteRegistration/InitiateCheckout pixels firing, modal show/dismiss/reopen behavior, credits balance updating to 150, and post-completion modal suppression.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "QuestionnaireNudge modal + (likely) other dialog usages",
+        "issues": ["Radix `DialogContent` missing required `DialogTitle` for screen-reader a11y — produces 4 console errors per session. Wrap a hidden DialogTitle (VisuallyHidden) in /app/frontend/src/components/QuestionnaireNudge.js. Non-blocking but recurring console noise."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_questionnaire_flow.py",
+    "/app/test_reports/pytest/questionnaire_results.xml"
+  ],
+  "action_items": [
+    "(MINOR a11y) Add a VisuallyHidden DialogTitle inside QuestionnaireNudge DialogContent to silence Radix a11y warnings."
+  ],
+  "critical_code_review_comments": [
+    "questionnaire.py find_one_and_update atomic guard on {questionnaire_completed: {$ne: true}} is correct — double-submit cannot double-grant.",
+    "server.py serialize() correctly strips Mongo _id.",
+    "Backend regression: POST /api/goals + /threads/{id}/turn after questionnaire completion return all required keys (thread, acknowledgment, credits, cost, tokens). Verified.",
+    "Frontend pixel helper (lib/pixel.js) is defensive (no-throw) — good.",
+    "QuestionnaireNudge has correct guards: token + !questionnaire_completed + not on /auth or /questionnaire + localStorage dismiss flag. All branches verified.",
+    "Minor: QuestionnaireNudge missing DialogTitle (Radix a11y warning) — easy fix."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_questionnaire_flow.py (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "Fresh users created per run: qa_<ts>@test.com / abcdef123 (created via POST /api/auth/signup). Admin: ceo@smartdecigen.com / FounderOS@2026 (not needed).",
+  "seed_data_creation": "Multiple fresh test users created during the backend pytest run and the Playwright run. None of them affect production data; each has its own UUID + email.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_questionnaire_flow.py — runnable as `REACT_APP_BACKEND_URL=<preview-url> pytest backend/tests/test_questionnaire_flow.py -v`. Auth submit button uses data-testid='auth-submit-button' (note the 'Start free' tab toggle also matches by-role lookup — use the testid). Pack buy testids on /billing: pack-buy-pack_10, pack-buy-pack_50, pack-buy-pack_500. Frontend signup email placeholder is 'you@domain.com' (not 'you@example.com'). To verify Meta Pixel calls in Playwright, monkey-patch window.fbq AFTER page load and capture into window.__fbqCalls; the helper in /app/frontend/src/lib/pixel.js calls fbq('track', name, params)."
+}

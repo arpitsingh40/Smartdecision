@@ -79,6 +79,18 @@ A thread holds the user's pursuit across weeks. Every turn refreshes "the easies
 
 - Single source of truth for signup credits (iteration 8e, Feb 2026): DONE, self-verified. New `GET /api/config` (public, no auth) returns `{ signup_credits }`. AuthPage now fetches that value on mount and renders it in the marketing line — no more hardcoded "100". DashboardPage empty state continues to read from `user.credits` (already dynamic). Any future change to `SIGNUP_CREDITS` in `backend/.env` propagates everywhere automatically.
 
+- Meta Pixel + Pre-result Questionnaire + 50 free signup credits (iteration 9, Feb 2026): DONE.
+  * **SIGNUP_CREDITS=50** (was 20) in backend/.env. `QUESTIONNAIRE_BONUS_CREDITS=100` added — bonus granted only on the FIRST submission (idempotent via `users.questionnaire_completed`).
+  * **Meta Pixel base script** injected in `/app/frontend/public/index.html` with pixel id `1495661135563155` (loads + fires PageView). `/app/frontend/src/lib/pixel.js` is a safe wrapper that no-ops when `window.fbq` is missing.
+  * **Events wired**: `Lead` (fresh signup, fired inside `login()` when `questionnaire_completed===false` on the returned user), `CompleteRegistration` (on first questionnaire submit, `value: 399, currency: INR`), `InitiateCheckout` (BillingPage `buy()` before redirect — `value, currency, content_ids[pack_id]`), `Purchase` (PaymentResultPage when status flips to `paid`, deduplicated per order via sessionStorage flag).
+  * **Backend `/api/user/questionnaire`** (new `questionnaire.py` router): `GET` returns `{completed, bonus_credits, answers}`; `POST {dream, capacity, advantage, potential}` stores answers under `users.questionnaire`, sets `questionnaire_completed=true`, and grants `QUESTIONNAIRE_BONUS_CREDITS` exactly once via an atomic `find_one_and_update`-with-guard. Subsequent submissions update answers without re-granting credits.
+  * **LLM grounding**: `engine.py` adds `_user_context_block(user_doc)` that renders a `USER_CONTEXT` block (Dream / Capacity / Advantage / Potential) prepended to the prompt in both `llm_turn` and `llm_complete_action`. `server.py` re-reads the user doc each turn so newly-completed questionnaires apply to subsequent turns immediately. No effect on threads whose owner hasn't filled the questionnaire (the block returns empty).
+  * **Post-login nudge modal** (`/app/frontend/src/components/QuestionnaireNudge.js`): shows after login on any non-`/auth`, non-`/questionnaire` route when `user.questionnaire_completed !== true`. Headline: "Unlock ₹399 worth of credits — free." Dismiss flag is stored in localStorage (`sdg_questionnaire_nudge_dismissed`) and auto-cleared once a user completes the questionnaire so future fresh signups on the same device still see it.
+  * **Questionnaire page** (`/app/frontend/src/pages/QuestionnairePage.js`): one-question-at-a-time stepper (4 steps) with progress bar, icons, contextual hints. data-testids: `questionnaire-page`, `questionnaire-progress`, `questionnaire-input-{dream|capacity|advantage|potential}`, `questionnaire-next-btn`, `questionnaire-back-btn`, `questionnaire-question-title`.
+  * **`/api/auth/me`, `/api/auth/signup`, `/api/auth/login`** now include `questionnaire_completed` in the user payload so the frontend can drive the nudge without an extra round-trip.
+  * Smoke verified live: signup (50 cr) → modal → 4-step questionnaire → +100 cr → credits balance 150 → window.fbq=true.
+
+
 ## Design rules (non-negotiable)
 1. Memory felt, never announced. 2. Surface delta, not recap. 3. One open question always visible. 4. No chat-log primary UI. 5. Silence named after 14d. 6. Re-engagement may be NULL.
 

@@ -101,6 +101,27 @@ def compute_reengagement_line(last_snap: dict, now_snap: dict, days_absent: int)
     return PHRASE_BANK[key].format(days=days_absent, prior=last_snap.get("summary_line", "your last position"), mag=extra)
 
 # ------------------------------------------------- action assist: "Do it for me" (1 LLM call)
+def _user_context_block(user_doc: dict | None) -> str:
+    """Render the user's questionnaire (Dream/Capacity/Advantage/Potential) into a tight
+    prompt block. Returns empty string if the questionnaire isn't completed yet, so threads
+    opened before answering keep the prior behaviour."""
+    if not user_doc:
+        return ""
+    q = user_doc.get("questionnaire") or {}
+    dream = (q.get("dream") or "").strip()
+    capacity = (q.get("capacity") or "").strip()
+    advantage = (q.get("advantage") or "").strip()
+    potential = (q.get("potential") or "").strip()
+    if not (dream or capacity or advantage or potential):
+        return ""
+    lines = ["USER_CONTEXT (their own words — use as ground truth for what's realistic, what's at stake, and what to lean on):"]
+    if dream:     lines.append(f"- DREAM: {dream}")
+    if capacity:  lines.append(f"- CAPACITY (time/money/energy they have right now): {capacity}")
+    if advantage: lines.append(f"- ADVANTAGE (what they uniquely have going for them): {advantage}")
+    if potential: lines.append(f"- POTENTIAL (what they believe they could become): {potential}")
+    return "\n".join(lines) + "\n\n"
+
+
 ASSIST_SYSTEM = """You are the Deep Discussion Engine's execution hand. The user has ONE next action. Your job: remove every ounce of friction so they finish it in minutes, not days — and they should feel cared for, not lectured to.
 VOICE: write like a thoughtful friend who happens to be sharp. Plain English, short sentences, easy to scan, in the USER'S register (match their tone — if they're casual, you're casual; if they're crisp, you're crisp). Skip jargon. No "Dear Sir/Madam" stiffness in drafts; no corporate "I hope this email finds you well" unless that's truly how they speak. Contractions welcome. The artifact must read like THEY wrote it on a good day.
 FILE-AWARE EXECUTION (critical): if the thread state shows the user has attached a file with the data needed for this action (visible via FILE_FACTS in the context), the artifact IS the computation — not instructions to do the computation. NEVER produce a checklist of 'open the sheet, find the column, count the rows' for data the engine has already seen. Instead, state the answer with the numbers ('I counted 5 Disbursed out of your 70 rows. Now we just need your fee per disbursed case — that one isn't in the sheet.') and ask for ONLY the missing piece. If both numbers are available, do the math and present the result.
@@ -120,11 +141,13 @@ Return ONLY valid JSON, no markdown fences:
 
 ASSIST_REQUIRED = ("kind", "title", "artifact", "handoff")
 
-def llm_complete_action(thread: dict):
+def llm_complete_action(thread: dict, user_doc: dict | None = None):
     """Generate the ship-ready artifact (or 10-minute kit) for the current next action."""
     saved_facts = (thread.get("current_file_facts") or "").strip()
     facts_block = f"FILE_FACTS (from a file the user attached earlier — the artifact must USE these numbers, not ask the user to re-derive them):\n{saved_facts}\n" if saved_facts else ""
+    user_ctx_block = _user_context_block(user_doc)
     prompt = (
+        f"{user_ctx_block}"
         f"GOAL: {thread['goal']}\n"
         f"WHY IT MATTERS TO THEM: {thread.get('why_now', '(not stated)')}\n"
         f"STATE SUMMARY:\n{thread['current_state_summary']}\n"
@@ -269,7 +292,7 @@ REQUIRED_KEYS = ("acknowledgment", "refreshed_easiest_path", "refreshed_next_act
                  "action_payoff", "big_picture_link")
 
 def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal",
-             attachment: dict | None = None):
+             attachment: dict | None = None, user_doc: dict | None = None):
     adjust_note = ""
     if intent == "action_adjust":
         adjust_note = ("ADJUSTMENT: the user is pushing back on the PRIOR NEXT ACTION above - "
@@ -281,7 +304,9 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
     # Inject so the engine reasons on what it already saw, without the user re-uploading.
     saved_facts = (thread.get("current_file_facts") or "").strip()
     facts_block = f"\nFILE_FACTS (from a file the user attached earlier — still valid this turn):\n{saved_facts}\n" if saved_facts else ""
+    user_ctx_block = _user_context_block(user_doc)
     prompt = (
+        f"{user_ctx_block}"
         f"GOAL: {thread['goal']}\n"
         f"WHY IT MATTERS TO THEM (their words at the start): {thread.get('why_now', '(not stated)')}\n"
         f"STATE SUMMARY:\n{thread['current_state_summary']}\n"

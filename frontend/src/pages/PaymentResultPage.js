@@ -4,6 +4,7 @@ import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
+import { trackPixel } from '../lib/pixel';
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_ATTEMPTS = 20; // 20 × 3s = 60s window — Zoho can take 30–45s to settle
@@ -32,6 +33,19 @@ export default function PaymentResultPage() {
         if (r.data.status === 'paid') {
           setResult(r.data);
           if (isLoggedIn && setCredits) setCredits(r.data.balance);
+          // Meta Pixel: Purchase. Fire once per order_id (resilient to refresh / re-poll).
+          try {
+            const key = `sdg_pixel_purchase_${orderId}`;
+            if (sessionStorage.getItem(key) !== '1') {
+              sessionStorage.setItem(key, '1');
+              trackPixel('Purchase', {
+                value: Number(r.data.amount_inr || 0),
+                currency: 'INR',
+                content_ids: [r.data.pack_id],
+                content_type: 'product',
+              });
+            }
+          } catch (_e) { /* noop */ }
         } else if (r.data.status === 'failed') {
           setResult(r.data);
         } else if (attemptsRef.current < MAX_ATTEMPTS) {

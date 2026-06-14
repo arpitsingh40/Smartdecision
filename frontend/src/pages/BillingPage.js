@@ -5,6 +5,7 @@ import { Sparkles, Check } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
+import { trackPixel } from '../lib/pixel';
 
 export default function BillingPage() {
   const [packs, setPacks] = useState([]);
@@ -28,6 +29,17 @@ export default function BillingPage() {
   const buy = async (packId) => {
     if (busy) return;
     setBusy(packId);
+    // Meta Pixel: InitiateCheckout — fires the moment user commits to a pack, before redirect.
+    try {
+      const pack = packs.find((p) => p.pack_id === packId);
+      trackPixel('InitiateCheckout', {
+        value: Number(pack?.amount_inr || 0),
+        currency: 'INR',
+        content_ids: [packId],
+        content_type: 'product',
+        num_items: 1,
+      });
+    } catch (_e) { /* noop */ }
     try {
       const r = await api.post('/payments/create-order', { pack_id: packId });
       window.location.assign(r.data.checkout_url);

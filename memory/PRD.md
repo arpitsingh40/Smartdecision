@@ -90,6 +90,32 @@ A thread holds the user's pursuit across weeks. Every turn refreshes "the easies
   * **`/api/auth/me`, `/api/auth/signup`, `/api/auth/login`** now include `questionnaire_completed` in the user payload so the frontend can drive the nudge without an extra round-trip.
   * Smoke verified live: signup (50 cr) → modal → 4-step questionnaire → +100 cr → credits balance 150 → window.fbq=true.
 
+- Phase sentinel + state-trail + voice tightening (iteration 10, Feb 2026): DONE, mock-verified, NEEDS live LLM verification.
+  * **The why**: founder observed coach-block prompts felt "ultra-connected" because the model could declare a conversational PHASE and earn the right to give advice. Current engine forced an action every turn → premature advice. Fix = bring back the sentinel without copying the 4-stage UI.
+  * **engine.py — phase machine added** as a JSON field the model emits each turn: `exploring | naming | ready_to_act | acting | checking_in`. SYSTEM rules:
+    - `exploring` → `refreshed_next_action`, `action_payoff`, `big_picture_link`, `refreshed_easiest_path` MUST be null. Mirror + open question only.
+    - `naming` → blocker named in `state_summary`; action still null.
+    - `ready_to_act` → tentative action proposed; `refreshed_open_question` becomes a consent question ("want me to lock this in?").
+    - `acting` → on user consent (yes/go/draft/ok/sure/please), engine ships the locked next action. Reflects consent in acknowledgment.
+    - `checking_in` → user reporting on the locked action. Lead with reflection.
+    - Cannot skip from `exploring` straight to `ready_to_act` or `acting` — funnel forced.
+  * **engine.py — voice rules tightened (slop ban)**:
+    - REFLECT BEFORE ASK: acknowledgment MUST open with a literal or paraphrased reflection of the user's actual words.
+    - ONE QUESTION PER TURN: `refreshed_open_question` holds the only `?`; acknowledgment + mirror are statements.
+    - TOPIC LOCK: no branching sideways unless the user did.
+    - SLOP BAN: no em-dashes (—), no emojis, no exclamation marks, no rhetorical questions, no "I hope this helps", no smiley/sparkle words.
+  * **engine.py — guardrails enforced in post-processing** (not just relied on the model):
+    - Phase clamped to valid set; defaults to `exploring`.
+    - In `exploring`/`naming`, action / payoff / big_picture force-nulled (model can't accidentally ship advice early).
+    - All `?` stripped from acknowledgment + mirror.
+    - All `—` and `–` stripped from every voice-facing string.
+  * **engine.py — REQUIRED_KEYS** now `("phase", "acknowledgment", "refreshed_open_question", "state_summary", "signals")` — relaxed from the old 8-field requirement because action fields are legitimately null in early phases.
+  * **engine.py — PRIOR PHASE injected into prompt** so the model sees its own trail (`PRIOR PHASE: naming`) and respects the transition rules.
+  * **server.py — persists `current_phase`** on the thread after each turn; initialises new threads to `exploring`; tolerates null `current_next_action` and null `refreshed_easiest_path` (falls back to prior easiest_path or `(still exploring)`).
+  * **ThreadPage.js** — Next action card now shows a soft "Still finding the real shape of this. No action locked in yet, keep talking." placeholder (testid: `next-action-pending`) when `current_next_action` is null. No new buttons, no new wizard, no new UI flow. Existing "Do it for me" + "Adjust this step" buttons hide when there's no action yet.
+  * **Why this beats the original problem**: users keep the standard chat habit they already have, but every reply earns its right to give advice through the phase sentinel. The model can't slop. The model can't skip the funnel.
+  * **Status**: mocked unit test of the guardrails PASSED (em-dash strip, `?` strip, null-by-phase, valid-phase clamp). Live end-to-end test pending real ANTHROPIC_API_KEY (placeholder in .env this session because env was reset on fork).
+
 
 ## Design rules (non-negotiable)
 1. Memory felt, never announced. 2. Surface delta, not recap. 3. One open question always visible. 4. No chat-log primary UI. 5. Silence named after 14d. 6. Re-engagement may be NULL.

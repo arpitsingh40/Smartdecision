@@ -323,7 +323,7 @@ export default function ThreadPage() {
               </div>
 
               <Field label="Next action · 24–48h" testId="situation-next-action" refreshKey={refreshKey}
-                right={!inactive && remainingMs !== null ? (
+                right={!inactive && thread.current_next_action && remainingMs !== null ? (
                   remainingMs > 0 ? (
                     <span data-testid="action-countdown"
                       className={`font-mono-plex text-[11px] tabular-nums whitespace-nowrap ${remainingMs < 12 * 3600000 ? 'text-[hsl(var(--warning))]' : 'text-muted-foreground'}`}>
@@ -336,6 +336,14 @@ export default function ThreadPage() {
                     </span>
                   )
                 ) : null}>
+                {!thread.current_next_action ? (
+                  <div data-testid="next-action-pending"
+                    className="rounded-xl bg-[hsl(var(--accent))]/40 border border-border/50 border-dashed px-4 py-3">
+                    <p className="text-sm leading-6 text-muted-foreground italic">
+                      Still finding the real shape of this. No action locked in yet, keep talking.
+                    </p>
+                  </div>
+                ) : (
                 <div className="rounded-xl bg-[hsl(var(--accent))]/60 border border-border/70 px-4 py-3">
                   <p className={`leading-snug ${(thread.current_next_action || '').length > 80
                     ? 'text-[15px] md:text-base font-medium text-foreground'
@@ -419,6 +427,7 @@ export default function ThreadPage() {
                     </motion.div>
                   )}
                 </div>
+                )}
               </Field>
 
               {artifact && workbenchOpen && !inactive && (

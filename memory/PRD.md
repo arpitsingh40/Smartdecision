@@ -91,6 +91,17 @@ A thread holds the user's pursuit across weeks. Every turn refreshes "the easies
   * Smoke verified live: signup (50 cr) → modal → 4-step questionnaire → +100 cr → credits balance 150 → window.fbq=true.
 
 - Phase sentinel + state-trail + voice tightening (iteration 10, Feb 2026): DONE, mock-verified, NEEDS live LLM verification.
+
+- Direct-entry dashboard + questionnaire removed (iteration 11, Feb 2026): DONE, screenshot-verified.
+  * **Goal**: kill onboarding friction. Founder request: drop the 4-question questionnaire + 100-credit bonus AND replace the "Open thread" / "New goal" buttons with an inline placeholder textarea so the user just types and the engine starts asking.
+  * **Frontend changes**:
+    - `App.js`: removed `QuestionnaireNudge` import + render, removed `QuestionnairePage` import, removed `/questionnaire` route. The `Lead` Pixel event detection still works (still keyed on `questionnaire_completed === false` which fresh signups have).
+    - `DashboardPage.js`: rewritten. Empty state now shows headline "The thing on your mind? Just type it." + `<DirectComposer variant="hero" autoFocus />` (textarea with placeholder "What's on your mind. Just start typing." + Start button). Threads-list page shows `<DirectComposer variant="inline" />` above the grid so returning users can start a new thread inline too. Title is derived from the first sentence (or first 60 chars) of the message; the full message goes as `why_now`. Submits to `POST /api/goals` and navigates to the new thread.
+    - data-testids: `direct-composer-hero`, `direct-composer-inline`, `direct-composer-input`, `direct-composer-submit`.
+  * **Backend changes**: none. `POST /api/goals` contract unchanged (title + why_now), engine still reads from those fields. `questionnaire.py` router remains for any historical client; new signups never hit it. `_user_context_block` returns empty when no questionnaire data is present (safe no-op).
+  * **NewGoalPage.js**: left in place but unreachable from the dashboard. Route `/new` still exists in App.js as a fallback for any bookmarked URL.
+  * **Screenshot-verified**: fresh signup → lands directly on dashboard with the typing placeholder visible + 50 free credits ready + no nudge modal + composer testid present.
+
   * **The why**: founder observed coach-block prompts felt "ultra-connected" because the model could declare a conversational PHASE and earn the right to give advice. Current engine forced an action every turn → premature advice. Fix = bring back the sentinel without copying the 4-stage UI.
   * **engine.py — phase machine added** as a JSON field the model emits each turn: `exploring | naming | ready_to_act | acting | checking_in`. SYSTEM rules:
     - `exploring` → `refreshed_next_action`, `action_payoff`, `big_picture_link`, `refreshed_easiest_path` MUST be null. Mirror + open question only.

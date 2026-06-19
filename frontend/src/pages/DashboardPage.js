@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
 import { Skeleton } from '../components/ui/skeleton';
+import { Textarea } from '../components/ui/textarea';
+import { ArrowRight } from 'lucide-react';
+import { toast } from 'sonner';
 import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
@@ -20,6 +23,114 @@ const statusStyle = {
   graduated: 'bg-secondary text-foreground border border-border/70',
   released: 'bg-transparent text-muted-foreground border border-border/70',
 };
+
+// Derive a short title from the user's first message: first sentence (or first 60 chars).
+const deriveTitle = (text) => {
+  const t = (text || '').trim();
+  if (!t) return '';
+  const firstStop = t.search(/[.!?\n]/);
+  const head = firstStop > 0 ? t.slice(0, firstStop) : t;
+  return head.length > 60 ? head.slice(0, 57).trimEnd() + '…' : head;
+};
+
+function DirectComposer({ variant = 'inline', autoFocus = false }) {
+  const navigate = useNavigate();
+  const { setCredits } = useAuth();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const taRef = useRef(null);
+
+  useEffect(() => {
+    if (autoFocus && taRef.current) taRef.current.focus();
+  }, [autoFocus]);
+
+  const submit = async (e) => {
+    e?.preventDefault?.();
+    if (busy) return;
+    const msg = text.trim();
+    if (msg.length < 3) {
+      toast.error('Give it a sentence — even a rough one.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const title = deriveTitle(msg) || 'New thread';
+      const r = await api.post('/goals', { title, why_now: msg });
+      setCredits(r.data.credits);
+      navigate(`/thread/${r.data.thread.thread_id}`);
+    } catch (err) {
+      const m = err.response?.status === 402
+        ? 'Not enough credits to start.'
+        : err.response?.data?.detail || 'Could not open. Try again.';
+      toast.error(m);
+      setBusy(false);
+    }
+  };
+
+  const onKey = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(e);
+  };
+
+  if (variant === 'hero') {
+    return (
+      <form onSubmit={submit} data-testid="direct-composer-hero" className="rise-4 mt-10 max-w-xl mx-auto text-left">
+        <Textarea
+          ref={taRef}
+          data-testid="direct-composer-input"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKey}
+          disabled={busy}
+          maxLength={4000}
+          placeholder="What's on your mind. Just start typing."
+          className="rounded-xl min-h-[120px] text-[15px] leading-6 bg-white border-border/70 shadow-sm focus-visible:ring-[hsl(var(--ring))]"
+        />
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <p className="text-[11px] text-muted-foreground tracking-wide">
+            One sentence is enough. The engine will ask the next question.
+          </p>
+          <Button
+            type="submit"
+            data-testid="direct-composer-submit"
+            disabled={busy || text.trim().length < 3}
+            className="rounded-xl h-11 px-5 active:scale-[0.98] transition-colors"
+          >
+            {busy ? 'Reading…' : (<><span>Start</span><ArrowRight size={15} strokeWidth={1.75} className="ml-1.5" /></>)}
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} data-testid="direct-composer-inline" className="mb-8 rounded-2xl border border-border/70 bg-white p-4 sm:p-5 premium-lift">
+      <Textarea
+        ref={taRef}
+        data-testid="direct-composer-input"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={onKey}
+        disabled={busy}
+        maxLength={4000}
+        placeholder="What's on your mind right now. Just start typing."
+        className="rounded-xl min-h-[88px] text-[15px] leading-6 border-border/60 focus-visible:ring-[hsl(var(--ring))]"
+      />
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-[11px] text-muted-foreground tracking-wide">
+          Press ⌘/Ctrl + Enter to send.
+        </p>
+        <Button
+          type="submit"
+          data-testid="direct-composer-submit"
+          disabled={busy || text.trim().length < 3}
+          className="rounded-xl h-10 px-4 active:scale-[0.98] transition-colors"
+        >
+          {busy ? 'Reading…' : (<><span>Start new thread</span><ArrowRight size={14} strokeWidth={1.75} className="ml-1.5" /></>)}
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -53,14 +164,13 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-        {goals?.length !== 0 && (
-          <div className="flex items-center justify-between mb-8">
-            <p className="text-sm text-muted-foreground">One thread per goal. Each holds where you are, and what comes next.</p>
-            <Button data-testid="goals-new-goal-button" onClick={() => navigate('/new')}
-              className="rounded-xl active:scale-[0.98] transition-colors">
-              New goal
-            </Button>
-          </div>
+
+        {/* Inline composer above the existing threads list — direct entry, no form page. */}
+        {goals !== null && goals.length > 0 && (
+          <>
+            <DirectComposer variant="inline" />
+            <p className="text-sm text-muted-foreground mb-4">One thread per goal. Each holds where you are, and what comes next.</p>
+          </>
         )}
 
         {goals === null && (
@@ -85,36 +195,17 @@ export default function DashboardPage() {
               </svg>
               <p className="rise-1 text-[11px] uppercase tracking-[0.24em] text-muted-foreground mb-4">Your first thread</p>
               <h2 className="rise-2 font-display text-3xl sm:text-[40px] leading-[1.12] max-w-xl mx-auto">
-                The goal you keep circling?
-                <span className="block italic mt-1">Bring it here.</span>
+                The thing on your mind?
+                <span className="block italic mt-1">Just type it.</span>
               </h2>
               <p className="rise-3 text-sm sm:text-[15px] text-muted-foreground leading-relaxed max-w-md mx-auto mt-5">
-                Not another chat that forgets you by morning. One thread holds your pursuit
-                across weeks — and every reply ends in a single action you can finish in 48 hours.
+                Not a form. Not a plan. Whatever you would say to a friend who actually listens,
+                start there. The engine takes it from there with one question at a time.
               </p>
-              <div className="rise-3 grid grid-cols-1 sm:grid-cols-3 gap-7 sm:gap-0 max-w-2xl mx-auto mt-11 sm:divide-x sm:divide-border/60">
-                {[
-                  ['01', 'Name it', 'The thing you keep postponing, in your own words.'],
-                  ['02', 'Move in 48 hours', 'Every reply converges to one concrete next action.'],
-                  ['03', 'Be remembered', 'Return anytime — it knows what changed while you were gone.'],
-                ].map(([n, title, line]) => (
-                  <div key={n} className="px-4">
-                    <p className="text-[10px] tracking-[0.28em] text-[hsl(var(--ring))] mb-1.5 font-semibold">{n}</p>
-                    <p className="text-sm font-medium">{title}</p>
-                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">{line}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="rise-4 mt-11">
-                <Button data-testid="empty-state-new-goal-button" size="lg" onClick={() => navigate('/new')}
-                  className="rounded-xl px-8 h-12 text-[15px] shadow-md hover:shadow-lg active:scale-[0.98] transition-all">
-                  Open your first thread
-                </Button>
-                <p className="text-[11px] text-muted-foreground mt-3.5 tracking-wide">
-                  Takes about two minutes
-                  {typeof user?.credits === 'number' ? ` · ${user.credits} free credits ready` : ''}
-                </p>
-              </div>
+              <DirectComposer variant="hero" autoFocus />
+              <p className="text-[11px] text-muted-foreground mt-4 tracking-wide">
+                {typeof user?.credits === 'number' ? `${user.credits} free credits ready` : ''}
+              </p>
             </CardContent>
           </Card>
         )}

@@ -92,6 +92,25 @@ A thread holds the user's pursuit across weeks. Every turn refreshes "the easies
 
 - Phase sentinel + state-trail + voice tightening (iteration 10, Feb 2026): DONE, mock-verified, NEEDS live LLM verification.
 
+- Hierarchical doc memory (RAPTOR-style) (iteration 12, Feb 2026): DONE, live-LLM-verified end-to-end.
+  * **The why**: founder's "book with TOC" mental model. Need to answer questions about any-size doc (target: 5M words) with chapter-level citations, on the same chat UI, no new screen.
+  * **Architecture**: every uploaded file becomes a 4-level tree — Doc (level 0) -> Chapters (level 1, native or synthesised) -> Paragraph chunks (level 4). Every node carries a summary + embedding. At query time, walk top-K chapters by summary-vector similarity, then top-K paragraphs within those chapters, inject as DOC_MAP + RETRIEVED_PASSAGES in the engine prompt.
+  * **New file `/app/backend/doc_memory.py`** (~530 lines): file parsers (PDF/DOCX/PPTX/MD/HTML/JSON/XLSX/CSV/plain), semantic chunker, Haiku chapter-summary cascade, local fastembed embedder, hierarchical retrieval. Public entry points: `extract()` (called at upload — decides inline-vs-tree), `build_tree_sync()` (background worker), `recall()` (called every turn — returns DOC_MAP + passages block, empty when no indexed trees on the thread).
+  * **`engine.py` changes**: added `ANALYTICAL_MODEL = "claude-sonnet-4-5"` constant. New routing — any turn with attachment OR a non-empty recall_block goes Sonnet 4.5 -> Opus -> Haiku (file/recall lane is cheaper + same context window as Opus). `max_tokens` raised to 3500 on file/recall turns so the engine can write a fuller analytical response. New `attachment_preview` and `recall_block` parameters on `llm_turn`. New SYSTEM rule: when DOC_MAP/RETRIEVED_PASSAGES are present, ground every claim in a retrieved passage and cite the chapter by name.
+  * **`server.py` changes**: turn route now pre-extracts every attachment via `doc_memory.extract()`. Small files (<32k chars after extraction) -> inline path (current behaviour). Big files -> stored as `tree_<id>`, indexed via FastAPI `BackgroundTasks` so the user's turn returns in ~15s while the tree finishes in ~30s. `run_pipeline` always calls `doc_memory.recall(thread_id, user_msg)` -> ~100 ms when no trees exist, real retrieval when they do.
+  * **Embeddings**: switched from OpenAI `text-embedding-3-small` to **local `fastembed` (BAAI/bge-small-en-v1.5, 384-dim, ONNX)**. Reason: founder's OPENAI_API_KEY returns 429 insufficient_quota. fastembed is ONNX-based (~80MB weights, no torch dependency), beats text-embedding-3-small on MTEB retrieval benchmarks, zero recurring cost. 2.4s cold start, 120ms per batch of 3 on CPU.
+  * **MongoDB collections**: `doc_trees` (one row per uploaded doc with status/filename/doc_summary/node_count), `doc_nodes` (one row per chapter/paragraph with parent_id/level/title/summary/text/summary_embedding/text_embedding). Trees are bound to a thread; up to 3 active trees per thread are queried at recall time (sorted by created_at desc).
+  * **Costs**:
+    - Index 80k-char doc -> 33 s, ~$0.005 (Haiku for 6 chapter summaries + 1 doc summary).
+    - Index 5M-word doc -> projected ~$0.30 (10k leaves, 100 chapter summaries).
+    - Question turn against indexed doc -> 6 credits (~2,800 tokens, Sonnet 4.5).
+    - No-file turn -> unchanged (2-3 credits, Opus).
+  * **New deps in requirements.txt**: python-docx 1.2.0, python-pptx 1.0.2, beautifulsoup4 4.15.0, lxml 6.1.1, fastembed 0.8.0, onnxruntime 1.27.0, mmh3, loguru, py-rust-stemmers.
+  * **Live smoke** (`/app/backend/tests/smoke_doc_memory.py`): fresh signup -> upload 80k-char markdown -> tree built in 33.5s (51 nodes, 6 chapters) -> ask "what does the playbook say about email re-engagement nudges and when they should fire?" -> engine replies "From the Retention chapter: they fire at days 3, 7, 14, and 30 of inactivity, and the phrase bank rotates weekly." All asserts green.
+  * **Slop-ban + phase machine respected on file turns**: tested via smoke. Phase stayed `exploring` (no premature action), ONE question, zero em-dashes.
+  * **Deferred to a later iteration** (intentionally — leanest-possible scope): chat-memory tree (we already capture mirror + state_summary + signals per turn, that's good enough free memory until users explicitly ask for cross-thread recall); user-identity tree; nightly background workers; UI surface for citations (currently the citation lives in the engine's prose, frontend doesn't need to render them as separate chips yet).
+
+
 - Direct-entry dashboard + questionnaire removed (iteration 11, Feb 2026): DONE, screenshot-verified.
   * **Goal**: kill onboarding friction. Founder request: drop the 4-question questionnaire + 100-credit bonus AND replace the "Open thread" / "New goal" buttons with an inline placeholder textarea so the user just types and the engine starts asking.
   * **Frontend changes**:

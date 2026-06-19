@@ -15,6 +15,7 @@ import anthropic
 log = logging.getLogger(__name__)
 
 PRIMARY_MODEL = "claude-opus-4-8"
+ANALYTICAL_MODEL = "claude-sonnet-4-5"  # files / large data analysis: same context as Opus, ~5x cheaper
 ULTRA_MODEL = "claude-fable-5"  # ultra thinking: adaptive thinking + high effort
 FALLBACK_MODEL = "claude-haiku-4-5"
 
@@ -287,6 +288,7 @@ What makes each turn worth returning for:
 - BOLDER PLAY: when a genuinely unconventional, higher-leverage move exists - lateral, game-changing, NOT just 'do more' - name it in 1-2 lines: bigger risk, much bigger payoff, something they would not think of themselves. Frame it as an option, not a demand. The easiest path stays the default; this is the door they did not see. If nothing genuinely bold exists this turn, return null - a forced bold move destroys trust.
 - BREVITY: short enough to always read fully, dense enough that every line earns its place. No filler, no padding, no "I hope this helps". The user's eyes should glide.
 - STATE WHAT'S IN THE FILE, ASK ONLY WHAT ISN'T: if the user attached a file (CSV, spreadsheet, PDF, image) and the data needed for the next action is already in it, COMPUTE the answer yourself and state it in big_picture_link or state_summary as a real number. Never ask the user to count rows, find a column, or filter values — that is clerical work you can do in your head. requested_input is reserved strictly for data the file does NOT contain (a real reply received, a real-world outcome, a number the user must look up elsewhere).
+- WHEN A DOC_MAP / RETRIEVED_PASSAGES BLOCK IS PRESENT: the user uploaded something big. The DOC_MAP shows the document's chapter structure with relevance scores. The RETRIEVED_PASSAGES are the actual evidence most relevant to the current message. Ground every claim about the file in a retrieved passage. When you reference the file, say WHERE: "From chapter X of the file…". If the answer the user wants isn't in the retrieved passages but might live elsewhere in the doc, say so plainly ("the part I read doesn't cover that — want me to look in chapter Y?"). Never invent file contents. Never claim something is in the file when it's only in a chapter title.
 - DECOMPOSE multi-data actions: if the next action needs two facts and only one is in the file, state the file-derived fact ("I counted 5 'Disbursed' in your sheet") and make requested_input ask only for the missing one ("I just need your fee per disbursed case — that isn't in the sheet").
 - REQUESTED_INPUT (use sparingly): if the next action you just assigned will produce a piece of evidence the user can bring back (a reply, a screenshot, a number, a file), set requested_input to a short warm line asking them to share it next turn. When the action is purely internal (think about, decide, feel), or when the answer is already in an attached file, set requested_input to null. Never use this as a homework demand; it's an invitation to bring back what they found.
 - ATTACHED FILE / IMAGE: when the user sends a file or image with their message, treat it as PRIMARY EVIDENCE — quote one specific detail from it in your mirror or acknowledgment so they know you actually read it, and let what you saw shape the next action. ALWAYS populate file_facts with a tight structured snapshot of the file (3-6 short lines: rows / columns / a key count / a key total / one anomaly worth noting) so future turns can reason on what you saw without the user re-uploading.
@@ -311,20 +313,28 @@ REQUIRED_KEYS = ("phase", "acknowledgment", "refreshed_open_question", "state_su
 VALID_PHASES = ("exploring", "naming", "ready_to_act", "acting", "checking_in")
 
 def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal",
-             attachment: dict | None = None, user_doc: dict | None = None):
+             attachment: dict | None = None, user_doc: dict | None = None,
+             recall_block: str = "", attachment_preview: dict | None = None):
     adjust_note = ""
     if intent == "action_adjust":
         adjust_note = ("ADJUSTMENT: the user is pushing back on the PRIOR NEXT ACTION above - "
                        "their message holds an obstacle or their own version of the step. Do not mark it done. "
                        "Recalibrate: keep what works about it, redesign it around their input. "
                        "The refreshed_next_action must visibly incorporate their words.\n")
-    vision_blocks, file_text = build_attachment_blocks(attachment)
+    # Server may have pre-extracted the attachment via doc_memory (preferred path: handles all formats
+    # + decides inline-vs-tree). Fall back to the legacy internal extractor if no preview was supplied.
+    if attachment_preview is not None:
+        vision_blocks = attachment_preview.get("vision_blocks") or []
+        file_text = attachment_preview.get("inline_text") or ""
+    else:
+        vision_blocks, file_text = build_attachment_blocks(attachment)
     # Saved file snapshot from a prior turn (set when the user attached a file earlier).
     # Inject so the engine reasons on what it already saw, without the user re-uploading.
     saved_facts = (thread.get("current_file_facts") or "").strip()
     facts_block = f"\nFILE_FACTS (from a file the user attached earlier — still valid this turn):\n{saved_facts}\n" if saved_facts else ""
     user_ctx_block = _user_context_block(user_doc)
     prior_phase = (thread.get("current_phase") or "").strip() or "(none — this is an early turn)"
+    recall_section = (recall_block.strip() + "\n") if recall_block and recall_block.strip() else ""
     prompt = (
         f"{user_ctx_block}"
         f"GOAL: {thread['goal']}\n"
@@ -338,12 +348,22 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         f"INTENT: {intent}\n"
         f"{adjust_note}"
         f"{facts_block}"
+        f"{recall_section}"
         f"USER MESSAGE: {user_msg}"
         f"{file_text}"
     )
     user_content = vision_blocks + [{"type": "text", "text": prompt}] if vision_blocks else prompt
-    # mode "ultra": Fable 5 with adaptive thinking, then graceful fallback to the normal chain
-    chain = (ULTRA_MODEL, PRIMARY_MODEL, FALLBACK_MODEL) if mode == "ultra" else (PRIMARY_MODEL, FALLBACK_MODEL)
+    # Routing:
+    #  ultra              -> Fable 5 (deep thinking) then Opus then Haiku
+    #  file/recall present -> Sonnet 4.5 (cheaper, same context, great at analysis) then Opus then Haiku
+    #  normal              -> Opus 4.8 then Haiku
+    has_file_context = bool(vision_blocks) or bool(file_text) or bool(recall_section)
+    if mode == "ultra":
+        chain = (ULTRA_MODEL, PRIMARY_MODEL, FALLBACK_MODEL)
+    elif has_file_context:
+        chain = (ANALYTICAL_MODEL, PRIMARY_MODEL, FALLBACK_MODEL)
+    else:
+        chain = (PRIMARY_MODEL, FALLBACK_MODEL)
     last_err = None
     # System block is cached: SYSTEM is large and identical across turns, prompt caching cuts
     # ~90% off its repeated read cost from the 2nd turn onward (same model + same content).
@@ -353,6 +373,8 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         try:
             kwargs = {"model": model, "max_tokens": 1200, "system": system_blocks,
                       "messages": [{"role": "user", "content": user_content}]}
+            if has_file_context and model != ULTRA_MODEL:
+                kwargs["max_tokens"] = 3500  # room for richer analysis on file/recall turns
             if model == ULTRA_MODEL:
                 kwargs["max_tokens"] = 8000  # room for thinking + JSON output
                 kwargs["thinking"] = {"type": "adaptive"}

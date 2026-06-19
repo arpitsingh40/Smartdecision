@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from pymongo import ReturnDocument
@@ -23,6 +23,7 @@ from admin import router as admin_router
 from payments import router as payments_router
 from feedback import router as feedback_router
 from questionnaire import router as questionnaire_router
+import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
@@ -140,7 +141,8 @@ def me(user: dict = Depends(current_user)):
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
-                 intent_override: str = None, attachment: dict | None = None):
+                 intent_override: str = None, attachment: dict | None = None,
+                 attachment_preview: dict | None = None):
     """Runs the full turn. Returns (out, intent, model, latency, usage).
     Credit deduction is handled by the caller (reserve-and-reconcile against real token usage).
     `attachment` (optional dict): {filename, mime, base64} — file/image the user uploaded with this turn."""
@@ -164,10 +166,20 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
     substrate["streak"] = streak
     # step 3: intent (pure; explicit override wins - e.g. action_adjust from the next-action block)
     intent = intent_override or classify_intent(message, days_gap)
-    # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5)
+    # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5
+    # | file/recall: Sonnet 4.5 -> Opus -> Haiku)
     # Refresh the user doc so any newly-saved questionnaire answers are part of the system context.
     user_doc = users_col.find_one({"id": user["id"]}) or user
-    out, model, usage = llm_turn(thread, substrate, message, intent, mode, attachment=attachment, user_doc=user_doc)
+    # step 4a: hierarchical recall over indexed docs on this thread (cheap, ~100 ms; empty when none).
+    try:
+        recall_block = doc_memory.recall(thread["thread_id"], message)
+    except Exception as e:
+        log.warning(f"doc recall failed: {e}")
+        recall_block = ""
+    out, model, usage = llm_turn(thread, substrate, message, intent, mode,
+                                 attachment=attachment, user_doc=user_doc,
+                                 recall_block=recall_block,
+                                 attachment_preview=attachment_preview)
     sig = out["signals"]
     # step 5: state update
     events_col.insert_one({
@@ -324,17 +336,33 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
             "hours_since_turn": round(hours_since) if hours_since is not None else None}
 
 @api.post("/threads/{thread_id}/turn")
-def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
+def turn(thread_id: str, body: TurnIn, background: BackgroundTasks, user: dict = Depends(current_user)):
     if body.mode not in ("normal", "ultra"):
         raise HTTPException(422, "mode must be 'normal' or 'ultra'")
     # Attachment? Use a larger reserve (vision + extracted file text both inflate token usage).
     attachment = None
+    attachment_preview = None  # set when we pre-extract via doc_memory (skips engine's internal extractor)
     if body.attachment_base64:
         if len(body.attachment_base64) > 12_000_000:  # ~9 MB raw cap to keep memory + token cost sane
             raise HTTPException(413, "Attachment too large. Keep files under 8 MB.")
         attachment = {"base64": body.attachment_base64,
                       "filename": body.attachment_filename or "attachment",
                       "mime": body.attachment_mime or ""}
+        # Pre-extract: returns inline-text for small files, or schedules tree build for big ones.
+        try:
+            vblocks, inline_text, tree_id = doc_memory.extract(
+                attachment["filename"], attachment["mime"], attachment["base64"], thread_id)
+            attachment_preview = {"vision_blocks": vblocks, "inline_text": inline_text}
+            if tree_id:
+                # Re-parse on the worker so the full raw text stays out of memory of the request thread.
+                import base64 as _b64
+                raw = _b64.b64decode(attachment["base64"])
+                kind, full_text, chapters = doc_memory.parse_file(
+                    attachment["filename"], attachment["mime"], raw)
+                background.add_task(doc_memory.build_tree_sync, tree_id, full_text, chapters, attachment["filename"])
+        except Exception as e:
+            log.warning(f"doc pre-extract failed, falling back to engine inline: {e}")
+            attachment_preview = None
     if attachment:
         reserve = TURN_RESERVE_VISION
     elif body.mode == "ultra":
@@ -353,7 +381,8 @@ def turn(thread_id: str, body: TurnIn, user: dict = Depends(current_user)):
     try:
         out, intent, model, latency, usage = run_pipeline(t, user, body.message.strip(), body.mode,
                                                    intent_override="action_adjust" if body.adjust else None,
-                                                   attachment=attachment)
+                                                   attachment=attachment,
+                                                   attachment_preview=attachment_preview)
     except Exception as e:
         try:
             users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund

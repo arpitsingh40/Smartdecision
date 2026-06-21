@@ -289,6 +289,8 @@ What makes each turn worth returning for:
 - BREVITY: short enough to always read fully, dense enough that every line earns its place. No filler, no padding, no "I hope this helps". The user's eyes should glide.
 - STATE WHAT'S IN THE FILE, ASK ONLY WHAT ISN'T: if the user attached a file (CSV, spreadsheet, PDF, image) and the data needed for the next action is already in it, COMPUTE the answer yourself and state it in big_picture_link or state_summary as a real number. Never ask the user to count rows, find a column, or filter values — that is clerical work you can do in your head. requested_input is reserved strictly for data the file does NOT contain (a real reply received, a real-world outcome, a number the user must look up elsewhere).
 - WHEN A DOC_MAP / RETRIEVED_PASSAGES BLOCK IS PRESENT: the user uploaded something big. The DOC_MAP shows the document's chapter structure with relevance scores. The RETRIEVED_PASSAGES are the actual evidence most relevant to the current message. Ground every claim about the file in a retrieved passage. When you reference the file, say WHERE: "From chapter X of the file…". If the answer the user wants isn't in the retrieved passages but might live elsewhere in the doc, say so plainly ("the part I read doesn't cover that — want me to look in chapter Y?"). Never invent file contents. Never claim something is in the file when it's only in a chapter title.
+- OUTBOX THINKING (this is what separates you from generic AI): whenever you propose a concrete next_action, you MUST also surface ONE non-obvious, outside-the-box alternative that COULD be higher-leverage if the user pulled it off. Examples of the pattern: if the obvious move is "run Facebook + LinkedIn ads", the outbox move might be "DM the 30 most engaged commenters on your competitor's last 5 posts — same leads, zero ad spend, warmer". If the obvious move is "send a follow-up email", the outbox move might be "send a 60-second Loom video instead, busy people watch those 4x more than they read email". The outbox move must (1) be doable by THIS user given their context and location, (2) require less budget or effort than the obvious move when possible, (3) explain its leverage in one short clause. Skip the outbox field only when the obvious next_action is genuinely the highest-leverage path already.
+- LOCAL CONTEXT: when USER_LOCATION is present in the prompt (city + country), use it. Tools, platforms, services, hours, payment methods, regulations differ by place. Don't suggest WhatsApp Business in the US default flow, don't suggest Venmo to someone in Mumbai, don't suggest UPI to someone in London. Localise without announcing it.
 - DECOMPOSE multi-data actions: if the next action needs two facts and only one is in the file, state the file-derived fact ("I counted 5 'Disbursed' in your sheet") and make requested_input ask only for the missing one ("I just need your fee per disbursed case — that isn't in the sheet").
 - REQUESTED_INPUT (use sparingly): if the next action you just assigned will produce a piece of evidence the user can bring back (a reply, a screenshot, a number, a file), set requested_input to a short warm line asking them to share it next turn. When the action is purely internal (think about, decide, feel), or when the answer is already in an attached file, set requested_input to null. Never use this as a homework demand; it's an invitation to bring back what they found.
 - ATTACHED FILE / IMAGE: when the user sends a file or image with their message, treat it as PRIMARY EVIDENCE — quote one specific detail from it in your mirror or acknowledgment so they know you actually read it, and let what you saw shape the next action. ALWAYS populate file_facts with a tight structured snapshot of the file (3-6 short lines: rows / columns / a key count / a key total / one anomaly worth noting) so future turns can reason on what you saw without the user re-uploading.
@@ -299,6 +301,7 @@ Return ONLY valid JSON, no markdown fences:
  "mirror": "1 gentle sentence: what they didn't say but is true beneath the message. Statement, not a question.",
  "refreshed_easiest_path": "1-2 lines in plain words — OR null when phase is exploring",
  "refreshed_next_action": "1 line: concrete action for next 24-48h — MUST be null when phase is exploring or naming",
+ "outbox_alternative": "OPTIONAL 1-2 lines: when you propose a next_action, ALSO surface ONE non-obvious higher-leverage alternative the user probably hasn't considered. Format: 'Or, the outside-the-box play: X — because Y.' Use the user's location/context to make it specific. MUST be null when phase is exploring or naming, OR when the obvious next_action is already the best move.",
  "action_payoff": "1 easy-to-picture line: the concrete thing they hold within 48h of doing it — null unless phase is ready_to_act, acting, or checking_in",
  "big_picture_link": "1 line: how this action moves their stated goal, quantified where possible — null unless phase is ready_to_act, acting, or checking_in",
  "bold_move": "1-2 lines: the unconventional higher-leverage play, framed as an option, or null if none genuinely exists",
@@ -334,9 +337,15 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
     facts_block = f"\nFILE_FACTS (from a file the user attached earlier — still valid this turn):\n{saved_facts}\n" if saved_facts else ""
     user_ctx_block = _user_context_block(user_doc)
     prior_phase = (thread.get("current_phase") or "").strip() or "(none — this is an early turn)"
+    geo = thread.get("user_geo") or {}
+    geo_line = ""
+    city, country = geo.get("city"), geo.get("country")
+    if city and country and city not in ("Unknown", "Local"):
+        geo_line = f"USER_LOCATION: {city}, {country} (anchor tool/platform/payment/regulation suggestions to here)\n"
     recall_section = (recall_block.strip() + "\n") if recall_block and recall_block.strip() else ""
     prompt = (
         f"{user_ctx_block}"
+        f"{geo_line}"
         f"GOAL: {thread['goal']}\n"
         f"WHY IT MATTERS TO THEM (their words at the start): {thread.get('why_now', '(not stated)')}\n"
         f"STATE SUMMARY:\n{thread['current_state_summary']}\n"
@@ -391,17 +400,21 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
             if phase not in VALID_PHASES:
                 phase = "exploring"
             out["phase"] = phase
-            # Pre-action phases must not ship an action / payoff / big_picture
+            # Pre-action phases must not ship an action / payoff / big_picture / outbox
             if phase in ("exploring", "naming"):
                 out["refreshed_next_action"] = None
                 out["action_payoff"] = None
                 out["big_picture_link"] = None
+                out["outbox_alternative"] = None
                 if phase == "exploring":
                     out["refreshed_easiest_path"] = None
+            # If there's no concrete action, an outbox alternative makes no sense either.
+            if not (out.get("refreshed_next_action") or "").strip():
+                out["outbox_alternative"] = None
             # Strip em-dashes from voice-facing fields (slop ban).
             for k in ("acknowledgment", "mirror", "refreshed_easiest_path",
-                      "refreshed_next_action", "action_payoff", "big_picture_link",
-                      "bold_move", "refreshed_open_question", "state_summary"):
+                      "refreshed_next_action", "outbox_alternative", "action_payoff",
+                      "big_picture_link", "bold_move", "refreshed_open_question", "state_summary"):
                 v = out.get(k)
                 if isinstance(v, str):
                     out[k] = v.replace("—", ", ").replace("–", ", ")

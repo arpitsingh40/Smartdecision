@@ -207,6 +207,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
             "current_action_payoff": (out.get("action_payoff") or "").strip() or None,
             "current_big_picture": (out.get("big_picture_link") or "").strip() or None,
             "current_bold_move": (out.get("bold_move") or "").strip() or None,
+            "current_outbox": (out.get("outbox_alternative") or "").strip() or None,
             "current_requested_input": (out.get("requested_input") or "").strip() or None,
             "current_mirror": out.get("mirror"),
             "current_action_artifact": None,  # new action -> old "Do it for me" draft is stale
@@ -238,7 +239,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
 
 # ----------------------------------------------------------------- goals & threads
 @api.post("/goals")
-def create_goal(body: GoalIn, user: dict = Depends(current_user)):
+def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_user)):
     # reserve the max a normal turn could cost; reconcile to actual after the LLM responds
     reserve = TURN_RESERVE_NORMAL
     u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
@@ -246,6 +247,14 @@ def create_goal(body: GoalIn, user: dict = Depends(current_user)):
     if not u:
         raise HTTPException(402, "Not enough credits")
     now = now_utc()
+    # Resolve user's location once at thread open — drives local-content personalisation in the engine prompt.
+    try:
+        geo = geo_lookup(client_ip(request)) or {}
+        user_geo = {"city": geo.get("city") or "", "country": geo.get("country") or "",
+                    "country_code": geo.get("country_code") or ""}
+    except Exception as e:
+        log.warning(f"geo lookup failed: {e}")
+        user_geo = {}
     thread = {
         "thread_id": str(uuid.uuid4()), "user_id": user["id"],
         "goal": body.title.strip(), "why_now": body.why_now.strip(),
@@ -254,6 +263,8 @@ def create_goal(body: GoalIn, user: dict = Depends(current_user)):
         "current_easiest_path": "(none yet)", "current_next_action": "(none yet)",
         "current_phase": "exploring",
         "current_action_payoff": None, "current_big_picture": None, "current_bold_move": None,
+        "current_outbox": None,
+        "user_geo": user_geo,
         "skip_list": [], "messages": [], "last_turn_at": None, "snapshot_at_last_turn": None,
         "rolling": {"emotional_temperature": 0.5, "execution_consistency": 0.5, "pace_calibration": "on-track"},
     }
@@ -336,9 +347,21 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
             "hours_since_turn": round(hours_since) if hours_since is not None else None}
 
 @api.post("/threads/{thread_id}/turn")
-def turn(thread_id: str, body: TurnIn, background: BackgroundTasks, user: dict = Depends(current_user)):
+def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundTasks, user: dict = Depends(current_user)):
     if body.mode not in ("normal", "ultra"):
         raise HTTPException(422, "mode must be 'normal' or 'ultra'")
+    # Refresh user's geo on each turn — covers users who travel or open the app on a different network.
+    # Light: persisted on the thread only when it actually changed (no extra prompt tokens if stable).
+    try:
+        fresh = geo_lookup(client_ip(request)) or {}
+        if fresh.get("city") and fresh.get("city") not in ("Unknown", "Local"):
+            threads_col.update_one({"thread_id": thread_id, "user_id": user["id"],
+                                    "user_geo.city": {"$ne": fresh.get("city")}},
+                                   {"$set": {"user_geo": {"city": fresh.get("city"),
+                                                          "country": fresh.get("country"),
+                                                          "country_code": fresh.get("country_code", "")}}})
+    except Exception as e:
+        log.debug(f"per-turn geo refresh skipped: {e}")
     # Attachment? Use a larger reserve (vision + extracted file text both inflate token usage).
     attachment = None
     attachment_preview = None  # set when we pre-extract via doc_memory (skips engine's internal extractor)

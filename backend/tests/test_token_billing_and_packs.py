@@ -21,7 +21,7 @@ import pytest
 import requests
 from pymongo import MongoClient
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://mindful-choice-8.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://user-insight-3.preview.emergentagent.com").rstrip("/")
 
 DEMO_EMAIL = "demo@smartdecigen.com"
 DEMO_PASS = "Demo1234!"

@@ -5,7 +5,7 @@ Tests the new momentum strip and accountability features
 import requests
 import sys
 
-BASE_URL = "https://mindful-choice-8.preview.emergentagent.com/api"
+BASE_URL = "https://user-insight-3.preview.emergentagent.com/api"
 
 def test_retention_features():
     """Test retention loop features with smoke1@test.com"""

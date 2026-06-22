@@ -172,6 +172,14 @@ export default function BrainPage() {
                   )}
                 </div>
 
+                {/* lead value line */}
+                {result.key_takeaway && (
+                  <p data-testid="brain-key-takeaway"
+                    className="text-lg md:text-xl font-display tracking-[-0.01em] leading-snug text-foreground">
+                    {result.key_takeaway}
+                  </p>
+                )}
+
                 {/* main answer */}
                 <p className="text-[15px] md:text-base leading-7 whitespace-pre-wrap text-foreground">
                   {result.answer}

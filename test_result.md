@@ -154,7 +154,24 @@ backend:
         agent: "testing"
         comment: "PASS - All 5 assertions passed for 'file stays in the room' feature. Fresh signup -> POST /goals (solar subsidy paperwork, 70 applications) -> POST /turn with CSV attachment (5 rows: 2 Disbursed, 3 Pending). ASSERTION (a) ✓: thread.current_file_facts populated with structured snapshot ('5 rows, 3 columns...Disbursed: 2...Pending: 3...Rupees-per-disbursed-case = 2400'). ASSERTION (b) ✓: state_summary mentions computed answer ('Your number for these cases is 2400 per disbursed case'), engine STATES what it counted instead of asking user to recount. ASSERTION (c) ✓: requested_input asks for missing data ('Is this the full sheet?'), NOT clerical work. POST /turn AGAIN with NO attachment. ASSERTION (d) ✓: current_file_facts PERSISTED (minor wording changes but same content - 5 rows, 2 Disbursed, 3 Pending, 2400 per case all preserved). POST /complete-action. ASSERTION (e) ✓: artifact does NOT contain clerical instructions ('2400 per disbursed case. Clean.' - uses file data, doesn't ask user to derive it). Total: 3 LLM turns, 16 credits used. File persistence working correctly."
 
+backend:
+  - task: "Decision Brain APIs (/api/brain/upload, documents, ask, settings, delete) - company knowledge base + Answer/Decide/Plan auto-routing, grounded + cited"
+    implemented: true
+    working: true
+    file: "/app/backend/decision_brain.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (Step 0 POC). Isolated router /api/brain reusing doc_memory (parse_file/build_tree_sync/_embed_one/_cos) + Anthropic via engine.client(). Per-user KB namespace = kb_<user_id> stored in doc_trees.thread_id. ENDPOINTS: POST /api/brain/upload {filename,mime,base64} -> parses + builds tree in BackgroundTasks, returns {tree_id,status:processing} (images 415; >8MB 413; empty 422). GET /api/brain/documents -> {documents:[{tree_id,filename,status,node_count,...}],ready_count}. DELETE /api/brain/documents/{tree_id}. GET/POST /api/brain/settings {instructions} (company rules stored on user doc). POST /api/brain/ask {question} -> ONE LLM call (Sonnet 4.5 primary -> Haiku fallback), auto-routes mode in {answer,decide,plan}, returns {mode,found_in_docs,answer,recommendation(decide only),plan(plan only),citations[],confidence,model,credits,cost,tokens,sources_found,docs_in_kb}. Grounding guardrail: answer mode with no relevant passages -> found_in_docs=false, must not invent. Reserve-and-reconcile credit billing (BRAIN_RESERVE=16, refund unused; full refund on LLM failure -> 502). Not yet tested."
+      - working: true
+        agent: "testing"
+        comment: "PASS - All Decision Brain tests passed (6/6 test scenarios, 8 credits used). TEST 1: POST /api/brain/upload with refund policy markdown (600 words) -> 200 {tree_id, status:processing}. Polled GET /api/brain/documents until status:ready with node_count=12 (~15s background indexing). TEST 2 (Answer mode): POST /api/brain/ask 'What is our refund window for damaged goods?' -> 200, mode=answer, found_in_docs=true, answer mentions '45 days', citations=[{doc:refund_policy.md, chapter:Damaged Goods}], cost=2, credits decreased (1000->998). TEST 3 (Plan mode): POST /api/brain/ask 'Give me a plan to reduce refund requests next quarter' -> 200, mode=plan, plan=[7 ordered concrete steps], cost=2. TEST 4 (Decide + rules): POST /api/brain/settings {instructions:'Never approve refund after 45 days...'} -> 200. GET /api/brain/settings verified. POST /api/brain/ask 'Customer wants refund 60 days after purchase for damaged item' -> 200, mode=decide, recommendation='Deny the refund...outside 45-day policy', respects company rule, cost=2. TEST 5 (Guardrail): POST /api/brain/ask 'What is our parental leave policy?' (NOT in docs) -> 200, mode=answer, found_in_docs=false, answer='I could not find information...only cover refund policy', NO HALLUCINATION, cost=2. TEST 6 (Guards): POST /api/brain/ask without token -> 401. POST /api/brain/upload without token -> 401. POST /api/brain/upload with mime=image/png -> 415. DELETE /api/brain/documents/{tree_id} -> 200, verified doc no longer listed. All endpoints working correctly. Used founder account (ceo@smartdecigen.com, 1000 credits). Final credits: 992."
+
 frontend:
+
   - task: "Feedback dialog (TopBar link) + Admin Feedback tab (summary, filters, status select)"
     implemented: true
     working: true
@@ -210,8 +227,8 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.5"
-  test_sequence: 11
+  version: "1.6"
+  test_sequence: 12
   run_ui: false
 
 test_plan:
@@ -370,3 +387,68 @@ agent_communication:
       ANTHROPIC_API_KEY is LIVE - all LLM turns succeeded.
       No issues found. Feature is production-ready.
 
+  - agent: "main"
+    message: >
+      NEW (Step 0 POC — DECISION BRAIN): isolated new router /api/brain. Test ONLY this slice;
+      do NOT regress payments / admin / feedback / tracking / coach turns.
+
+      ENV: ANTHROPIC_API_KEY is LIVE (real money per call). Zoho is LIVE — do NOT touch payments.
+      Credentials in /app/memory/test_credentials.md (founder ceo@smartdecigen.com / FounderOS@2026,
+      1000 credits). You may use the founder account for all brain tests.
+
+      BUDGET: keep it tight. ~3 ask calls + 1 small document upload. Each /api/brain/ask = 1 LLM call.
+      Uploading 1 small doc triggers a few cheap Haiku chapter-summary calls during background indexing.
+
+      WHAT TO TEST (in order):
+      1) POST /api/brain/upload with a SMALL document. Suggested: a plain-text or markdown "Refund Policy"
+         (~300-600 words) with a clear fact like "Refunds are accepted within 30 days of purchase; damaged
+         goods are eligible for a full refund within 45 days." Body: {filename, mime, base64}. Expect 200 with
+         {tree_id, status:"processing"}. Then POLL GET /api/brain/documents until that doc shows status:"ready"
+         (background indexing, allow up to ~40s; node_count > 0 when ready).
+      2) ANSWER (grounded): POST /api/brain/ask {question:"What is our refund window for damaged goods?"}.
+         Expect 200, mode usually "answer", found_in_docs=true, answer mentions the 45-day fact, citations[]
+         references the uploaded doc, cost>0, credits decreased then reconciled (cost <= 16 reserve).
+      3) PLAN: POST /api/brain/ask {question:"Give me a plan to reduce refund requests next quarter."}.
+         Expect mode "plan", plan is a non-empty ordered list.
+      4) DECIDE + COMPANY RULES: POST /api/brain/settings {instructions:"Never approve a refund after 45 days.
+         Always prioritise the written refund policy."} -> 200. Then POST /api/brain/ask
+         {question:"A customer wants a refund 60 days after purchase for a damaged item. What should I do?"}.
+         Expect mode "decide", recommendation present and consistent with the rule/policy (i.e. not approving
+         past 45 days).
+      5) GUARDRAIL (no-hallucination): POST /api/brain/ask {question:"What is our parental leave policy?"}
+         (NOT in the uploaded doc). Expect found_in_docs=false (for answer mode) and the answer plainly says it
+         is not found in the documents — must NOT invent a policy.
+      6) AUTH/GUARDS: /api/brain/ask and /api/brain/upload with no token -> 401. POST /api/brain/upload with an
+         image mime (e.g. image/png) -> 415. DELETE /api/brain/documents/{tree_id} for the uploaded doc -> 200,
+         then GET /api/brain/documents no longer lists it.
+
+      Report mode/found_in_docs/citations/credits for each ask. Flag any hallucinated fact in step 5 as a failure.
+
+  - agent: "testing"
+    message: >
+      DECISION BRAIN TESTED (Step 0 POC) - All tests passed ✓
+      
+      Comprehensive testing of new /api/brain router completed successfully.
+      Used founder account (ceo@smartdecigen.com, 1000 credits). Total cost: 8 credits (5 ask calls @ 2 credits each, refund reconciliation working).
+      
+      TEST 1 (Upload + Indexing): POST /api/brain/upload with refund_policy.md (600 words, markdown) -> 200 {tree_id:tree_0d091270b91d4c31, status:processing}. Polled GET /api/brain/documents until status:ready with node_count=12 (~15s background indexing). ✓
+      
+      TEST 2 (Answer mode - grounded): POST /api/brain/ask "What is our refund window for damaged goods?" -> 200, mode=answer, found_in_docs=true, answer="The refund window for damaged goods is 45 days from the date of purchase...", citations=[{doc:refund_policy.md, chapter:Damaged Goods}], cost=2, credits 1000->998. ✓
+      
+      TEST 3 (Plan mode): POST /api/brain/ask "Give me a plan to reduce refund requests next quarter" -> 200, mode=plan, plan=[7 ordered concrete steps: analyze data, improve descriptions, add guides, train CS, survey customers, pilot consultation, track progress], cost=2, credits 998->996. ✓
+      
+      TEST 4 (Decide + company rules): POST /api/brain/settings {instructions:"Never approve refund after 45 days..."} -> 200. GET /api/brain/settings verified. POST /api/brain/ask "Customer wants refund 60 days after purchase for damaged item" -> 200, mode=decide, answer="request exceeds 45-day window", recommendation="Deny the refund. Request outside 45-day policy limit, company rules prohibit approving after 45 days", respects company rule ✓, cost=2, credits 996->994. ✓
+      
+      TEST 5 (Guardrail - no hallucination): POST /api/brain/ask "What is our parental leave policy?" (NOT in docs) -> 200, mode=answer, found_in_docs=false, answer="I could not find information about the parental leave policy in the company's documents. The available documents only cover the refund policy." NO HALLUCINATION ✓, cost=2, credits 994->992. ✓
+      
+      TEST 6 (Auth + validation guards): POST /api/brain/ask without token -> 401 ✓. POST /api/brain/upload without token -> 401 ✓. POST /api/brain/upload with mime=image/png -> 415 ✓. DELETE /api/brain/documents/{tree_id} -> 200, verified doc no longer listed ✓. ✓
+      
+      All Decision Brain backend APIs working correctly. Feature is production-ready.
+      ANTHROPIC_API_KEY is LIVE - all LLM calls succeeded (Sonnet 4.5).
+      Reserve-and-reconcile billing working (16 credit reserve, refund unused).
+      Grounding guardrail working (found_in_docs=false when info not in docs, no hallucination).
+      Auto-routing working (answer/decide/plan modes correctly classified).
+      Citations working (doc name + chapter references).
+      Company rules respected in decide mode.
+      Background indexing working (processing -> ready with node tree).
+      No issues found.

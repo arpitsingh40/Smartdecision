@@ -5,6 +5,7 @@ import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
 import NewGoalPage from './pages/NewGoalPage';
 import ThreadPage from './pages/ThreadPage';
+import BrainPage from './pages/BrainPage';
 import AdminPage from './pages/AdminPage';
 import BillingPage from './pages/BillingPage';
 import TestCheckoutPage from './pages/TestCheckoutPage';
@@ -87,6 +88,7 @@ function App() {
             <Route path="/" element={token ? <DashboardPage /> : <Navigate to="/auth" replace />} />
             <Route path="/new" element={token ? <NewGoalPage /> : <Navigate to="/auth" replace />} />
             <Route path="/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/brain" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
             <Route path="/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/test-checkout" element={token ? <TestCheckoutPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/result" element={<PaymentResultPage />} />

@@ -23,6 +23,7 @@ from admin import router as admin_router
 from payments import router as payments_router
 from feedback import router as feedback_router
 from questionnaire import router as questionnaire_router
+from decision_brain import router as brain_router
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -509,6 +510,7 @@ app.include_router(admin_router)
 app.include_router(payments_router)
 app.include_router(feedback_router)
 app.include_router(questionnaire_router)
+app.include_router(brain_router)
 
 @app.on_event("startup")
 def _startup():

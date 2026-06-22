@@ -142,7 +142,8 @@ VALID_MODES = ("answer", "decide", "plan")
 
 def _clean(s):
     if isinstance(s, str):
-        return s.replace("—", ", ").replace("–", ", ").strip()
+        s = s.replace(" — ", ", ").replace(" – ", ", ").replace("—", ", ").replace("–", ", ")
+        return s.replace(" ,", ",").strip()
     return s
 
 

@@ -23,6 +23,18 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Give-before-you-ask: engine `insight` field (concrete value every turn, all phases) + em-dash/comma polish fix"
+    implemented: true
+    working: true
+    file: "/app/backend/engine.py, /app/backend/server.py, /app/backend/decision_brain.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "NEW (this session). Founder feedback from real coach screenshots: questions were sharp but engine only ASKED, never gave value early -> felt like interrogation. FIX: engine.py SYSTEM gains GIVE-BEFORE-YOU-ASK rule + new JSON field `insight` (REQUIRED non-empty, allowed in EVERY phase incl. exploring: a real number/benchmark/named fork/calc/market reality, quantified + localized, no vague encouragement). Post-proc: insight cleaned + defaults to '' if omitted, NOT nulled by phase. server.py persists thread.current_insight. ThreadPage renders a 'WORTH KNOWING' block (testid engine-insight) under the acknowledgment. Also fixed the em-dash strip artifact (' ,' stray space, visible in screenshots) via _dedash in engine.py AND decision_brain.py _clean. SELF-VERIFIED LIVE (2 turns): insight returned concrete + Meerut-localized (PM Surya Ghar subsidy, margins, C&I/EPC ticket sizes); UI renders the card; no stray ' ,'; no em-dash. Frontend automated test optional (awaiting user permission)."
+
   - task: "Founder OS admin APIs (/api/admin/overview, users, users/{id}/activity, traffic, usage, purchases)"
     implemented: true
     working: true

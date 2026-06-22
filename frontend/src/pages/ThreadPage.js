@@ -405,6 +405,13 @@ export default function ThreadPage() {
                   <EngineBubble at={m.at}>
                     <p data-testid={i === lastEngineIdx ? 'engine-acknowledgment' : undefined}
                       className="text-[15px] leading-6 whitespace-pre-wrap">{m.text}</p>
+                    {i === lastEngineIdx && thread.current_insight && (
+                      <div data-testid="engine-insight"
+                        className="mt-3 rounded-xl bg-[hsl(var(--accent))]/50 border border-border/70 px-4 py-3">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-1">Worth knowing</div>
+                        <p className="text-[15px] leading-6 text-foreground">{thread.current_insight}</p>
+                      </div>
+                    )}
                     {i === lastEngineIdx && thread.current_mirror && (
                       <p data-testid="engine-mirror"
                         className="mt-3 text-sm italic text-muted-foreground border-l-2 border-border pl-3 leading-6">

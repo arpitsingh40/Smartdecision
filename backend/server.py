@@ -211,6 +211,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
             "current_outbox": (out.get("outbox_alternative") or "").strip() or None,
             "current_requested_input": (out.get("requested_input") or "").strip() or None,
             "current_mirror": out.get("mirror"),
+            "current_insight": (out.get("insight") or "").strip() or None,
             "current_action_artifact": None,  # new action -> old "Do it for me" draft is stale
             "skip_list": out.get("skip_list", []),
             "last_turn_at": now,

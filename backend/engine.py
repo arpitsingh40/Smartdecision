@@ -279,6 +279,7 @@ PHASE TRANSITION RULES (enforced):
 - If PRIOR PHASE is missing (very first turn), default to exploring unless the user already named a sharp action they want help with.
 Rules: never announce memory ("as we discussed"); surface what changed, not recaps; acknowledge before answering (match the intent label); always converge to ONE next action doable in 24-48h; the easiest path forward given today's reality, not the ideal plan; warm and respectful, zero filler, no lists of options. If intent is silence_breaker, gently name the silence without accusation and ask if the goal is still active or something shifted. If intent is action_adjust, the user is shaping the assigned next action with an obstacle or their own version of it - do NOT mark it done; keep what they liked about the step, redesign it around their stated input so their words are visibly part of the new action.
 What makes each turn worth returning for:
+- GIVE BEFORE YOU ASK (the most important rule): every single turn must hand the user something concrete and useful they did not have before, and it goes in the `insight` field. A real number, a benchmark, a named fork or trade-off, a quick calculation, a market reality, or a sharper way to see their situation. It is NEVER empty, in EVERY phase including exploring. Banned: vague encouragement ("you've got this", "every step counts"), simply restating their words, or a generic truism. If you lack hard data, give the most useful realistic ballpark and label it as one. The user must learn something every turn, even before they answer your question.
 - MIRROR: every reply must contain one short sentence that names what the user did NOT say but is true beneath their message - the fear, the pattern, the real trade-off. Said gently and plainly, never clinically, never accusing. Soft openers welcome: "I may be wrong, but…", "It sounds a little like…", "If I had to guess…". This is the moment they feel seen, not exposed.
 - ASK BEFORE ASSUME: the user's message is never the complete picture. Before locking the path, check whether this turn hinges on a fact they have not stated - a second possibility that changes the right move, a constraint, an obstacle left unnamed. When it does, the open question MUST become that clarifying question, asked kindly: name the assumption you would otherwise silently make ("Quick check — I'm assuming X. Is that right?") and ask for the missing fact.
 - STICKY QUESTION: the open question must give a gentle nudge - specific to their words, just challenging enough to keep thinking about, never generic, never harsh. Banned: "what's holding you back?". Use their own words to point at their own pattern, with care.
@@ -299,6 +300,7 @@ Return ONLY valid JSON, no markdown fences:
  "phase_reason": "1 short line — why this phase now",
  "acknowledgment": "1-3 short sentences. MUST open with reflection of what the user said (quote or paraphrase). No question marks here.",
  "mirror": "1 gentle sentence: what they didn't say but is true beneath the message. Statement, not a question.",
+ "insight": "REQUIRED, never empty: 1-2 short lines of concrete, useful value the user can use right now, a real number, benchmark, named fork or trade-off, quick calculation, market reality, or sharper framing. Quantify where possible and localise to USER_LOCATION. No vague encouragement, no restating their words.",
  "refreshed_easiest_path": "1-2 lines in plain words — OR null when phase is exploring",
  "refreshed_next_action": "1 line: concrete action for next 24-48h — MUST be null when phase is exploring or naming",
  "outbox_alternative": "OPTIONAL 1-2 lines: when you propose a next_action, ALSO surface ONE non-obvious higher-leverage alternative the user probably hasn't considered. Format: 'Or, the outside-the-box play: X — because Y.' Use the user's location/context to make it specific. MUST be null when phase is exploring or naming, OR when the obvious next_action is already the best move.",
@@ -411,13 +413,19 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
             # If there's no concrete action, an outbox alternative makes no sense either.
             if not (out.get("refreshed_next_action") or "").strip():
                 out["outbox_alternative"] = None
-            # Strip em-dashes from voice-facing fields (slop ban).
-            for k in ("acknowledgment", "mirror", "refreshed_easiest_path",
+            # Clean em-dashes -> comma without a stray leading space (slop ban + polish fix).
+            def _dedash(s):
+                s = s.replace(" — ", ", ").replace(" – ", ", ").replace("—", ", ").replace("–", ", ")
+                return s.replace(" ,", ",")
+            for k in ("acknowledgment", "mirror", "insight", "refreshed_easiest_path",
                       "refreshed_next_action", "outbox_alternative", "action_payoff",
                       "big_picture_link", "bold_move", "refreshed_open_question", "state_summary"):
                 v = out.get(k)
                 if isinstance(v, str):
-                    out[k] = v.replace("—", ", ").replace("–", ", ")
+                    out[k] = _dedash(v)
+            # insight must always be a string (give-before-you-ask); default empty if model omitted it
+            if not isinstance(out.get("insight"), str):
+                out["insight"] = ""
             # Enforce ONE question per turn: strip stray '?' from non-question fields.
             for k in ("acknowledgment", "mirror"):
                 if isinstance(out.get(k), str):

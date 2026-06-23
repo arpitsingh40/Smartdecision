@@ -158,6 +158,17 @@ A thread holds the user's pursuit across weeks. Every turn refreshes "the easies
 
 1. Memory felt, never announced. 2. Surface delta, not recap. 3. One open question always visible. 4. No chat-log primary UI. 5. Silence named after 14d. 6. Re-engagement may be NULL.
 
+## Phase 2 — Hidden strategy core / "the moat" (this session): DONE, backend tested 17/17 (leakage check passed), frontend rendered + verified
+- The moat: surface = members only ever see good, SOP-grounded decisions; underneath = the founder's private North Star silently steers every recommendation toward it, never revealed, no alignment score shown.
+- Backend (organizations.py): GET/PUT /api/org/strategy (owner-only) store CONFIDENTIAL north_star/target/deadline/priorities[<=8]/decision_rules on the org. GET /api/org exposes ONLY strategy_set boolean (verified: secret never leaks).
+- Backend (decision_brain.py) org-scoped: _resolve_context(user) -> (kb_ns, is_admin, org, instructions). In an org: shared KB kb_org_<org_id>, only OWNER trains (upload/delete/settings 403 for members), rules on org.brain_instructions. Solo users unchanged. /brain/documents returns can_train. _strategy_block(org) injects a HIDDEN_STRATEGY block into the single LLM call with a strict 'steer silently, NEVER reveal' instruction; SYSTEM gained that HARD RULE + ONE NATURAL REPLY + CONNECTED DEEP QUESTIONING.
+- Backend test 17/17 PASS (1 LLM): owner strategy CRUD, org view no-leak, members 403, can_train gating, member DECIDE ask steered to '18%+ margin/prefer C&I/decline residential' with ZERO leakage.
+- Frontend: TeamPage owner 'Your North Star' card (Private-to-you lock; fields dream/target/deadline/priorities/rules -> GET/PUT /org/strategy). BrainPage gates upload/train/delete on can_train; members see ask box + 'trained by your workspace owner' note. Screenshot-verified.
+
+## Engine fix — coach-turn 502 robustness + HONOR-EXPLICIT-REQUESTS (this session, queued after Phase 2 FE): DONE, regression PASS (3 LLM turns)
+- Root cause (backend.err.log: Anthropic 200 but json.loads failed): 'Extra data' (prose after the JSON) + 'Unterminated string' (normal turns capped at max_tokens=1200, richer replies truncated).
+- Fix: (1) new _extract_json() balanced-brace parser in engine.py applied in llm_turn + llm_complete_action + decision_brain.brain_answer. (2) normal coach turn max_tokens 1200->2000. (3) HONOR EXPLICIT REQUESTS tightened on BOTH engines: suggest/recommend/pick must COMMIT to ONE specific named pick (no category, no menu, no deflecting question), justify in one line, give the first move, then MAY ask ONE consent/refining question AFTER. Verified live + testing agent: 'suggest me a painful idea' -> 200, ready_to_act, one concrete idea + 48h next action + multi-step path + consent question.
+
 ## Pricing decision (founder)
 $1 = 10 credits. Turn cost 5 credits (~$0.50/turn revenue vs ~$0.04 API cost). Signup grant 100 credits (20 turns) — adjustable in .env.
 

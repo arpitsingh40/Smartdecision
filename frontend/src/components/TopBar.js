@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, BrainCircuit, Users } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, BrainCircuit, Users, Gauge } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -50,6 +50,11 @@ export const TopBar = ({ title, backTo }) => {
             <DropdownMenuItem data-testid="team-menu" onClick={() => navigate('/team')} className="text-sm cursor-pointer">
               <Users size={16} strokeWidth={1.75} className="mr-2" /> {user?.org_role === 'member' ? 'Workspace' : 'Team'}
             </DropdownMenuItem>
+            {user?.org_role === 'owner' && (
+              <DropdownMenuItem data-testid="cockpit-menu" onClick={() => navigate('/cockpit')} className="text-sm cursor-pointer">
+                <Gauge size={16} strokeWidth={1.75} className="mr-2" /> Founder Cockpit
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem data-testid="decision-brain-menu" onClick={() => navigate('/brain')} className="text-sm cursor-pointer">
               <BrainCircuit size={16} strokeWidth={1.75} className="mr-2" /> Decision Brain
             </DropdownMenuItem>

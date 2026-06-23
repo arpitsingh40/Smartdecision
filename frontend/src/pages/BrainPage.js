@@ -21,6 +21,10 @@ export default function BrainPage() {
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [actionInput, setActionInput] = useState('');
+  const [committed, setCommitted] = useState(null);
+  const [decisionStatus, setDecisionStatus] = useState(null);
+  const [execBusy, setExecBusy] = useState(false);
   const [docs, setDocs] = useState([]);
   const [canTrain, setCanTrain] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -57,6 +61,7 @@ export default function BrainPage() {
     try {
       const r = await api.post('/brain/ask', { question: question.trim() });
       setResult(r.data);
+      setCommitted(null); setDecisionStatus(null); setActionInput('');
       if (r.data.credits != null) setCredits(r.data.credits);
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not get an answer. Try again.');
@@ -102,6 +107,28 @@ export default function BrainPage() {
       setTrainOpen(false);
     } catch (_e) { toast.error('Could not save.'); }
     finally { setSavingRules(false); }
+  };
+
+  const commitMove = async () => {
+    if (!actionInput.trim() || !result?.decision_id || execBusy) return;
+    setExecBusy(true);
+    try {
+      const r = await api.post(`/brain/decisions/${result.decision_id}/commit`, { action: actionInput.trim() });
+      setCommitted(r.data.committed_action); setDecisionStatus('open');
+      toast.success('Locked in as your move.');
+    } catch (_e) { toast.error('Could not save your move.'); }
+    finally { setExecBusy(false); }
+  };
+
+  const markStatus = async (status) => {
+    if (!result?.decision_id || execBusy) return;
+    setExecBusy(true);
+    try {
+      await api.post(`/brain/decisions/${result.decision_id}/status`, { status });
+      setDecisionStatus(status);
+      toast.success(status === 'done' ? 'Marked done.' : 'Noted.');
+    } catch (_e) { toast.error('Could not update.'); }
+    finally { setExecBusy(false); }
   };
 
   const onKeyDown = (e) => {
@@ -234,6 +261,43 @@ export default function BrainPage() {
                 <div className="pt-1 text-[11px] font-mono-plex text-muted-foreground/70">
                   {result.model} · {result.cost} credits · {result.tokens} tokens
                 </div>
+
+                {/* execution: turn the decision into a tracked move */}
+                {result.decision_id && (
+                  <div data-testid="brain-execution" className="pt-3 border-t border-border/60">
+                    {!committed ? (
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          data-testid="brain-commit-input"
+                          value={actionInput}
+                          onChange={(e) => setActionInput(e.target.value)}
+                          placeholder="Make it your move: the one thing you'll do next…"
+                          className="flex-1 rounded-xl border border-border/70 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitMove(); } }}
+                        />
+                        <Button data-testid="brain-commit-btn" variant="secondary" onClick={commitMove}
+                          disabled={execBusy || !actionInput.trim()} className="rounded-xl border border-border/70 shrink-0">
+                          Lock it in
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="text-sm min-w-0">
+                          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Your move</span>
+                          <p className={`truncate ${decisionStatus === 'done' ? 'line-through text-muted-foreground' : ''}`}>{committed}</p>
+                        </div>
+                        {decisionStatus === 'done' ? (
+                          <span className="text-xs text-emerald-600 flex items-center gap-1"><CheckCircle2 size={13} /> Done</span>
+                        ) : (
+                          <div className="flex gap-2 shrink-0">
+                            <Button data-testid="brain-mark-done" size="sm" onClick={() => markStatus('done')} disabled={execBusy} className="rounded-xl">I did it</Button>
+                            <Button size="sm" variant="ghost" onClick={() => markStatus('dropped')} disabled={execBusy} className="rounded-xl text-muted-foreground">Dropped it</Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </article>
             )}
           </section>

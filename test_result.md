@@ -23,6 +23,21 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Phase 1 Organizations: /api/org create/get/members/remove + invites create/list/revoke/public-lookup + join (org_id/org_role on auth payloads)"
+    implemented: true
+    working: true
+    file: "/app/backend/organizations.py, /app/backend/server.py, /app/backend/db.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (Phase 1 of Aligned Execution). Isolated router /api/org (no LLM, no credits). Collections: organizations (id/name/owner_user_id/member_count + empty Phase-2 strategy fields), org_members (org_id/user_id/role owner|member/status active|removed), org_invites (code/email/role/status pending|accepted|revoked). ENDPOINTS: POST /api/org {name} -> caller becomes owner (409 if already in an org); GET /api/org -> my org+role (404 if none); GET /api/org/members -> owner-only roster (403 for member, 401 no token); DELETE /api/org/members/{user_id} -> owner removes member (400 self/owner, 404 missing); POST /api/org/invites {email?} -> owner creates join link {code, join_url} (403 for member); GET /api/org/invites -> owner list; POST /api/org/invites/{code}/revoke -> owner (404 missing, 409 if not pending); GET /api/org/invites/{code} -> PUBLIC no-auth lookup {valid, org_name, role}; POST /api/org/join {code} -> authed user joins as member (404 invalid code, 410 if revoked/accepted, 409 if already in an org). Auth payloads (signup/login/me) now include org_id + org_role. Startup adds idempotent org indexes (ensure_org_startup). SELF-VERIFIED via curl: full owner->invite->member-signup->join->roster(2)->member-403 flow all pass; double-join 409; smoke artifacts cleaned (founder is NOT bound to any org -> can test create-org). Automated backend test requested."
+      - working: true
+        agent: "testing"
+        comment: "PASS - All 24 Phase 1 Organizations API tests passed successfully (9 scenarios, 24 test cases). SCENARIO 1 (Create org): POST /api/org as founder -> 200 {id, name, role:owner, member_count:1, is_owner:true, strategy_set:false}; second POST by same user -> 409 (already in org). SCENARIO 2 (Get org): GET /api/org as founder -> 200 with org+role:owner; fresh user with no org -> 404. SCENARIO 3 (Create invite): POST /api/org/invites as owner -> 200 {code, join_url, status:pending}; member (non-owner) -> 403; no token -> 401. SCENARIO 4 (Public lookup): GET /api/org/invites/{code} with valid code (no auth) -> 200 {valid:true, org_name, role:member}; invalid/garbage code -> 200 {valid:false}. SCENARIO 5 (Join org): POST /api/org/join with valid code -> 200 {role:member}; same user joins again -> 409; bad/unknown code -> 404; revoked code -> 410. SCENARIO 6 (List members): GET /api/org/members as owner -> 200 with members list (founder + 2 members, count=3); member (non-owner) -> 403. SCENARIO 7 (Revoke invite): POST /api/org/invites/{code}/revoke as owner -> 200 {revoked:true}; POST /api/org/join with revoked code -> 410; re-revoke same code -> 409. SCENARIO 8 (Remove member): DELETE /api/org/members/{user_id} as owner -> 200 {removed:true}; removed member's GET /api/org -> 404; owner removes self -> 400; unknown user_id -> 404. SCENARIO 9 (Auth payloads): POST /api/auth/signup includes org_id/org_role (null for new users); POST /api/auth/login includes org_id/org_role (set for founder); GET /api/auth/me includes org_id/org_role. All endpoints working correctly. No LLM, no credits used (safe to test fully). Feature is production-ready."
+
   - task: "Give-before-you-ask: engine `insight` field (concrete value every turn, all phases) + em-dash/comma polish fix"
     implemented: true
     working: true
@@ -239,8 +254,8 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.6"
-  test_sequence: 12
+  version: "1.7"
+  test_sequence: 13
   run_ui: false
 
 test_plan:
@@ -250,6 +265,48 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: >
+      NEW (Phase 1 Organizations). Test ONLY the /api/org slice — NO LLM, NO credits, so this is
+      fully safe to test end-to-end (do NOT touch coach turns / brain / payments). Founder
+      ceo@smartdecigen.com / FounderOS@2026 is currently NOT bound to any org (clean slate) so you
+      can test create-org with it, OR use fresh signups (use a real domain like name@acmesolar.com;
+      reserved TLDs .test/.example are rejected by the email validator; password min length 6).
+      VERIFY: (1) POST /api/org {name} -> owner view {id,name,role:owner,member_count,is_owner:true};
+      second create by same user -> 409. (2) GET /api/org -> my org+role; user with no org -> 404.
+      (3) POST /api/org/invites {} (owner) -> {code, join_url}; member calling it -> 403; no token -> 401.
+      (4) GET /api/org/invites/{code} PUBLIC (no auth) -> {valid:true, org_name}; unknown/revoked code -> {valid:false}.
+      (5) Fresh signup -> POST /api/org/join {code} -> member view {role:member}; join again -> 409;
+      join with bad code -> 404; join a revoked code -> 410. (6) GET /api/org/members (owner) shows
+      both users; member calling it -> 403. (7) POST /api/org/invites/{code}/revoke (owner) -> revoked;
+      re-revoke -> 409. (8) DELETE /api/org/members/{user_id} (owner) removes the member (400 if owner
+      removes self/owner; 404 if missing); after removal that user's GET /api/org -> 404. (9) Auth
+      payloads (signup/login/me) include org_id + org_role.
+  - agent: "testing"
+    message: >
+      PHASE 1 ORGANIZATIONS API TESTED - All tests passed ✓
+      Comprehensive end-to-end testing of /api/org slice completed successfully.
+      Total: 24 test cases across 9 scenarios, 0 failures.
+      
+      SCENARIO 1 (Create organization): POST /api/org as founder creates org with correct structure (id, name, role:owner, member_count:1, is_owner:true, strategy_set:false). Second POST by same user correctly returns 409 (already in an organization).
+      
+      SCENARIO 2 (Get organization): GET /api/org returns org+role for founder. Fresh user with no org correctly returns 404.
+      
+      SCENARIO 3 (Create invite): POST /api/org/invites as owner returns {code, join_url, status:pending}. Member (non-owner) correctly blocked with 403. No token correctly returns 401.
+      
+      SCENARIO 4 (Public lookup): GET /api/org/invites/{code} with valid code (no auth required) returns {valid:true, org_name, role:member}. Invalid/garbage code returns {valid:false}.
+      
+      SCENARIO 5 (Join organization): POST /api/org/join with valid code returns {role:member}. Same user joining again correctly returns 409. Bad/unknown code returns 404. Revoked code returns 410.
+      
+      SCENARIO 6 (List members): GET /api/org/members as owner returns members list with founder + 2 members (count=3). Member (non-owner) correctly blocked with 403.
+      
+      SCENARIO 7 (Revoke invite): POST /api/org/invites/{code}/revoke as owner returns {revoked:true}. POST /api/org/join with revoked code correctly returns 410. Re-revoking same code correctly returns 409.
+      
+      SCENARIO 8 (Remove member): DELETE /api/org/members/{user_id} as owner returns {removed:true}. Removed member's GET /api/org correctly returns 404. Owner attempting to remove self correctly returns 400. Unknown user_id correctly returns 404.
+      
+      SCENARIO 9 (Auth payloads): POST /api/auth/signup includes org_id/org_role (null for new users). POST /api/auth/login includes org_id/org_role (set for founder with org). GET /api/auth/me includes org_id/org_role.
+      
+      All endpoints working correctly. No LLM, no credits used (safe to test fully). Feature is production-ready.
   - agent: "main"
     message: >
       NEW (iteration 8): adjust-this-step turns. ANTHROPIC key is REAL now - each real turn costs

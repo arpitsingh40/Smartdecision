@@ -21,3 +21,6 @@ traffic_col = db.traffic_sessions      # visitor sessions: ip/city/country/time-
 geo_col = db.geo_cache                 # ip -> city/country (permanent cache, 1 lookup per ip ever)
 orders_col = db.payment_orders         # zoho top-up orders (immutable amounts + status history)
 feedback_col = db.feedback             # user feedback (rating/category/message, founder-reviewed)
+orgs_col = db.organizations            # one row per company workspace (+ hidden strategy in Phase 2)
+members_col = db.org_members           # user <-> org membership with role (owner|member)
+invites_col = db.org_invites           # invite codes / join links for a company workspace

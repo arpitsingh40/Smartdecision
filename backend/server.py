@@ -24,6 +24,7 @@ from payments import router as payments_router
 from feedback import router as feedback_router
 from questionnaire import router as questionnaire_router
 from decision_brain import router as brain_router
+from organizations import router as org_router, ensure_org_startup
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -134,11 +135,11 @@ def login(body: LoginIn, request: Request):
     if not user.get("country"):
         geo = geo_lookup(ip)
         users_col.update_one({"id": user["id"]}, {"$set": {"country": geo["country"], "city": geo["city"]}})
-    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed"))}}
+    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}}
 
 @api.get("/auth/me")
 def me(user: dict = Depends(current_user)):
-    return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed"))}
+    return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
@@ -517,10 +518,12 @@ app.include_router(payments_router)
 app.include_router(feedback_router)
 app.include_router(questionnaire_router)
 app.include_router(brain_router)
+app.include_router(org_router)
 
 @app.on_event("startup")
 def _startup():
     ensure_startup()  # idempotent: indexes + founder account + one-time stats backfill
+    ensure_org_startup()  # idempotent: org-layer indexes
 
 app.add_middleware(
     CORSMiddleware,

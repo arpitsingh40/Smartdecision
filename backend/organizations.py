@@ -18,11 +18,12 @@ Data model (all UUID ids, never Mongo ObjectId):
 import os
 import uuid
 import secrets
+from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, EmailStr
 
-from db import orgs_col, members_col, invites_col, users_col
+from db import orgs_col, members_col, invites_col, users_col, decisions_col
 from security import current_user, now_utc
 
 router = APIRouter(prefix="/api/org", tags=["organizations"])
@@ -302,3 +303,71 @@ def set_strategy(body: StrategyIn, user: dict = Depends(current_user)):
     }})
     org = orgs_col.find_one({"id": m["org_id"]})
     return _strategy_view(org)
+
+
+# ----------------------------------------------------------------- founder cockpit (private clarity)
+def _scores_of(rows):
+    out = []
+    for r in rows:
+        a = r.get("strategic_alignment")
+        if isinstance(a, dict) and isinstance(a.get("score"), int):
+            out.append(a["score"])
+    return out
+
+
+@router.get("/cockpit")
+def cockpit(user: dict = Depends(current_user)):
+    """Owner-only. The private view: alignment, drift, execution, momentum. Members never see this."""
+    m = _require_owner(user)
+    org_id = m["org_id"]
+    org = orgs_col.find_one({"id": org_id})
+    base = {"org_id": org_id}
+    since7 = now_utc() - timedelta(days=7)
+
+    total = decisions_col.count_documents(base)
+    last7 = decisions_col.count_documents({**base, "created_at": {"$gte": since7}})
+
+    scored_rows = list(decisions_col.find(
+        {**base, "strategic_alignment.score": {"$ne": None}},
+        {"_id": 0, "strategic_alignment": 1},
+    ))
+    scores = _scores_of(scored_rows)
+    avg_align = round(sum(scores) / len(scores)) if scores else None
+    high = sum(1 for x in scores if x >= 70)
+    medium = sum(1 for x in scores if 40 <= x < 70)
+    low = sum(1 for x in scores if x < 40)
+
+    committed = decisions_col.count_documents({**base, "committed_action": {"$ne": None}})
+    done = decisions_col.count_documents({**base, "status": "done"})
+    dropped = decisions_col.count_documents({**base, "status": "dropped"})
+    open_count = decisions_col.count_documents({**base, "status": "open", "committed_action": {"$ne": None}})
+    follow_through = round(100 * done / (done + dropped)) if (done + dropped) > 0 else None
+
+    members = list(members_col.find({"org_id": org_id, "status": "active"}).sort("joined_at", 1))
+    per_member = []
+    for mm in members:
+        u = users_col.find_one({"id": mm["user_id"]}, {"_id": 0, "name": 1, "email": 1})
+        mrows = list(decisions_col.find({**base, "user_id": mm["user_id"]},
+                                        {"_id": 0, "strategic_alignment": 1, "status": 1}))
+        msc = _scores_of(mrows)
+        per_member.append({
+            "user_id": mm["user_id"], "name": (u or {}).get("name", ""), "email": (u or {}).get("email", ""),
+            "role": mm["role"], "decisions": len(mrows),
+            "avg_alignment": (round(sum(msc) / len(msc)) if msc else None),
+            "done": sum(1 for r in mrows if r.get("status") == "done"),
+        })
+
+    drift = list(decisions_col.find(
+        {**base, "strategic_alignment.score": {"$lt": 40}},
+        {"_id": 0, "id": 1, "user_name": 1, "question": 1, "strategic_alignment": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(10))
+
+    return {
+        "north_star": _strategy_view(org),
+        "totals": {"decisions": total, "last_7d": last7, "members": len(members)},
+        "alignment": {"avg": avg_align, "high": high, "medium": medium, "low": low, "scored": len(scores)},
+        "execution": {"committed": committed, "open": open_count, "done": done,
+                      "dropped": dropped, "follow_through_pct": follow_through},
+        "per_member": per_member,
+        "drift": drift,
+    }

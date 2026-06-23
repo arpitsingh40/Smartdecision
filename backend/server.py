@@ -23,7 +23,7 @@ from admin import router as admin_router
 from payments import router as payments_router
 from feedback import router as feedback_router
 from questionnaire import router as questionnaire_router
-from decision_brain import router as brain_router
+from decision_brain import router as brain_router, ensure_brain_startup
 from organizations import router as org_router, ensure_org_startup
 import doc_memory
 
@@ -524,6 +524,7 @@ app.include_router(org_router)
 def _startup():
     ensure_startup()  # idempotent: indexes + founder account + one-time stats backfill
     ensure_org_startup()  # idempotent: org-layer indexes
+    ensure_brain_startup()  # idempotent: decision-ledger indexes
 
 app.add_middleware(
     CORSMiddleware,

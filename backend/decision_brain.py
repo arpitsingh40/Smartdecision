@@ -24,7 +24,7 @@ from pymongo import ReturnDocument
 
 import doc_memory
 from engine import client, _extract_json
-from db import users_col, db, members_col, orgs_col
+from db import users_col, db, members_col, orgs_col, decisions_col
 from security import current_user
 
 log = logging.getLogger("brain")
@@ -99,7 +99,22 @@ def _strategy_block(org: dict | None) -> str:
         "The user must only ever experience an excellent, on-policy decision grounded in the company's "
         "own documents."
     )
+    lines.append(
+        "ALSO include a private JSON field strategic_alignment as "
+        '{"score": <0-100>, "reason": "<one short line>"} estimating how strongly your recommendation '
+        "advances the North Star above. This is internal telemetry: include it in the JSON, but it is "
+        "stripped before the user sees anything and the user must never sense it exists."
+    )
     return "\n".join(lines)
+
+
+def ensure_brain_startup():
+    """Idempotent indexes for the decision ledger. Called from server startup."""
+    decisions_col.create_index("id", unique=True)
+    decisions_col.create_index([("user_id", 1), ("created_at", -1)])
+    decisions_col.create_index([("org_id", 1), ("created_at", -1)])
+    decisions_col.create_index([("org_id", 1), ("status", 1)])
+    decisions_col.create_index([("session_id", 1), ("created_at", 1)])
 
 
 def token_cost(tin: int, tout: int) -> int:
@@ -259,6 +274,20 @@ class UploadIn(BaseModel):
 
 class AskIn(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
+    session_id: str | None = Field(default=None, max_length=80)
+
+
+def _sanitize_alignment(a):
+    """Coerce the model's private strategic_alignment into a clean founder-only record."""
+    if not isinstance(a, dict):
+        return None
+    score = a.get("score")
+    try:
+        score = max(0, min(100, int(score)))
+    except Exception:
+        score = None
+    reason = a.get("reason")
+    return {"score": score, "reason": (str(reason)[:300] if reason else "")}
 
 
 class SettingsIn(BaseModel):
@@ -375,6 +404,77 @@ def ask(body: AskIn, user: dict = Depends(current_user)):
         "$inc": {"tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
         "$set": {"last_active_at": now_utc()}})
 
-    return {**out, "model": model, "credits": u.get("credits", 0),
+    # ---- Decision Ledger: persist this decision; alignment is FOUNDER-ONLY (stripped from member response) ----
+    alignment = _sanitize_alignment(out.pop("strategic_alignment", None))
+    decision_id = str(uuid.uuid4())
+    try:
+        decisions_col.insert_one({
+            "id": decision_id,
+            "org_id": (org["id"] if org else None),
+            "user_id": user["id"],
+            "user_name": user.get("name", "") or "",
+            "session_id": body.session_id or None,
+            "question": body.question.strip()[:4000],
+            "mode": out.get("mode"),
+            "found_in_docs": out.get("found_in_docs"),
+            "answer": out.get("answer", ""),
+            "recommendation": out.get("recommendation"),
+            "plan": out.get("plan"),
+            "citations": out.get("citations", []),
+            "model": model,
+            "cost": actual,
+            "tokens": usage["input_tokens"] + usage["output_tokens"],
+            "created_at": now_utc(),
+            "committed_action": None,
+            "status": "open",
+            "strategic_alignment": alignment,
+        })
+    except Exception as e:
+        log.warning(f"decision persist failed: {e}")
+
+    return {**out, "decision_id": decision_id, "model": model, "credits": u.get("credits", 0),
             "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"],
             "sources_found": len(passages), "docs_in_kb": len(doc_names)}
+
+
+@router.get("/decisions")
+def my_decisions(user: dict = Depends(current_user)):
+    """A member's own decision history. Never exposes the founder-only alignment field."""
+    rows = list(decisions_col.find(
+        {"user_id": user["id"]},
+        {"_id": 0, "strategic_alignment": 0},
+    ).sort("created_at", -1).limit(50))
+    return {"decisions": rows}
+
+
+class CommitIn(BaseModel):
+    action: str = Field(min_length=1, max_length=1000)
+
+
+class StatusIn(BaseModel):
+    status: str
+
+
+@router.post("/decisions/{decision_id}/commit")
+def commit_action(decision_id: str, body: CommitIn, user: dict = Depends(current_user)):
+    """Turn a decision into a tracked next action (execution)."""
+    d = decisions_col.find_one({"id": decision_id, "user_id": user["id"]})
+    if not d:
+        raise HTTPException(404, "Decision not found")
+    action = body.action.strip()
+    decisions_col.update_one({"id": decision_id}, {"$set": {
+        "committed_action": action, "status": "open", "committed_at": now_utc()}})
+    return {"ok": True, "decision_id": decision_id, "committed_action": action, "status": "open"}
+
+
+@router.post("/decisions/{decision_id}/status")
+def set_status(decision_id: str, body: StatusIn, user: dict = Depends(current_user)):
+    """Mark a committed action done / dropped / back to open (follow-through tracking)."""
+    st = body.status.strip().lower()
+    if st not in ("open", "done", "dropped"):
+        raise HTTPException(422, "status must be open, done, or dropped")
+    d = decisions_col.find_one({"id": decision_id, "user_id": user["id"]})
+    if not d:
+        raise HTTPException(404, "Decision not found")
+    decisions_col.update_one({"id": decision_id}, {"$set": {"status": st, "status_at": now_utc()}})
+    return {"ok": True, "decision_id": decision_id, "status": st}

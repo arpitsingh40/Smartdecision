@@ -53,6 +53,21 @@ backend:
         agent: "testing"
         comment: "PASS - All 17 Phase 2 hidden strategy core tests passed successfully (5 FREE test scenarios + 1 LLM test, 1 LLM call used out of 2 budget). FREE TESTS (no LLM): TEST 1 - Founder creates org 'Acme Solar' as owner with correct response structure (id, name, role:owner, member_count:1, is_owner:true, strategy_set:false). TEST 2 - Owner PUT /api/org/strategy with north_star='Reach 100 crore annual revenue', target='100 Cr ARR', deadline='Mar 2027', priorities=['Win commercial & industrial rooftop deals', 'Push EPC ticket sizes above 50L', 'Protect 18% margins'], decision_rules='Never quote below 18% margin. Prefer C&I over residential.' -> 200, response echoes all fields correctly with strategy_set:true. Owner GET /api/org/strategy -> 200, returns same values with 3 priorities. TEST 3 - Owner GET /api/org -> 200 with strategy_set:true but DOES NOT contain keys north_star/target/deadline/priorities/decision_rules (NO LEAKAGE via member-safe org view). TEST 4 - Fresh member (member_ce814c68@acmesolar.com) created and joined org via invite. Member GET /api/org/strategy -> 403 ✓. Member PUT /api/org/strategy -> 403 ✓. Member POST /api/brain/upload -> 403 ✓. Member POST /api/brain/settings -> 403 ✓. Member GET /api/brain/documents -> 200 with can_train:false ✓. Owner GET /api/brain/documents -> 200 with can_train:true ✓. TEST 5 - Owner POST /api/brain/settings with instructions='Always confirm warranty terms in writing before closing.' -> 200, persisted correctly. LLM TEST (1 call): TEST 6 - Member POST /api/brain/ask with question 'A walk-in residential customer wants a small 2kW rooftop system but is pushing the price down to about a 9% margin. Should I take the deal?' -> 200, mode='decide' ✓, recommendation='Decline this deal politely. A 9% margin on a tiny residential system will bleed time, focus, and profitability...Focus your energy on commercial and industrial rooftop opportunities where ticket sizes run above 50 lakh and margins hold in the high teens' (consistent with hidden rules: decline low-margin residential, prefer C&I, protect margins) ✓. CRITICAL LEAKAGE CHECK: Full response text (key_takeaway + answer + recommendation) does NOT contain any of: '100 crore', '100 Cr', 'North Star', 'north-star', 'Mar 2027', '2027', 'strategy' (as hidden objective), 'confidential', 'leadership direction' ✓ PASS. The moat is secure: hidden strategy silently steers decisions without ever leaking to members. Cost: 2 credits, model: claude-sonnet-4-5. All Phase 2 functionality working correctly. Feature is production-ready."
 
+  - task: "Phase 3.0+4 backend: Decision Ledger + silent founder-only alignment + execution endpoints (commit/status) + Founder Cockpit (/api/org/cockpit)"
+    implemented: true
+    working: true
+    file: "/app/backend/decision_brain.py, /app/backend/organizations.py, /app/backend/db.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (Aligned Execution foundation + cockpit). decisions collection persists EVERY /api/brain/ask: {id,org_id,user_id,user_name,session_id,question,mode,answer,recommendation,plan,citations,model,cost,tokens,created_at,committed_action,status, strategic_alignment}. SILENT ALIGNMENT: brain LLM call (already carries hidden North Star) now also emits a private strategic_alignment {score 0-100, reason}; backend stores it FOUNDER-ONLY and out.pop()s it so it is NEVER in the member /ask response NOR in GET /api/brain/decisions (member history excludes it via projection). EXECUTION: POST /api/brain/decisions/{id}/commit {action} -> sets committed_action+status=open; POST /api/brain/decisions/{id}/status {open|done|dropped} (422 invalid, 404 not-own). FOUNDER COCKPIT GET /api/org/cockpit (owner-only, 403 member): north_star + totals(decisions,last_7d,members) + alignment(avg,high,medium,low,scored) + execution(committed,open,done,dropped,follow_through_pct) + per_member(decisions,avg_alignment,done) + drift(low-alignment <40 list w/ question+reason). ensure_brain_startup() indexes. SELF-VERIFIED via curl + 1 LLM ask: alignment stored (score 85) founder-only, stripped from member response + history; member commit->done works; member /cockpit 403; cockpit aggregates correct (avg 85, done 1, follow_through 100%). Test execution+cockpit FULLY (no LLM); <=1 LLM ask to re-verify alignment strip."
+      - working: true
+        agent: "testing"
+        comment: "PASS - All 4 Phase 3.0+4 tests passed successfully (1 LLM call used, within budget). TEST 1 (FREE): Member GET /api/brain/decisions -> 200, returned 1 decision. CRITICAL ASSERTION ✓: NO decision contains 'strategic_alignment' key (founder-only field correctly stripped from member-facing data). TEST 2 (FREE): Execution endpoints all working correctly. POST /api/brain/decisions/{id}/commit with action 'Send minimum-margin pricing and pivot to a referral.' -> 200, committed_action set, status='open' ✓. POST /api/brain/decisions/{id}/status with status='done' -> 200 ✓. Negative test: status='bogus' -> 422 ✓. Negative test: founder (different user) attempts to commit member's decision -> 404 (not their decision) ✓. TEST 3 (FREE): Founder GET /api/org/cockpit -> 200 with all required keys: north_star (strategy_set=true, north_star text present), totals (decisions=1, last_7d=1, members=2), alignment (avg=85, high=1, medium=0, low=0, scored=1), execution (committed=1, open=0, done=1, dropped=0, follow_through_pct=100), per_member (2 members: founder 0 decisions, member 1 decision with avg_alignment=85 and done=1), drift (0 low-alignment decisions) ✓. CRITICAL ASSERTION ✓: alignment.avg is a number (85), founder DOES see alignment in aggregate. Member GET /api/org/cockpit -> 403 ✓. TEST 4 (LLM, 1 call): Member POST /api/brain/ask with question about 8% margin residential deal -> 200. CRITICAL ASSERTIONS ✓: response contains 'decision_id' (5fcb7bbe-9bd3-4f11-8a0c-01b4262f47b7) and does NOT contain 'strategic_alignment' key (stripped from member response). Founder GET /api/org/cockpit after ask: alignment.scored increased from 1 to 2 (by exactly 1) ✓. The alignment WAS captured server-side and stored in the decision ledger even though the member never saw it. All critical checks passed: (a) members never receive strategic_alignment anywhere (not in /ask response, not in /decisions history), (b) founder cockpit DOES surface alignment + execution + per-member + drift with correct aggregations, (c) execution commit/status works correctly and is owner-scoped/validated (404 when founder tries to commit member's decision). Feature is production-ready."
+
   - task: "Engine robustness + HONOR-EXPLICIT-REQUESTS tightening (coach engine.py + decision_brain.py)"
     implemented: true
     working: true
@@ -309,7 +324,7 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.9"
-  test_sequence: 15
+  test_sequence: 16
   run_ui: false
 
 test_plan:
@@ -319,6 +334,25 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: >
+      NEW (Decision Ledger + Founder Cockpit + execution). ANTHROPIC LIVE: AT MOST 1 /api/brain/ask
+      call total; everything else here is FREE (no LLM). Do NOT touch payments. Founder
+      ceo@smartdecigen.com / FounderOS@2026 currently OWNS org "Acme Solar" with a North Star set and
+      one member priya@acmesolar.com / Member1234! who already has 1 decision. Reuse this if present,
+      else recreate (founder create org -> PUT /api/org/strategy -> invite -> member signup+join).
+      VERIFY:
+      (1) FREE — member GET /api/brain/decisions returns their history and NO row contains
+      strategic_alignment. (2) FREE — member POST /api/brain/decisions/{id}/commit {action} -> 200
+      committed_action set, status open; POST /api/brain/decisions/{id}/status {"status":"done"} -> 200;
+      {"status":"bogus"} -> 422; commit/status on a decision id NOT owned by the member -> 404.
+      (3) FREE — owner GET /api/org/cockpit -> 200 with keys north_star, totals, alignment
+      (avg/high/medium/low/scored), execution (committed/open/done/dropped/follow_through_pct),
+      per_member (each with decisions/avg_alignment/done), drift (list). A MEMBER GET /api/org/cockpit
+      -> 403. CRITICAL: confirm the member-facing /ask response and /decisions history NEVER contain
+      strategic_alignment, but the cockpit DOES reflect alignment (avg present).
+      (4) LLM (<=1 ask): member POST /api/brain/ask a decide question; assert response has decision_id
+      and NO strategic_alignment key; then owner cockpit alignment.scored increased by 1.
   - agent: "main"
     message: >
       QUEUED ENGINE FIX (after Phase 2 FE) — light regression only. ANTHROPIC key is LIVE: KEEP coach
@@ -668,3 +702,39 @@ agent_communication:
       
       Budget: Used exactly 3 LLM calls (within the strict 3-call limit). Did NOT touch /api/payments or Zoho as instructed.
       All coach engine functionality working correctly. Feature is production-ready.
+
+  - agent: "testing"
+    message: >
+      PHASE 3.0+4 DECISION LEDGER + EXECUTION + FOUNDER COCKPIT TESTED - All tests passed ✓
+      Comprehensive testing of Decision Ledger, execution endpoints, and Founder Cockpit completed successfully.
+      Total: 4 test scenarios (3 FREE + 1 LLM), 0 failures.
+      LLM budget: Used exactly 1 out of 1 allowed call to POST /api/brain/ask (within strict budget).
+      
+      TEST 1 (FREE - Member decision history): Member GET /api/brain/decisions -> 200, returned 1 decision.
+      CRITICAL ASSERTION ✓: NO decision contains 'strategic_alignment' key. The founder-only field is correctly stripped from member-facing data (projection excludes it in the query).
+      
+      TEST 2 (FREE - Execution endpoints): All execution endpoints working correctly with proper validation.
+      - POST /api/brain/decisions/{id}/commit with action "Send minimum-margin pricing and pivot to a referral." -> 200, committed_action set, status='open' ✓
+      - POST /api/brain/decisions/{id}/status with status='done' -> 200, status updated ✓
+      - Negative test: POST /api/brain/decisions/{id}/status with status='bogus' -> 422 (invalid status rejected) ✓
+      - Negative test: Founder (different user, not the decision owner) attempts POST /api/brain/decisions/{member_decision_id}/commit -> 404 (not their decision, owner-scoped validation working) ✓
+      
+      TEST 3 (FREE - Founder Cockpit): Owner GET /api/org/cockpit -> 200 with all required keys and correct structure.
+      Keys verified: north_star (strategy_set=true, north_star text='Reach 100 crore annual revenue'), totals (decisions=1, last_7d=1, members=2), alignment (avg=85, high=1, medium=0, low=0, scored=1), execution (committed=1, open=0, done=1, dropped=0, follow_through_pct=100), per_member (2 members: founder with 0 decisions, member with 1 decision avg_alignment=85 done=1), drift (0 low-alignment decisions) ✓
+      CRITICAL ASSERTION ✓: alignment.avg is a number (85). The founder DOES see alignment in aggregate (not stripped from cockpit).
+      Member GET /api/org/cockpit -> 403 (correctly blocked, owner-only endpoint) ✓
+      
+      TEST 4 (LLM - 1 call - Alignment capture): Member POST /api/brain/ask with question "A client wants a big discount on a residential install that would push margin to 8%. What should I do?" -> 200.
+      CRITICAL ASSERTIONS ✓:
+      - Response contains 'decision_id' (5fcb7bbe-9bd3-4f11-8a0c-01b4262f47b7) ✓
+      - Response does NOT contain 'strategic_alignment' key (stripped from member response via out.pop() before return) ✓
+      - Founder GET /api/org/cockpit after ask: alignment.scored increased from 1 to 2 (by exactly 1) ✓
+      - The alignment WAS captured server-side and persisted in the decisions collection even though the member never saw it ✓
+      
+      ALL CRITICAL CHECKS PASSED:
+      (a) Members never receive strategic_alignment anywhere: not in POST /api/brain/ask response (out.pop()), not in GET /api/brain/decisions history (projection excludes it) ✓
+      (b) Founder cockpit DOES surface alignment + execution + per-member + drift with correct aggregations ✓
+      (c) Execution commit/status works correctly and is owner-scoped/validated (404 when founder tries to commit member's decision) ✓
+      
+      All Phase 3.0+4 functionality working correctly. Feature is production-ready.
+      READY FOR MAIN AGENT TO SUMMARIZE AND FINISH.

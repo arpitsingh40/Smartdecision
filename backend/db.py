@@ -24,3 +24,4 @@ feedback_col = db.feedback             # user feedback (rating/category/message,
 orgs_col = db.organizations            # one row per company workspace (+ hidden strategy in Phase 2)
 members_col = db.org_members           # user <-> org membership with role (owner|member)
 invites_col = db.org_invites           # invite codes / join links for a company workspace
+decisions_col = db.decisions           # every brain decision (history, execution status, founder-only alignment)

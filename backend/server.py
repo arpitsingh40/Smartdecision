@@ -180,7 +180,8 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
     out, model, usage = llm_turn(thread, substrate, message, intent, mode,
                                  attachment=attachment, user_doc=user_doc,
                                  recall_block=recall_block,
-                                 attachment_preview=attachment_preview)
+                                 attachment_preview=attachment_preview,
+                                 understanding=(user_doc or {}).get("understanding"))
     sig = out["signals"]
     # step 5: state update
     events_col.insert_one({
@@ -232,9 +233,13 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
                               "mode": mode, "cost": actual_cost,
                               "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"],
                               "latency_s": latency, "response_len": len(out["acknowledgment"]), "at": now})
+    user_set = {"last_active_at": now}
+    _understanding = out.get("understanding")
+    if isinstance(_understanding, dict) and any((str(v).strip() for v in _understanding.values())):
+        user_set["understanding"] = _understanding  # living memory, compounds across threads
     users_col.update_one({"id": user["id"]}, {
         "$inc": {"questions_asked": 1, "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
-        "$set": {"last_active_at": now}})
+        "$set": user_set})
     inc_stats({"questions_total": 1, ("turns_ultra" if mode == "ultra" else "turns_normal"): 1,
                "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]})
     return out, intent, model, latency, usage

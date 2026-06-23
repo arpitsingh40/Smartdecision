@@ -403,14 +403,22 @@ export default function ThreadPage() {
                   <UserBubble text={m.text} at={m.at} />
                 ) : (
                   <EngineBubble at={m.at}>
-                    <p data-testid={i === lastEngineIdx ? 'engine-acknowledgment' : undefined}
-                      className="text-[15px] leading-6 whitespace-pre-wrap">{m.text}</p>
-                    {i === lastEngineIdx && thread.current_mirror && (
-                      <p data-testid="engine-mirror"
-                        className="mt-3 text-sm italic text-muted-foreground border-l-2 border-border pl-3 leading-6">
-                        {thread.current_mirror}
-                      </p>
-                    )}
+                    <div className={i === lastEngineIdx ? 'space-y-2.5' : ''}>
+                      <p data-testid={i === lastEngineIdx ? 'engine-acknowledgment' : undefined}
+                        className="text-[15px] leading-6 whitespace-pre-wrap">{m.text}</p>
+                      {i === lastEngineIdx && thread.current_mirror && (
+                        <p data-testid="engine-mirror"
+                          className="text-[15px] leading-6 text-muted-foreground whitespace-pre-wrap">
+                          {thread.current_mirror}
+                        </p>
+                      )}
+                      {i === lastEngineIdx && thread.current_open_question && thread.current_open_question !== '(none yet)' && (
+                        <p data-testid="engine-open-question"
+                          className="text-[15px] leading-6 text-foreground whitespace-pre-wrap">
+                          {thread.current_open_question}
+                        </p>
+                      )}
+                    </div>
                     {i === lastEngineIdx && thread.current_next_action && (
                       <ActionCard
                         nextAction={thread.current_next_action}

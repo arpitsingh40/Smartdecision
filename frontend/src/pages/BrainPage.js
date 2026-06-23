@@ -165,7 +165,9 @@ export default function BrainPage() {
               />
               <div className="flex items-center justify-between px-1 pt-1">
                 <span className="text-xs text-muted-foreground">
-                  {readyCount > 0 ? `${readyCount} document${readyCount > 1 ? 's' : ''} in knowledge` : 'No documents yet — upload some on the right'}
+                  {readyCount > 0
+                    ? `${readyCount} document${readyCount > 1 ? 's' : ''} in knowledge`
+                    : (canTrain ? 'No documents yet — upload some on the right' : 'Ask anything — backed by your team’s knowledge')}
                 </span>
                 <Button
                   data-testid="brain-ask-button"

@@ -199,6 +199,18 @@ backend:
 
 frontend:
 
+  - task: "Phase 1 Organizations UI: TeamPage (/team create-or-join + owner roster/invites + member view) + public JoinPage (/join/:code) + TopBar Team entry + join-after-signup"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/TeamPage.js, /app/frontend/src/pages/JoinPage.js, /app/frontend/src/App.js, /app/frontend/src/components/TopBar.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (Phase 1 frontend). /team: no-org state shows Create-workspace + Join-by-code cards; after create -> owner view (org name, member count, invite-link generator with copy + revoke, members roster with remove); member -> simple 'part of {org}' view. /join/:code PUBLIC: looks up invite (org name), logged-in shows Join button -> POST /org/join -> /team, logged-out stores pending code + routes to /auth (App.js auto-joins after auth). TopBar account-menu 'Team'/'Workspace' item. Frontend compiles clean, lint clean. Verified via screenshot: login as founder -> /team renders create+join cards. testids: team-page, create-org-name, create-org-submit, join-code-input, join-code-submit, org-name, create-invite-btn, invite-link, invite-copy, invite-revoke, member-row, member-remove, member-view, join-page, join-org-name, join-confirm-btn, join-signin-btn, join-invalid. NOT yet automated-tested (awaiting user permission)."
+
   - task: "Feedback dialog (TopBar link) + Admin Feedback tab (summary, filters, status select)"
     implemented: true
     working: true

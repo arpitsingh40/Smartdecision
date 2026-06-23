@@ -10,8 +10,11 @@ import AdminPage from './pages/AdminPage';
 import BillingPage from './pages/BillingPage';
 import TestCheckoutPage from './pages/TestCheckoutPage';
 import PaymentResultPage from './pages/PaymentResultPage';
+import TeamPage from './pages/TeamPage';
+import JoinPage from './pages/JoinPage';
 import { api, setAuthToken } from './lib/api';
 import { trackPixel } from './lib/pixel';
+import { toast } from 'sonner';
 import './App.css';
 
 const AuthContext = createContext(null);
@@ -79,6 +82,20 @@ function App() {
     return () => clearInterval(id);
   }, [token]);
 
+  // join-link fallback: if a user signed in/up after opening an invite link, finish the join
+  useEffect(() => {
+    if (!token || !user) return;
+    const pending = localStorage.getItem('sdg_pending_invite');
+    if (!pending || user.org_id) return;
+    api.post('/org/join', { code: pending })
+      .then((r) => {
+        localStorage.removeItem('sdg_pending_invite');
+        setUser((u) => (u ? { ...u, org_id: r.data.id, org_role: r.data.role } : u));
+        toast.success(`You've joined ${r.data.name}.`);
+      })
+      .catch(() => { localStorage.removeItem('sdg_pending_invite'); });
+  }, [token, user]);
+
   return (
     <AuthContext.Provider value={{ token, user, login, logout, setCredits, setUser }}>
       <div className="paper-noise min-h-screen">
@@ -89,6 +106,8 @@ function App() {
             <Route path="/new" element={token ? <NewGoalPage /> : <Navigate to="/auth" replace />} />
             <Route path="/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
             <Route path="/brain" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/team" element={token ? <TeamPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/join/:code" element={<JoinPage />} />
             <Route path="/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/test-checkout" element={token ? <TestCheckoutPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/result" element={<PaymentResultPage />} />

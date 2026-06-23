@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, BrainCircuit } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, BrainCircuit, Users } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -46,6 +46,10 @@ export const TopBar = ({ title, backTo }) => {
           <DropdownMenuContent align="end" className="rounded-xl">
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{user?.email}</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuSeparator />
+            <DropdownMenuItem data-testid="team-menu" onClick={() => navigate('/team')} className="text-sm cursor-pointer">
+              <Users size={16} strokeWidth={1.75} className="mr-2" /> {user?.org_role === 'member' ? 'Workspace' : 'Team'}
+            </DropdownMenuItem>
             <DropdownMenuItem data-testid="decision-brain-menu" onClick={() => navigate('/brain')} className="text-sm cursor-pointer">
               <BrainCircuit size={16} strokeWidth={1.75} className="mr-2" /> Decision Brain
             </DropdownMenuItem>

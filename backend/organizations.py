@@ -57,6 +57,15 @@ class JoinIn(BaseModel):
     code: str = Field(min_length=4, max_length=80)
 
 
+class StrategyIn(BaseModel):
+    """Founder-only hidden steering. NEVER exposed to members."""
+    north_star: str = Field(default="", max_length=2000)
+    target: str = Field(default="", max_length=300)
+    deadline: str = Field(default="", max_length=120)
+    priorities: list[str] = Field(default_factory=list)
+    decision_rules: str = Field(default="", max_length=4000)
+
+
 # ----------------------------------------------------------------- helpers
 def _active_membership(user: dict) -> dict | None:
     return members_col.find_one({"user_id": user["id"], "status": "active"})
@@ -253,3 +262,43 @@ def join_org(body: JoinIn, user: dict = Depends(current_user)):
         "status": "accepted", "accepted_by": user["id"], "accepted_at": now_utc(),
     }})
     return _org_view(org, "member")
+
+
+# ----------------------------------------------------------------- hidden strategy (the moat)
+def _strategy_view(org: dict) -> dict:
+    return {
+        "north_star": org.get("north_star", "") or "",
+        "target": org.get("target", "") or "",
+        "deadline": org.get("deadline", "") or "",
+        "priorities": list(org.get("priorities", []) or []),
+        "decision_rules": org.get("decision_rules", "") or "",
+        "strategy_updated_at": org.get("strategy_updated_at"),
+        "strategy_set": bool(org.get("north_star")),
+    }
+
+
+@router.get("/strategy")
+def get_strategy(user: dict = Depends(current_user)):
+    """Owner-only. The confidential North Star + priorities + rules. NEVER returned to members."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    return _strategy_view(org)
+
+
+@router.put("/strategy")
+def set_strategy(body: StrategyIn, user: dict = Depends(current_user)):
+    """Owner-only. Saves the hidden steering that silently guides every member's decisions."""
+    m = _require_owner(user)
+    priorities = [p.strip() for p in body.priorities if isinstance(p, str) and p.strip()][:8]
+    orgs_col.update_one({"id": m["org_id"]}, {"$set": {
+        "north_star": body.north_star.strip(),
+        "target": body.target.strip(),
+        "deadline": body.deadline.strip(),
+        "priorities": priorities,
+        "decision_rules": body.decision_rules.strip(),
+        "strategy_updated_at": now_utc(),
+    }})
+    org = orgs_col.find_one({"id": m["org_id"]})
+    return _strategy_view(org)

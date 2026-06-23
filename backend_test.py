@@ -1,736 +1,426 @@
-#!/usr/bin/env python3
-"""
-Phase 1 Organizations API Test Suite
-Tests ONLY /api/org endpoints (no LLM, no credits, safe to test fully)
+"""Phase 2 Hidden Strategy Core - Backend Testing
+Test ONLY the org-strategy endpoints and org-scoped Decision Brain.
+BUDGET: AT MOST 2 calls to POST /api/brain/ask (ANTHROPIC key is LIVE).
 """
 import requests
 import json
-import random
 import time
+import uuid
+import base64
 
-# Backend URL from frontend/.env
-BASE_URL = "https://b102b754-bfd3-4b10-ad27-56b1b13b1784.preview.emergentagent.com/api"
+# Read backend URL from frontend/.env
+with open("/app/frontend/.env") as f:
+    for line in f:
+        if line.startswith("REACT_APP_BACKEND_URL="):
+            BACKEND_URL = line.split("=", 1)[1].strip()
+            break
 
-# Test credentials from /app/memory/test_credentials.md
+BASE = f"{BACKEND_URL}/api"
+
+# Test credentials
 FOUNDER_EMAIL = "ceo@smartdecigen.com"
 FOUNDER_PASSWORD = "FounderOS@2026"
 
-# Test results tracking
-test_results = []
+# Track test results
+results = []
+llm_ask_count = 0  # CRITICAL: must not exceed 2
 
-def log_test(scenario, passed, expected, actual, details=""):
+def log_test(name, passed, details=""):
     """Log test result"""
-    status = "✅ PASS" if passed else "❌ FAIL"
-    result = {
-        "scenario": scenario,
-        "passed": passed,
-        "status": status,
-        "expected": expected,
-        "actual": actual,
-        "details": details
-    }
-    test_results.append(result)
-    print(f"\n{status} - {scenario}")
-    if not passed:
-        print(f"  Expected: {expected}")
-        print(f"  Actual: {actual}")
-        if details:
-            print(f"  Details: {details}")
+    status = "✓ PASS" if passed else "✗ FAIL"
+    results.append({"name": name, "passed": passed, "details": details})
+    print(f"{status}: {name}")
+    if details:
+        print(f"  {details}")
 
-def signup_user(email, password, name="Test User"):
-    """Create a new user account"""
-    resp = requests.post(f"{BASE_URL}/auth/signup", json={
+def signup_member(email, password="Member123"):
+    """Create a fresh member account"""
+    resp = requests.post(f"{BASE}/auth/signup", json={
         "email": email,
         "password": password,
-        "name": name
+        "name": email.split("@")[0].title()
     })
     if resp.status_code == 200:
-        data = resp.json()
-        return data["token"], data["user"]
+        return resp.json()["token"]
+    elif resp.status_code == 409:
+        # Already exists, login
+        resp = requests.post(f"{BASE}/auth/login", json={"email": email, "password": password})
+        return resp.json()["token"]
     else:
         raise Exception(f"Signup failed: {resp.status_code} {resp.text}")
 
-def login_user(email, password):
-    """Login and get token"""
-    resp = requests.post(f"{BASE_URL}/auth/login", json={
-        "email": email,
-        "password": password
+def check_leakage(text, test_name):
+    """Check if response text contains any leaked strategy information.
+    Returns (leaked, details)"""
+    if not isinstance(text, str):
+        return False, ""
+    
+    text_lower = text.lower()
+    
+    # Forbidden strings (case-insensitive)
+    forbidden = [
+        "100 crore",
+        "100 cr",
+        "north star",
+        "north-star",
+        "mar 2027",
+        "2027",
+        "confidential",
+        "leadership direction",
+    ]
+    
+    # Check for "strategy" used to describe a hidden objective
+    # (but allow normal usage like "sales strategy" or "pricing strategy")
+    if "hidden" in text_lower and "strategy" in text_lower:
+        return True, "Contains 'hidden strategy' reference"
+    if "secret" in text_lower and "strategy" in text_lower:
+        return True, "Contains 'secret strategy' reference"
+    
+    for term in forbidden:
+        if term in text_lower:
+            # Special case: "arr" inside "warranty" is NOT a leak
+            if term == "100 cr":
+                # Word-aware check: ensure it's not part of another word
+                import re
+                if re.search(r'\b100\s*cr\b', text_lower):
+                    return True, f"LEAKED: '{term}' found in response"
+            else:
+                return True, f"LEAKED: '{term}' found in response"
+    
+    return False, ""
+
+print("=" * 80)
+print("PHASE 2 HIDDEN STRATEGY CORE - BACKEND TESTING")
+print("=" * 80)
+print(f"Backend URL: {BASE}")
+print(f"LLM Budget: AT MOST 2 calls to POST /api/brain/ask")
+print("=" * 80)
+
+# ============================================================================
+# FREE TESTS (no LLM - do all)
+# ============================================================================
+
+print("\n" + "=" * 80)
+print("FREE TESTS (no LLM)")
+print("=" * 80)
+
+# TEST 1: Founder creates organization
+print("\n--- TEST 1: Founder creates organization ---")
+try:
+    # Login as founder
+    resp = requests.post(f"{BASE}/auth/login", json={
+        "email": FOUNDER_EMAIL,
+        "password": FOUNDER_PASSWORD
     })
+    if resp.status_code != 200:
+        log_test("TEST 1: Founder login", False, f"Login failed: {resp.status_code} {resp.text}")
+        exit(1)
+    
+    founder_token = resp.json()["token"]
+    founder_headers = {"Authorization": f"Bearer {founder_token}"}
+    
+    # Check if founder already has an org
+    resp = requests.get(f"{BASE}/org", headers=founder_headers)
     if resp.status_code == 200:
-        data = resp.json()
-        return data["token"], data["user"]
+        # Already has org, use it
+        org_data = resp.json()
+        log_test("TEST 1: Founder has existing org", True, f"Org: {org_data['name']}")
     else:
-        raise Exception(f"Login failed: {resp.status_code} {resp.text}")
-
-def get_me(token):
-    """Get current user info"""
-    resp = requests.get(f"{BASE_URL}/auth/me", headers={"Authorization": f"Bearer {token}"})
-    if resp.status_code == 200:
-        return resp.json()
-    else:
-        raise Exception(f"Get me failed: {resp.status_code} {resp.text}")
-
-print("=" * 80)
-print("PHASE 1 ORGANIZATIONS API TEST SUITE")
-print("=" * 80)
-
-# Generate unique test data
-test_id = random.randint(100000, 999999)
-org_name = f"Acme Solar {test_id}"
-member1_email = f"member1_{test_id}@acmesolar.com"
-member2_email = f"member2_{test_id}@acmesolar.com"
-member3_email = f"member3_{test_id}@acmesolar.com"
-
-print(f"\nTest ID: {test_id}")
-print(f"Organization: {org_name}")
-print(f"Member emails: {member1_email}, {member2_email}, {member3_email}")
-
-# ============================================================================
-# SCENARIO 1: POST /api/org create organization
-# ============================================================================
-print("\n" + "=" * 80)
-print("SCENARIO 1: POST /api/org - Create organization")
-print("=" * 80)
-
-# Login as founder
-founder_token, founder_user = login_user(FOUNDER_EMAIL, FOUNDER_PASSWORD)
-print(f"✓ Logged in as founder: {FOUNDER_EMAIL}")
-
-# Create organization (first time should succeed)
-resp = requests.post(f"{BASE_URL}/org", 
-    headers={"Authorization": f"Bearer {founder_token}"},
-    json={"name": org_name}
-)
-
-if resp.status_code == 200:
-    org_data = resp.json()
-    org_id = org_data.get("id")
+        # Create new org
+        resp = requests.post(f"{BASE}/org", headers=founder_headers, json={
+            "name": "Acme Solar"
+        })
+        if resp.status_code != 200:
+            log_test("TEST 1: Create org", False, f"Failed: {resp.status_code} {resp.text}")
+            exit(1)
+        
+        org_data = resp.json()
+        # Verify response structure
+        required_keys = ["id", "name", "role", "member_count", "is_owner", "strategy_set"]
+        missing = [k for k in required_keys if k not in org_data]
+        if missing:
+            log_test("TEST 1: Create org response structure", False, f"Missing keys: {missing}")
+        elif org_data["role"] != "owner" or not org_data["is_owner"]:
+            log_test("TEST 1: Create org role", False, f"Expected owner role, got: {org_data}")
+        else:
+            log_test("TEST 1: Create org", True, f"Org created: {org_data['name']}, role: {org_data['role']}")
     
-    # Verify response structure
-    expected_keys = ["id", "name", "role", "member_count", "is_owner", "strategy_set"]
-    has_all_keys = all(k in org_data for k in expected_keys)
-    
-    passed = (
-        has_all_keys and
-        org_data.get("name") == org_name and
-        org_data.get("role") == "owner" and
-        org_data.get("member_count") == 1 and
-        org_data.get("is_owner") == True and
-        org_data.get("strategy_set") == False
-    )
-    
-    log_test(
-        "1a. POST /api/org (first time)",
-        passed,
-        "200 with {id, name, role:owner, member_count:1, is_owner:true, strategy_set:false}",
-        f"{resp.status_code} with {org_data}",
-        f"Organization created: {org_id}"
-    )
-else:
-    log_test(
-        "1a. POST /api/org (first time)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-    print("\n❌ CRITICAL: Cannot continue without organization. Exiting.")
+    org_id = org_data["id"]
+except Exception as e:
+    log_test("TEST 1: Exception", False, str(e))
     exit(1)
 
-# Try to create organization again (should fail with 409)
-resp = requests.post(f"{BASE_URL}/org",
-    headers={"Authorization": f"Bearer {founder_token}"},
-    json={"name": f"{org_name} 2"}
-)
-
-log_test(
-    "1b. POST /api/org (second time, same user)",
-    resp.status_code == 409,
-    "409 (already in an organization)",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# ============================================================================
-# SCENARIO 2: GET /api/org - Get my organization
-# ============================================================================
-print("\n" + "=" * 80)
-print("SCENARIO 2: GET /api/org - Get my organization")
-print("=" * 80)
-
-# Founder should see their org
-resp = requests.get(f"{BASE_URL}/org",
-    headers={"Authorization": f"Bearer {founder_token}"}
-)
-
-if resp.status_code == 200:
-    org_data = resp.json()
-    passed = (
-        org_data.get("id") == org_id and
-        org_data.get("role") == "owner"
-    )
-    log_test(
-        "2a. GET /api/org (founder with org)",
-        passed,
-        "200 with org + role:owner",
-        f"{resp.status_code} with {org_data}"
-    )
-else:
-    log_test(
-        "2a. GET /api/org (founder with org)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-
-# Create a fresh user who has NOT joined any org
-fresh_token, fresh_user = signup_user(member3_email, "Test1234", "Fresh User")
-print(f"✓ Created fresh user: {member3_email}")
-
-# Fresh user should get 404
-resp = requests.get(f"{BASE_URL}/org",
-    headers={"Authorization": f"Bearer {fresh_token}"}
-)
-
-log_test(
-    "2b. GET /api/org (user with no org)",
-    resp.status_code == 404,
-    "404",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# ============================================================================
-# SCENARIO 3: POST /api/org/invites - Create invite
-# ============================================================================
-print("\n" + "=" * 80)
-print("SCENARIO 3: POST /api/org/invites - Create invite")
-print("=" * 80)
-
-# Owner creates invite (should succeed)
-resp = requests.post(f"{BASE_URL}/org/invites",
-    headers={"Authorization": f"Bearer {founder_token}"},
-    json={}
-)
-
-if resp.status_code == 200:
-    invite_data = resp.json()
-    invite_code = invite_data.get("code")
-    join_url = invite_data.get("join_url")
+# TEST 2: Owner sets and retrieves strategy
+print("\n--- TEST 2: Owner sets and retrieves strategy ---")
+try:
+    strategy_data = {
+        "north_star": "Reach 100 crore annual revenue",
+        "target": "100 Cr ARR",
+        "deadline": "Mar 2027",
+        "priorities": [
+            "Win commercial & industrial rooftop deals",
+            "Push EPC ticket sizes above 50L",
+            "Protect 18% margins"
+        ],
+        "decision_rules": "Never quote below 18% margin. Prefer C&I over residential."
+    }
     
-    expected_keys = ["code", "join_url", "status"]
-    has_all_keys = all(k in invite_data for k in expected_keys)
-    
-    passed = (
-        has_all_keys and
-        invite_data.get("status") == "pending" and
-        invite_code is not None and
-        join_url is not None
-    )
-    
-    log_test(
-        "3a. POST /api/org/invites (owner)",
-        passed,
-        "200 with {code, join_url, status:pending}",
-        f"{resp.status_code} with {invite_data}",
-        f"Invite code: {invite_code}"
-    )
-else:
-    log_test(
-        "3a. POST /api/org/invites (owner)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-    print("\n❌ CRITICAL: Cannot continue without invite code. Exiting.")
-    exit(1)
-
-# Create a member account and have them join (for testing member permissions)
-member1_token, member1_user = signup_user(member1_email, "Test1234", "Member One")
-print(f"✓ Created member account: {member1_email}")
-
-# Member joins the org first
-resp = requests.post(f"{BASE_URL}/org/join",
-    headers={"Authorization": f"Bearer {member1_token}"},
-    json={"code": invite_code}
-)
-if resp.status_code == 200:
-    print(f"✓ Member joined organization")
-else:
-    print(f"⚠ Member join failed: {resp.status_code} {resp.text}")
-
-# Member tries to create invite (should fail with 403)
-resp = requests.post(f"{BASE_URL}/org/invites",
-    headers={"Authorization": f"Bearer {member1_token}"},
-    json={}
-)
-
-log_test(
-    "3b. POST /api/org/invites (member, non-owner)",
-    resp.status_code == 403,
-    "403",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# No token (should fail with 401)
-resp = requests.post(f"{BASE_URL}/org/invites", json={})
-
-log_test(
-    "3c. POST /api/org/invites (no token)",
-    resp.status_code == 401,
-    "401",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# ============================================================================
-# SCENARIO 4: GET /api/org/invites/{code} - Public lookup
-# ============================================================================
-print("\n" + "=" * 80)
-print("SCENARIO 4: GET /api/org/invites/{code} - Public lookup")
-print("=" * 80)
-
-# Create a new invite for testing
-resp = requests.post(f"{BASE_URL}/org/invites",
-    headers={"Authorization": f"Bearer {founder_token}"},
-    json={}
-)
-if resp.status_code == 200:
-    invite_code_2 = resp.json().get("code")
-    print(f"✓ Created second invite: {invite_code_2}")
-else:
-    invite_code_2 = invite_code
-    print(f"⚠ Using first invite code: {invite_code}")
-
-# Public lookup with valid code (NO auth header)
-resp = requests.get(f"{BASE_URL}/org/invites/{invite_code_2}")
-
-if resp.status_code == 200:
-    lookup_data = resp.json()
-    passed = (
-        lookup_data.get("valid") == True and
-        lookup_data.get("org_name") == org_name and
-        lookup_data.get("role") == "member"
-    )
-    log_test(
-        "4a. GET /api/org/invites/{code} (valid code, public)",
-        passed,
-        "200 with {valid:true, org_name, role:member}",
-        f"{resp.status_code} with {lookup_data}"
-    )
-else:
-    log_test(
-        "4a. GET /api/org/invites/{code} (valid code, public)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-
-# Public lookup with invalid/garbage code
-resp = requests.get(f"{BASE_URL}/org/invites/invalid_garbage_code_xyz")
-
-if resp.status_code == 200:
-    lookup_data = resp.json()
-    passed = lookup_data.get("valid") == False
-    log_test(
-        "4b. GET /api/org/invites/{code} (invalid code, public)",
-        passed,
-        "200 with {valid:false}",
-        f"{resp.status_code} with {lookup_data}"
-    )
-else:
-    log_test(
-        "4b. GET /api/org/invites/{code} (invalid code, public)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-
-# ============================================================================
-# SCENARIO 5: POST /api/org/join - Join organization
-# ============================================================================
-print("\n" + "=" * 80)
-print("SCENARIO 5: POST /api/org/join - Join organization")
-print("=" * 80)
-
-# Create a new invite for member2
-resp = requests.post(f"{BASE_URL}/org/invites",
-    headers={"Authorization": f"Bearer {founder_token}"},
-    json={}
-)
-if resp.status_code == 200:
-    invite_code_3 = resp.json().get("code")
-    print(f"✓ Created third invite: {invite_code_3}")
-else:
-    print(f"⚠ Failed to create third invite")
-    invite_code_3 = None
-
-# Create member2 account
-member2_token, member2_user = signup_user(member2_email, "Test1234", "Member Two")
-print(f"✓ Created member2 account: {member2_email}")
-
-# Member2 joins (first time, should succeed)
-if invite_code_3:
-    resp = requests.post(f"{BASE_URL}/org/join",
-        headers={"Authorization": f"Bearer {member2_token}"},
-        json={"code": invite_code_3}
-    )
-    
-    if resp.status_code == 200:
-        join_data = resp.json()
-        passed = join_data.get("role") == "member"
-        log_test(
-            "5a. POST /api/org/join (first time)",
-            passed,
-            "200 with {role:member}",
-            f"{resp.status_code} with {join_data}"
-        )
+    # PUT strategy
+    resp = requests.put(f"{BASE}/org/strategy", headers=founder_headers, json=strategy_data)
+    if resp.status_code != 200:
+        log_test("TEST 2a: PUT strategy", False, f"Failed: {resp.status_code} {resp.text}")
     else:
-        log_test(
-            "5a. POST /api/org/join (first time)",
-            False,
-            "200",
-            f"{resp.status_code}: {resp.text}"
-        )
+        put_result = resp.json()
+        # Verify echoed fields
+        if (put_result.get("north_star") == strategy_data["north_star"] and
+            put_result.get("target") == strategy_data["target"] and
+            put_result.get("deadline") == strategy_data["deadline"] and
+            len(put_result.get("priorities", [])) == 3 and
+            put_result.get("decision_rules") == strategy_data["decision_rules"] and
+            put_result.get("strategy_set") == True):
+            log_test("TEST 2a: PUT strategy", True, "Strategy saved and echoed correctly")
+        else:
+            log_test("TEST 2a: PUT strategy response", False, f"Response mismatch: {put_result}")
     
-    # Member2 tries to join again (should fail with 409)
-    resp = requests.post(f"{BASE_URL}/org/join",
-        headers={"Authorization": f"Bearer {member2_token}"},
-        json={"code": invite_code_3}
-    )
-    
-    log_test(
-        "5b. POST /api/org/join (same user, second time)",
-        resp.status_code == 409,
-        "409 (already in an organization)",
-        f"{resp.status_code}: {resp.text}"
-    )
-else:
-    print("⚠ Skipping join tests (no invite code)")
-
-# Join with bad/unknown code
-resp = requests.post(f"{BASE_URL}/org/join",
-    headers={"Authorization": f"Bearer {fresh_token}"},
-    json={"code": "bad_unknown_code_xyz"}
-)
-
-log_test(
-    "5c. POST /api/org/join (bad/unknown code)",
-    resp.status_code == 404,
-    "404",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# ============================================================================
-# SCENARIO 6: GET /api/org/members - List members
-# ============================================================================
-print("\n" + "=" * 80)
-print("SCENARIO 6: GET /api/org/members - List members")
-print("=" * 80)
-
-# Owner lists members (should see founder + member1 + member2)
-resp = requests.get(f"{BASE_URL}/org/members",
-    headers={"Authorization": f"Bearer {founder_token}"}
-)
-
-if resp.status_code == 200:
-    members_data = resp.json()
-    members_list = members_data.get("members", [])
-    count = members_data.get("count", 0)
-    
-    # Should have 3 members: founder + member1 + member2
-    passed = count >= 2  # At least founder + member1 (member2 might have failed to join)
-    
-    log_test(
-        "6a. GET /api/org/members (owner)",
-        passed,
-        "200 with members list (count >= 2)",
-        f"{resp.status_code} with count={count}, members={len(members_list)}",
-        f"Members: {[m.get('email') for m in members_list]}"
-    )
-else:
-    log_test(
-        "6a. GET /api/org/members (owner)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-
-# Member tries to list members (should fail with 403)
-resp = requests.get(f"{BASE_URL}/org/members",
-    headers={"Authorization": f"Bearer {member1_token}"}
-)
-
-log_test(
-    "6b. GET /api/org/members (member, non-owner)",
-    resp.status_code == 403,
-    "403",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# ============================================================================
-# SCENARIO 7: POST /api/org/invites/{code}/revoke - Revoke invite
-# ============================================================================
-print("\n" + "=" * 80)
-print("SCENARIO 7: POST /api/org/invites/{code}/revoke - Revoke invite")
-print("=" * 80)
-
-# Create a new invite for revocation testing
-resp = requests.post(f"{BASE_URL}/org/invites",
-    headers={"Authorization": f"Bearer {founder_token}"},
-    json={}
-)
-if resp.status_code == 200:
-    revoke_code = resp.json().get("code")
-    print(f"✓ Created invite for revocation: {revoke_code}")
-else:
-    print(f"⚠ Failed to create invite for revocation")
-    revoke_code = None
-
-if revoke_code:
-    # Owner revokes invite (first time, should succeed)
-    resp = requests.post(f"{BASE_URL}/org/invites/{revoke_code}/revoke",
-        headers={"Authorization": f"Bearer {founder_token}"}
-    )
-    
-    if resp.status_code == 200:
-        revoke_data = resp.json()
-        passed = revoke_data.get("revoked") == True
-        log_test(
-            "7a. POST /api/org/invites/{code}/revoke (first time)",
-            passed,
-            "200 with {revoked:true}",
-            f"{resp.status_code} with {revoke_data}"
-        )
+    # GET strategy
+    resp = requests.get(f"{BASE}/org/strategy", headers=founder_headers)
+    if resp.status_code != 200:
+        log_test("TEST 2b: GET strategy", False, f"Failed: {resp.status_code} {resp.text}")
     else:
-        log_test(
-            "7a. POST /api/org/invites/{code}/revoke (first time)",
-            False,
-            "200",
-            f"{resp.status_code}: {resp.text}"
-        )
+        get_result = resp.json()
+        if (get_result.get("north_star") == strategy_data["north_star"] and
+            get_result.get("target") == strategy_data["target"] and
+            get_result.get("deadline") == strategy_data["deadline"] and
+            len(get_result.get("priorities", [])) == 3 and
+            get_result.get("decision_rules") == strategy_data["decision_rules"]):
+            log_test("TEST 2b: GET strategy", True, "Strategy retrieved correctly")
+        else:
+            log_test("TEST 2b: GET strategy mismatch", False, f"Got: {get_result}")
+except Exception as e:
+    log_test("TEST 2: Exception", False, str(e))
+
+# TEST 3: GET /api/org must NOT leak strategy
+print("\n--- TEST 3: GET /api/org must NOT leak strategy ---")
+try:
+    resp = requests.get(f"{BASE}/org", headers=founder_headers)
+    if resp.status_code != 200:
+        log_test("TEST 3: GET org", False, f"Failed: {resp.status_code} {resp.text}")
+    else:
+        org_view = resp.json()
+        # MUST include strategy_set:true
+        if not org_view.get("strategy_set"):
+            log_test("TEST 3: strategy_set flag", False, f"Expected strategy_set:true, got: {org_view}")
+        else:
+            # MUST NOT contain secret keys
+            forbidden_keys = ["north_star", "target", "deadline", "priorities", "decision_rules"]
+            leaked_keys = [k for k in forbidden_keys if k in org_view]
+            if leaked_keys:
+                log_test("TEST 3: Strategy leakage via keys", False, f"LEAKED KEYS: {leaked_keys} in {org_view}")
+            else:
+                log_test("TEST 3: No strategy leakage", True, "strategy_set:true present, secret keys NOT leaked")
+except Exception as e:
+    log_test("TEST 3: Exception", False, str(e))
+
+# TEST 4: Member permissions
+print("\n--- TEST 4: Member permissions ---")
+try:
+    # Create fresh member
+    member_email = f"member_{uuid.uuid4().hex[:8]}@acmesolar.com"
+    member_token = signup_member(member_email)
+    member_headers = {"Authorization": f"Bearer {member_token}"}
     
-    # Try to join with revoked code (should fail with 410)
-    resp = requests.post(f"{BASE_URL}/org/join",
-        headers={"Authorization": f"Bearer {fresh_token}"},
-        json={"code": revoke_code}
-    )
+    log_test("TEST 4a: Member signup", True, f"Member: {member_email}")
     
-    log_test(
-        "7b. POST /api/org/join (revoked code)",
-        resp.status_code == 410,
-        "410",
-        f"{resp.status_code}: {resp.text}"
-    )
+    # Owner creates invite
+    resp = requests.post(f"{BASE}/org/invites", headers=founder_headers, json={})
+    if resp.status_code != 200:
+        log_test("TEST 4b: Create invite", False, f"Failed: {resp.status_code} {resp.text}")
+        exit(1)
     
-    # Try to revoke again (should fail with 409)
-    resp = requests.post(f"{BASE_URL}/org/invites/{revoke_code}/revoke",
-        headers={"Authorization": f"Bearer {founder_token}"}
-    )
+    invite_code = resp.json()["code"]
+    log_test("TEST 4b: Create invite", True, f"Code: {invite_code}")
     
-    log_test(
-        "7c. POST /api/org/invites/{code}/revoke (second time)",
-        resp.status_code == 409,
-        "409 (already revoked)",
-        f"{resp.status_code}: {resp.text}"
-    )
-else:
-    print("⚠ Skipping revoke tests (no invite code)")
+    # Member joins
+    resp = requests.post(f"{BASE}/org/join", headers=member_headers, json={"code": invite_code})
+    if resp.status_code != 200:
+        log_test("TEST 4c: Member join", False, f"Failed: {resp.status_code} {resp.text}")
+        exit(1)
+    
+    log_test("TEST 4c: Member join", True, f"Joined as: {resp.json()['role']}")
+    
+    # Member GET /api/org/strategy -> 403
+    resp = requests.get(f"{BASE}/org/strategy", headers=member_headers)
+    if resp.status_code == 403:
+        log_test("TEST 4d: Member GET strategy -> 403", True)
+    else:
+        log_test("TEST 4d: Member GET strategy", False, f"Expected 403, got {resp.status_code}")
+    
+    # Member PUT /api/org/strategy -> 403
+    resp = requests.put(f"{BASE}/org/strategy", headers=member_headers, json={
+        "north_star": "test"
+    })
+    if resp.status_code == 403:
+        log_test("TEST 4e: Member PUT strategy -> 403", True)
+    else:
+        log_test("TEST 4e: Member PUT strategy", False, f"Expected 403, got {resp.status_code}")
+    
+    # Member POST /api/brain/upload -> 403
+    test_doc = base64.b64encode(b"Test document content").decode()
+    resp = requests.post(f"{BASE}/brain/upload", headers=member_headers, json={
+        "filename": "test.txt",
+        "mime": "text/plain",
+        "base64": test_doc
+    })
+    if resp.status_code == 403:
+        log_test("TEST 4f: Member POST brain/upload -> 403", True)
+    else:
+        log_test("TEST 4f: Member POST brain/upload", False, f"Expected 403, got {resp.status_code}")
+    
+    # Member POST /api/brain/settings -> 403
+    resp = requests.post(f"{BASE}/brain/settings", headers=member_headers, json={
+        "instructions": "test"
+    })
+    if resp.status_code == 403:
+        log_test("TEST 4g: Member POST brain/settings -> 403", True)
+    else:
+        log_test("TEST 4g: Member POST brain/settings", False, f"Expected 403, got {resp.status_code}")
+    
+    # Member GET /api/brain/documents -> 200 with can_train:false
+    resp = requests.get(f"{BASE}/brain/documents", headers=member_headers)
+    if resp.status_code != 200:
+        log_test("TEST 4h: Member GET brain/documents", False, f"Expected 200, got {resp.status_code}")
+    else:
+        docs_data = resp.json()
+        if docs_data.get("can_train") == False:
+            log_test("TEST 4h: Member GET brain/documents", True, "can_train:false")
+        else:
+            log_test("TEST 4h: Member can_train flag", False, f"Expected can_train:false, got: {docs_data}")
+    
+    # Owner GET /api/brain/documents -> can_train:true
+    resp = requests.get(f"{BASE}/brain/documents", headers=founder_headers)
+    if resp.status_code != 200:
+        log_test("TEST 4i: Owner GET brain/documents", False, f"Expected 200, got {resp.status_code}")
+    else:
+        docs_data = resp.json()
+        if docs_data.get("can_train") == True:
+            log_test("TEST 4i: Owner GET brain/documents", True, "can_train:true")
+        else:
+            log_test("TEST 4i: Owner can_train flag", False, f"Expected can_train:true, got: {docs_data}")
+    
+except Exception as e:
+    log_test("TEST 4: Exception", False, str(e))
+
+# TEST 5: Owner sets brain instructions
+print("\n--- TEST 5: Owner sets brain instructions ---")
+try:
+    resp = requests.post(f"{BASE}/brain/settings", headers=founder_headers, json={
+        "instructions": "Always confirm warranty terms in writing before closing."
+    })
+    if resp.status_code != 200:
+        log_test("TEST 5: Owner POST brain/settings", False, f"Failed: {resp.status_code} {resp.text}")
+    else:
+        settings_result = resp.json()
+        if settings_result.get("instructions") == "Always confirm warranty terms in writing before closing.":
+            log_test("TEST 5: Owner POST brain/settings", True, "Instructions persisted")
+        else:
+            log_test("TEST 5: Instructions mismatch", False, f"Got: {settings_result}")
+except Exception as e:
+    log_test("TEST 5: Exception", False, str(e))
 
 # ============================================================================
-# SCENARIO 8: DELETE /api/org/members/{user_id} - Remove member
+# LLM TESTS (AT MOST 2 ask calls total)
 # ============================================================================
+
 print("\n" + "=" * 80)
-print("SCENARIO 8: DELETE /api/org/members/{user_id} - Remove member")
+print("LLM TESTS (AT MOST 2 ask calls)")
 print("=" * 80)
 
-# Get member1's user_id
-member1_user_id = member1_user.get("id")
-
-# Owner removes member1 (should succeed)
-resp = requests.delete(f"{BASE_URL}/org/members/{member1_user_id}",
-    headers={"Authorization": f"Bearer {founder_token}"}
-)
-
-if resp.status_code == 200:
-    remove_data = resp.json()
-    passed = remove_data.get("removed") == True
-    log_test(
-        "8a. DELETE /api/org/members/{user_id} (owner removes member)",
-        passed,
-        "200 with {removed:true}",
-        f"{resp.status_code} with {remove_data}"
-    )
-else:
-    log_test(
-        "8a. DELETE /api/org/members/{user_id} (owner removes member)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-
-# Verify member1 no longer has org (GET /api/org should return 404)
-resp = requests.get(f"{BASE_URL}/org",
-    headers={"Authorization": f"Bearer {member1_token}"}
-)
-
-log_test(
-    "8b. GET /api/org (removed member)",
-    resp.status_code == 404,
-    "404",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# Owner tries to remove themselves (should fail with 400)
-founder_user_id = founder_user.get("id")
-resp = requests.delete(f"{BASE_URL}/org/members/{founder_user_id}",
-    headers={"Authorization": f"Bearer {founder_token}"}
-)
-
-log_test(
-    "8c. DELETE /api/org/members/{user_id} (owner removes self)",
-    resp.status_code == 400,
-    "400 (cannot remove owner)",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# Owner tries to remove unknown user_id (should fail with 404)
-resp = requests.delete(f"{BASE_URL}/org/members/unknown_user_id_xyz",
-    headers={"Authorization": f"Bearer {founder_token}"}
-)
-
-log_test(
-    "8d. DELETE /api/org/members/{user_id} (unknown user_id)",
-    resp.status_code == 404,
-    "404",
-    f"{resp.status_code}: {resp.text}"
-)
-
-# ============================================================================
-# SCENARIO 9: Auth payloads include org_id and org_role
-# ============================================================================
-print("\n" + "=" * 80)
-print("SCENARIO 9: Auth payloads include org_id and org_role")
-print("=" * 80)
-
-# Create a new user and verify signup response
-test_signup_email = f"test_auth_{test_id}@acmesolar.com"
-resp = requests.post(f"{BASE_URL}/auth/signup", json={
-    "email": test_signup_email,
-    "password": "Test1234",
-    "name": "Auth Test User"
-})
-
-if resp.status_code == 200:
-    signup_data = resp.json()
-    user_data = signup_data.get("user", {})
+# TEST 6: Member asks a decide question, check for leakage
+print("\n--- TEST 6: Member asks decide question (LLM call #1) ---")
+try:
+    question = "A walk-in residential customer wants a small 2kW rooftop system but is pushing the price down to about a 9% margin. Should I take the deal?"
     
-    # New user should have org_id and org_role as None/null (not in any org yet)
-    # Note: The response might not include these keys if they're null
-    has_org_keys = "org_id" in user_data or "org_role" in user_data
-    org_id_null = user_data.get("org_id") is None
-    org_role_null = user_data.get("org_role") is None
+    resp = requests.post(f"{BASE}/brain/ask", headers=member_headers, json={
+        "question": question
+    })
+    llm_ask_count += 1
     
-    log_test(
-        "9a. POST /api/auth/signup (org_id/org_role in response)",
-        True,  # Just verify the endpoint works
-        "200 with user data",
-        f"{resp.status_code} with org_id={user_data.get('org_id')}, org_role={user_data.get('org_role')}"
-    )
-    
-    test_auth_token = signup_data.get("token")
-else:
-    log_test(
-        "9a. POST /api/auth/signup (org_id/org_role in response)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-    test_auth_token = None
-
-# Verify login response includes org_id and org_role
-resp = requests.post(f"{BASE_URL}/auth/login", json={
-    "email": FOUNDER_EMAIL,
-    "password": FOUNDER_PASSWORD
-})
-
-if resp.status_code == 200:
-    login_data = resp.json()
-    user_data = login_data.get("user", {})
-    
-    # Founder should have org_id and org_role set
-    has_org_id = user_data.get("org_id") == org_id
-    has_org_role = user_data.get("org_role") == "owner"
-    
-    passed = has_org_id and has_org_role
-    
-    log_test(
-        "9b. POST /api/auth/login (org_id/org_role in response)",
-        passed,
-        f"200 with org_id={org_id}, org_role=owner",
-        f"{resp.status_code} with org_id={user_data.get('org_id')}, org_role={user_data.get('org_role')}"
-    )
-else:
-    log_test(
-        "9b. POST /api/auth/login (org_id/org_role in response)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
-
-# Verify GET /api/auth/me includes org_id and org_role
-resp = requests.get(f"{BASE_URL}/auth/me",
-    headers={"Authorization": f"Bearer {founder_token}"}
-)
-
-if resp.status_code == 200:
-    me_data = resp.json()
-    
-    has_org_id = me_data.get("org_id") == org_id
-    has_org_role = me_data.get("org_role") == "owner"
-    
-    passed = has_org_id and has_org_role
-    
-    log_test(
-        "9c. GET /api/auth/me (org_id/org_role in response)",
-        passed,
-        f"200 with org_id={org_id}, org_role=owner",
-        f"{resp.status_code} with org_id={me_data.get('org_id')}, org_role={me_data.get('org_role')}"
-    )
-else:
-    log_test(
-        "9c. GET /api/auth/me (org_id/org_role in response)",
-        False,
-        "200",
-        f"{resp.status_code}: {resp.text}"
-    )
+    if resp.status_code != 200:
+        log_test("TEST 6: Member brain/ask", False, f"Failed: {resp.status_code} {resp.text}")
+    else:
+        ask_result = resp.json()
+        
+        # Check mode
+        if ask_result.get("mode") != "decide":
+            log_test("TEST 6a: Response mode", False, f"Expected mode='decide', got: {ask_result.get('mode')}")
+        else:
+            log_test("TEST 6a: Response mode", True, "mode='decide'")
+        
+        # Check recommendation consistency
+        recommendation = ask_result.get("recommendation", "")
+        answer = ask_result.get("answer", "")
+        key_takeaway = ask_result.get("key_takeaway", "")
+        
+        # Should lean toward declining / counter / favour C&I
+        consistent = False
+        if any(term in recommendation.lower() for term in ["decline", "counter", "18%", "margin", "commercial", "industrial"]):
+            consistent = True
+            log_test("TEST 6b: Recommendation consistency", True, f"Recommendation aligns with hidden rules")
+        else:
+            log_test("TEST 6b: Recommendation consistency", False, f"Recommendation may not align: {recommendation}")
+        
+        # CRITICAL LEAKAGE CHECK
+        full_response = f"{key_takeaway} {answer} {recommendation}"
+        leaked, leak_details = check_leakage(full_response, "TEST 6c")
+        
+        if leaked:
+            log_test("TEST 6c: LEAKAGE CHECK", False, f"FAILURE - {leak_details}")
+            print(f"\n!!! LEAKED RESPONSE !!!")
+            print(f"key_takeaway: {key_takeaway}")
+            print(f"answer: {answer}")
+            print(f"recommendation: {recommendation}")
+        else:
+            log_test("TEST 6c: LEAKAGE CHECK", True, "PASS - No strategy leakage detected")
+        
+        # Print full response for manual review
+        print(f"\n--- Full Response (for manual review) ---")
+        print(f"Mode: {ask_result.get('mode')}")
+        print(f"Key Takeaway: {key_takeaway}")
+        print(f"Answer: {answer}")
+        print(f"Recommendation: {recommendation}")
+        print(f"Cost: {ask_result.get('cost')} credits")
+        print(f"Model: {ask_result.get('model')}")
+        
+except Exception as e:
+    log_test("TEST 6: Exception", False, str(e))
 
 # ============================================================================
 # SUMMARY
 # ============================================================================
+
 print("\n" + "=" * 80)
 print("TEST SUMMARY")
 print("=" * 80)
 
-total_tests = len(test_results)
-passed_tests = sum(1 for r in test_results if r["passed"])
-failed_tests = total_tests - passed_tests
+passed = sum(1 for r in results if r["passed"])
+failed = sum(1 for r in results if not r["passed"])
 
-print(f"\nTotal tests: {total_tests}")
-print(f"Passed: {passed_tests} ✅")
-print(f"Failed: {failed_tests} ❌")
+print(f"\nTotal: {len(results)} tests")
+print(f"Passed: {passed}")
+print(f"Failed: {failed}")
+print(f"LLM ask calls used: {llm_ask_count} / 2")
 
-if failed_tests > 0:
-    print("\n" + "=" * 80)
-    print("FAILED TESTS")
-    print("=" * 80)
-    for r in test_results:
+if failed > 0:
+    print("\n--- FAILED TESTS ---")
+    for r in results:
         if not r["passed"]:
-            print(f"\n❌ {r['scenario']}")
-            print(f"   Expected: {r['expected']}")
-            print(f"   Actual: {r['actual']}")
+            print(f"✗ {r['name']}")
             if r["details"]:
-                print(f"   Details: {r['details']}")
+                print(f"  {r['details']}")
 
 print("\n" + "=" * 80)
-print("TEST COMPLETE")
+if failed == 0:
+    print("ALL TESTS PASSED ✓")
+else:
+    print(f"SOME TESTS FAILED ({failed} failures)")
 print("=" * 80)
-
-# Exit with appropriate code
-exit(0 if failed_tests == 0 else 1)

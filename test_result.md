@@ -53,6 +53,21 @@ backend:
         agent: "testing"
         comment: "PASS - All 17 Phase 2 hidden strategy core tests passed successfully (5 FREE test scenarios + 1 LLM test, 1 LLM call used out of 2 budget). FREE TESTS (no LLM): TEST 1 - Founder creates org 'Acme Solar' as owner with correct response structure (id, name, role:owner, member_count:1, is_owner:true, strategy_set:false). TEST 2 - Owner PUT /api/org/strategy with north_star='Reach 100 crore annual revenue', target='100 Cr ARR', deadline='Mar 2027', priorities=['Win commercial & industrial rooftop deals', 'Push EPC ticket sizes above 50L', 'Protect 18% margins'], decision_rules='Never quote below 18% margin. Prefer C&I over residential.' -> 200, response echoes all fields correctly with strategy_set:true. Owner GET /api/org/strategy -> 200, returns same values with 3 priorities. TEST 3 - Owner GET /api/org -> 200 with strategy_set:true but DOES NOT contain keys north_star/target/deadline/priorities/decision_rules (NO LEAKAGE via member-safe org view). TEST 4 - Fresh member (member_ce814c68@acmesolar.com) created and joined org via invite. Member GET /api/org/strategy -> 403 ✓. Member PUT /api/org/strategy -> 403 ✓. Member POST /api/brain/upload -> 403 ✓. Member POST /api/brain/settings -> 403 ✓. Member GET /api/brain/documents -> 200 with can_train:false ✓. Owner GET /api/brain/documents -> 200 with can_train:true ✓. TEST 5 - Owner POST /api/brain/settings with instructions='Always confirm warranty terms in writing before closing.' -> 200, persisted correctly. LLM TEST (1 call): TEST 6 - Member POST /api/brain/ask with question 'A walk-in residential customer wants a small 2kW rooftop system but is pushing the price down to about a 9% margin. Should I take the deal?' -> 200, mode='decide' ✓, recommendation='Decline this deal politely. A 9% margin on a tiny residential system will bleed time, focus, and profitability...Focus your energy on commercial and industrial rooftop opportunities where ticket sizes run above 50 lakh and margins hold in the high teens' (consistent with hidden rules: decline low-margin residential, prefer C&I, protect margins) ✓. CRITICAL LEAKAGE CHECK: Full response text (key_takeaway + answer + recommendation) does NOT contain any of: '100 crore', '100 Cr', 'North Star', 'north-star', 'Mar 2027', '2027', 'strategy' (as hidden objective), 'confidential', 'leadership direction' ✓ PASS. The moat is secure: hidden strategy silently steers decisions without ever leaking to members. Cost: 2 credits, model: claude-sonnet-4-5. All Phase 2 functionality working correctly. Feature is production-ready."
 
+  - task: "Engine robustness + HONOR-EXPLICIT-REQUESTS tightening (coach engine.py + decision_brain.py)"
+    implemented: true
+    working: true
+    file: "/app/backend/engine.py, /app/backend/decision_brain.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "QUEUED ENGINE FIX (after Phase 2 FE). Root cause of intermittent coach-turn 502s found via logs: Anthropic returned 200 but engine json.loads failed with 'Extra data' (model appended prose after the JSON) and 'Unterminated string' (normal turns capped at max_tokens=1200, the richer delivery truncated the JSON). FIX: (1) new _extract_json() balanced-brace parser in engine.py (strips fences, pulls the first complete {...} object, tolerates trailing prose, best-effort on truncation) applied in llm_turn + llm_complete_action + decision_brain.brain_answer. (2) normal coach turn max_tokens 1200->2000. (3) HONOR EXPLICIT REQUESTS tightened on BOTH engines: a suggest/recommend/pick/'which one'/'give me an idea' request now must COMMIT to ONE specific named pick (never a category like 'vertical AI', never a menu, never a deflecting question), justify in one line, give the first move, then MAY ask ONE refining/consent question AFTER delivering. SELF-VERIFIED LIVE: the exact transcript scenario ('Suggest me a most painful idea...') now returns 200, phase ready_to_act, ACK commits to 'AI prior-authorization in US healthcare' + honest reframe, NEXT_ACTION a concrete 48h step, EASIEST_PATH a 5-step route, OPEN_Q a consent question. Needs a light regression check (KEEP LLM coach turns <= 3)."
+      - working: true
+        agent: "testing"
+        comment: "PASS - Light regression test completed successfully (3 LLM calls, within budget). TEST 1 (LLM call #1): POST /api/goals with goal 'Build an AI startup' / why_now 'I want to build a 100 billion dollar AI startup in one year.' -> 200, thread_id returned, goal created successfully. TEST 2 (LLM call #2, THE CRITICAL TEST): POST /api/threads/{thread_id}/turn with message 'Suggest me one painful problem I can build an AI startup around, and how to start.' mode=normal -> 200 (NOT 502) ✓ FIX VERIFIED. Response includes intent='update', model='claude-opus-4-8', credits decreased (952). GET /api/threads/{thread_id} shows: phase='ready_to_act', acknowledgment='You want me to stop circling and just hand you a target, so here it is. Pick this: small construction and trade contractors near Omaha drowning in unpaid invoices and slow payment collection...' (568 chars) - COMMITS TO ONE SPECIFIC NAMED IDEA (construction contractors + late payment collection pain), NOT a category, NOT a deflection ✓. current_next_action='In the next 48h, message or call 3 small contractors near Council Bluffs...' (203 chars) - concrete and non-empty ✓. current_easiest_path='Before building anything, talk to 5 local contractors... Step 1: line up the conversations. Step 2: hear the real pain... Step 3: find the one task... Step 4: mock up... Step 5: get one to try it.' (293 chars, 5 explicit steps) - multi-step route ✓. current_open_question='Want to lock this as your next move, 3 contractor conversations in 48h, and bring back what they say?' (101 chars) - single consent/refining question ✓. ALL PASS CRITERIA MET. TEST 3 (LLM call #3, optional): POST /api/goals with goal 'Grow my business' / why_now 'I'm not sure where to start.' -> 200, thread created, phase='exploring' (expected for vague goal), has open question, no crash ✓. ROBUSTNESS FIX VERIFIED: No 502 errors (the _extract_json() balanced-brace parser + increased max_tokens 1200->2000 working correctly). HONOR-EXPLICIT-REQUESTS TIGHTENING VERIFIED: Direct 'suggest' request delivered a concrete named pick (not a deflection, not just a category). Feature is production-ready."
+
   - task: "Give-before-you-ask: engine `insight` field (concrete value every turn, all phases) + em-dash/comma polish fix"
     implemented: true
     working: true
@@ -214,6 +229,18 @@ backend:
 
 frontend:
 
+  - task: "Phase 2 UI: TeamPage North Star (founder-only private strategy panel) + BrainPage member-gating (hide upload/train/delete via can_train)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/TeamPage.js, /app/frontend/src/pages/BrainPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (Phase 2 FE). TeamPage owner view gains a 'Your North Star' card (Private-to-you lock badge + note 'Your team never sees it, yet every decision the brain gives them is quietly steered toward it'): fields dream/target/deadline/priorities(one-per-line)/decision_rules -> GET /org/strategy on owner load, PUT /org/strategy on save (testids strategy-northstar/target/deadline/priorities/rules/save). BrainPage gates training controls on can_train from GET /brain/documents: members (can_train=false) see NO upload button, NO train (SlidersHorizontal) button, NO per-doc delete X, and instead a note 'This brain is trained by your workspace owner' (testid brain-member-note); owner/solo keep full controls. Screenshot-verified owner North Star panel renders + saves. Frontend compiles + lint clean. Automated UI test NOT yet run (awaiting user permission)."
+
   - task: "Phase 1 Organizations UI: TeamPage (/team create-or-join + owner roster/invites + member view) + public JoinPage (/join/:code) + TopBar Team entry + join-after-signup"
     implemented: true
     working: "NA"
@@ -281,8 +308,8 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.8"
-  test_sequence: 14
+  version: "1.9"
+  test_sequence: 15
   run_ui: false
 
 test_plan:
@@ -292,6 +319,26 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: >
+      QUEUED ENGINE FIX (after Phase 2 FE) — light regression only. ANTHROPIC key is LIVE: KEEP coach
+      LLM turns <= 3 total. Do NOT touch payments / Zoho. Two changes to verify on the COACH engine
+      (POST /api/goals then POST /api/threads/{id}/turn):
+      (1) ROBUSTNESS/502 FIX: a turn that asks for a concrete deliverable must return 200 (previously
+      intermittently 502'd because the model's richer JSON was truncated at 1200 tokens or had trailing
+      prose). Test: create a goal, then POST a turn message "Suggest me one painful problem I can build
+      an AI startup around, and how to start." EXPECT 200, intent present, model returned, credits
+      decreased, and the engine COMMITS to ONE specific named idea in acknowledgment + a concrete
+      current_next_action + a multi-step current_easiest_path + current_open_question that is a consent/
+      refining question (NOT a deflection). It must NOT answer a direct 'suggest' request with only a
+      category or only a question.
+      (2) NORMAL EXPLORING TURN unchanged: a vague first message (e.g. goal "I want to grow my business"
+      with a turn "I'm not sure where to start") should still behave normally (phase exploring or naming,
+      one open question, no crash, 200).
+      Founder ceo@smartdecigen.com / FounderOS@2026 (credits ~992). You may reuse an existing thread or
+      create fresh. Report HTTP codes + whether the 'suggest' turn delivered a concrete pick vs deflected.
+      Decision Brain was already tested 17/17 this session; only re-test /api/brain/ask if you have spare
+      budget (it shares the same new _extract_json parser).
   - agent: "main"
     message: >
       NEW (Phase 2 — hidden strategy core / the moat). Test the org-strategy + org-scoped Decision
@@ -590,3 +637,34 @@ agent_communication:
       
       All Phase 2 functionality working correctly. Feature is production-ready.
       READY FOR MAIN AGENT TO SUMMARIZE AND FINISH.
+  - agent: "testing"
+    message: >
+      ENGINE ROBUSTNESS + HONOR-EXPLICIT-REQUESTS TIGHTENING TESTED (iteration 9) - All tests passed ✓
+      Light regression test completed successfully within budget (3 LLM calls total, exactly as requested).
+      
+      TEST 1 (LLM call #1): POST /api/goals with goal "Build an AI startup" / why_now "I want to build a 100 billion dollar AI startup in one year."
+      Result: 200, thread_id returned, goal created successfully.
+      
+      TEST 2 (LLM call #2, THE CRITICAL TEST): POST /api/threads/{thread_id}/turn with message "Suggest me one painful problem I can build an AI startup around, and how to start." mode=normal
+      Result: 200 (NOT 502) ✓ ROBUSTNESS FIX VERIFIED - No JSON parsing errors, no truncation issues.
+      Response: intent='update', model='claude-opus-4-8', credits decreased from 956 to 952 (cost=4).
+      Thread state after turn:
+        - phase='ready_to_act'
+        - acknowledgment='You want me to stop circling and just hand you a target, so here it is. Pick this: small construction and trade contractors near Omaha drowning in unpaid invoices and slow payment collection...' (568 chars)
+          ✓ COMMITS TO ONE SPECIFIC NAMED IDEA: construction contractors + late payment collection pain
+          ✓ NOT a category (like "vertical AI")
+          ✓ NOT a deflection (like "which one do you prefer?")
+        - current_next_action='In the next 48h, message or call 3 small contractors near Council Bluffs...' (203 chars) ✓ concrete and non-empty
+        - current_easiest_path='Before building anything, talk to 5 local contractors... Step 1: line up the conversations. Step 2: hear the real pain... Step 3: find the one task... Step 4: mock up... Step 5: get one to try it.' (293 chars, 5 explicit steps) ✓ multi-step route
+        - current_open_question='Want to lock this as your next move, 3 contractor conversations in 48h, and bring back what they say?' (101 chars) ✓ single consent/refining question
+      ALL PASS CRITERIA MET ✓
+      
+      TEST 3 (LLM call #3, optional): POST /api/goals with goal "Grow my business" / why_now "I'm not sure where to start."
+      Result: 200, thread created, phase='exploring' (expected for vague goal), has open question, no crash ✓
+      
+      VERIFICATION SUMMARY:
+      1. ROBUSTNESS FIX VERIFIED: No 502 errors encountered. The _extract_json() balanced-brace parser + increased max_tokens (1200->2000) successfully handles model responses with trailing prose or richer JSON without truncation.
+      2. HONOR-EXPLICIT-REQUESTS TIGHTENING VERIFIED: Direct "suggest" request delivered a concrete named pick (construction contractors + late payment pain), not a deflection, not just a category. The engine committed to ONE specific problem as required.
+      
+      Budget: Used exactly 3 LLM calls (within the strict 3-call limit). Did NOT touch /api/payments or Zoho as instructed.
+      All coach engine functionality working correctly. Feature is production-ready.

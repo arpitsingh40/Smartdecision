@@ -22,6 +22,7 @@ export default function BrainPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [docs, setDocs] = useState([]);
+  const [canTrain, setCanTrain] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [trainOpen, setTrainOpen] = useState(false);
   const [instructions, setInstructions] = useState('');
@@ -32,6 +33,7 @@ export default function BrainPage() {
     try {
       const r = await api.get('/brain/documents');
       setDocs(r.data.documents || []);
+      setCanTrain(r.data.can_train !== false);
     } catch (_e) { /* noop */ }
   }, []);
 
@@ -243,37 +245,47 @@ export default function BrainPage() {
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <BookOpen size={15} strokeWidth={1.75} /> Knowledge
                 </div>
-                <button
-                  data-testid="brain-train-button"
-                  onClick={() => setTrainOpen(true)}
-                  title="Set company rules"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <SlidersHorizontal size={15} strokeWidth={1.75} />
-                </button>
+                {canTrain && (
+                  <button
+                    data-testid="brain-train-button"
+                    onClick={() => setTrainOpen(true)}
+                    title="Set company rules"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <SlidersHorizontal size={15} strokeWidth={1.75} />
+                  </button>
+                )}
               </div>
 
-              <input
-                ref={fileRef}
-                data-testid="brain-upload-input"
-                type="file"
-                className="hidden"
-                onChange={onFile}
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.md,.markdown,.html,.htm,.json,.txt,.log"
-              />
-              <Button
-                data-testid="brain-upload-button"
-                variant="secondary"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="w-full rounded-xl border border-border/70 active:scale-[0.98]"
-              >
-                {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} strokeWidth={1.75} />}
-                <span className="ml-2">{uploading ? 'Uploading' : 'Add document'}</span>
-              </Button>
-              <p className="mt-2 text-[11px] text-muted-foreground leading-4">
-                PDF, Word, PowerPoint, Excel, CSV, text. It reads and indexes them so the brain can answer from them.
-              </p>
+              {canTrain ? (
+                <>
+                  <input
+                    ref={fileRef}
+                    data-testid="brain-upload-input"
+                    type="file"
+                    className="hidden"
+                    onChange={onFile}
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.md,.markdown,.html,.htm,.json,.txt,.log"
+                  />
+                  <Button
+                    data-testid="brain-upload-button"
+                    variant="secondary"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    className="w-full rounded-xl border border-border/70 active:scale-[0.98]"
+                  >
+                    {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} strokeWidth={1.75} />}
+                    <span className="ml-2">{uploading ? 'Uploading' : 'Add document'}</span>
+                  </Button>
+                  <p className="mt-2 text-[11px] text-muted-foreground leading-4">
+                    PDF, Word, PowerPoint, Excel, CSV, text. It reads and indexes them so the brain can answer from them.
+                  </p>
+                </>
+              ) : (
+                <p data-testid="brain-member-note" className="text-[11px] text-muted-foreground leading-4">
+                  This brain is trained by your workspace owner. Ask it anything on the left, the answers come from your team&apos;s knowledge.
+                </p>
+              )}
 
               <div className="mt-4 space-y-2">
                 {docs.length === 0 && (
@@ -291,13 +303,15 @@ export default function BrainPage() {
                         {d.status === 'failed' && <span className="text-destructive">Failed</span>}
                       </div>
                     </div>
-                    <button
-                      onClick={() => delDoc(d.tree_id)}
-                      className="shrink-0 text-muted-foreground/50 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
-                      title="Remove"
-                    >
-                      <X size={14} />
-                    </button>
+                    {canTrain && (
+                      <button
+                        onClick={() => delDoc(d.tree_id)}
+                        className="shrink-0 text-muted-foreground/50 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                        title="Remove"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

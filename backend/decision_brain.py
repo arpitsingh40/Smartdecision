@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 import doc_memory
-from engine import client
+from engine import client, _extract_json
 from db import users_col, db, members_col, orgs_col
 from security import current_user
 
@@ -171,7 +171,7 @@ LEAD WITH VALUE (key_takeaway): every response opens with ONE punchy, genuinely 
 
 VALUE IS MULTI-TYPE: a number is one kind of value, not the only kind. A framework, a concrete example, a template or script, a decision, a named risk, or a reframe is often more useful than a statistic. Pick what moves THIS person forward right now.
 
-HONOR THE REQUEST: if the user explicitly asks for a plan, an answer, a draft, or a list, DELIVER the full thing now. If a fact is missing, state your assumption out loud and proceed, then note what would sharpen it. NEVER answer a direct request by asking a question instead.
+HONOR THE REQUEST: if the user explicitly asks for a plan, an answer, a draft, a list, or asks you to suggest / recommend / pick / choose one, DELIVER the full thing now. When asked to suggest or recommend, COMMIT to ONE specific, named option, never a category or a menu: name it, justify it in one line, and give the first move. If a fact is missing, state your assumption out loud and proceed, then note what would sharpen it. NEVER answer a direct request by asking a question instead.
 
 VOICE: engaging, warm, confident, like a sharp operator who has done this before and wants you to win. Plain English, short sentences, easy to scan. Specific over generic. No fluff, no hedging, no emojis, no em-dashes, no exclamation marks.
 
@@ -225,8 +225,7 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
             r = client().messages.create(model=model, max_tokens=2200, system=system_blocks,
                                          messages=[{"role": "user", "content": prompt}])
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
-            txt = re.sub(r"^```(json)?|```$", "", txt, flags=re.M).strip()
-            out = json.loads(txt)
+            out = json.loads(_extract_json(txt))
             if not all(k in out for k in REQUIRED):
                 raise ValueError("incomplete JSON")
             # guardrails

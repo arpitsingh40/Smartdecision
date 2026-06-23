@@ -19,6 +19,35 @@ ANALYTICAL_MODEL = "claude-sonnet-4-5"  # files / large data analysis: same cont
 ULTRA_MODEL = "claude-fable-5"  # ultra thinking: adaptive thinking + high effort
 FALLBACK_MODEL = "claude-haiku-4-5"
 
+
+def _extract_json(txt: str) -> str:
+    """Pull the first balanced JSON object out of a model reply.
+    Tolerates code fences, leading prose, and trailing prose after the closing brace
+    (the 'Extra data' failure mode). Returns best-effort substring if truncated."""
+    s = re.sub(r"^```(json)?|```$", "", txt or "", flags=re.M).strip()
+    start = s.find("{")
+    if start == -1:
+        return s
+    depth, in_str, esc = 0, False, False
+    for i in range(start, len(s)):
+        c = s[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[start:i + 1]
+    return s[start:]  # unterminated (truncated) — best effort
+
 IMAGE_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
 MAX_FILE_CHARS = 50000  # cap extracted text — bounds cost; engine doesn't need the whole novel
 
@@ -116,10 +145,14 @@ def _user_context_block(user_doc: dict | None) -> str:
     if not (dream or capacity or advantage or potential):
         return ""
     lines = ["USER_CONTEXT (their own words — use as ground truth for what's realistic, what's at stake, and what to lean on):"]
-    if dream:     lines.append(f"- DREAM: {dream}")
-    if capacity:  lines.append(f"- CAPACITY (time/money/energy they have right now): {capacity}")
-    if advantage: lines.append(f"- ADVANTAGE (what they uniquely have going for them): {advantage}")
-    if potential: lines.append(f"- POTENTIAL (what they believe they could become): {potential}")
+    if dream:
+        lines.append(f"- DREAM: {dream}")
+    if capacity:
+        lines.append(f"- CAPACITY (time/money/energy they have right now): {capacity}")
+    if advantage:
+        lines.append(f"- ADVANTAGE (what they uniquely have going for them): {advantage}")
+    if potential:
+        lines.append(f"- POTENTIAL (what they believe they could become): {potential}")
     return "\n".join(lines) + "\n\n"
 
 
@@ -168,8 +201,7 @@ def llm_complete_action(thread: dict, user_doc: dict | None = None):
             r = client().messages.create(model=model, max_tokens=3000, system=system_blocks,
                                          messages=[{"role": "user", "content": prompt}])
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
-            txt = re.sub(r"^```(json)?|```$", "", txt, flags=re.M).strip()
-            out = json.loads(txt)
+            out = json.loads(_extract_json(txt))
             if not all(k in out for k in ASSIST_REQUIRED):
                 raise ValueError("incomplete JSON keys")
             usage = {"input_tokens": int(getattr(r.usage, "input_tokens", 0) or 0),
@@ -277,11 +309,11 @@ PHASE TRANSITION RULES (enforced):
 - If PRIOR PHASE is ready_to_act and the user's message reads as consent (yes / okay / go / sure / draft / do it / let's / please), you MUST advance to acting and ship the concrete locked step. Reflect their consent in the acknowledgment ("okay, locking it in").
 - If PRIOR PHASE is acting and the user reports on it, advance to checking_in.
 - If PRIOR PHASE is missing (very first turn), default to exploring unless the user already named a sharp action they want help with.
-- EXCEPTION (explicit request overrides the funnel): if the user explicitly asks for a plan, the full picture, a draft, a list, or "just tell me", you MAY jump straight to ready_to_act or acting and deliver it this turn, stating assumptions for any missing fact. Do not withhold a deliverable the user directly asked for.
+- EXCEPTION (explicit request overrides the funnel): if the user explicitly asks for a plan, the full picture, a draft, a list, "just tell me", or to suggest / recommend / pick / choose one, you MAY jump straight to ready_to_act or acting and deliver it this turn, committing to ONE concrete option and stating assumptions for any missing fact. Do not withhold a deliverable the user directly asked for.
 Rules: never announce memory ("as we discussed"); surface what changed, not recaps; acknowledge before answering (match the intent label); always converge to ONE next action doable in 24-48h; the easiest path forward given today's reality, not the ideal plan; warm and respectful, zero filler, no lists of options. If intent is silence_breaker, gently name the silence without accusation and ask if the goal is still active or something shifted. If intent is action_adjust, the user is shaping the assigned next action with an obstacle or their own version of it - do NOT mark it done; keep what they liked about the step, redesign it around their stated input so their words are visibly part of the new action.
 What makes each turn worth returning for:
 - GIVE BEFORE YOU ASK (the most important rule): every single turn must hand the user something genuinely useful they did not have before, woven naturally into your reply, NEVER missing, in EVERY phase including exploring. VALUE IS MULTI-TYPE, pick the kind that fits THIS moment: a direct answer, a real number or benchmark, a framework or mental model, a concrete example or template or script, a named fork or trade-off, a warning about what will bite them, a lever or resource they did not know, or a sharper reframe. Numbers are ONE kind of value, not the default. Banned: vague encouragement ("you've got this", "every step counts"), simply restating their words, generic truisms. If you lack hard data, give the most useful realistic ballpark and label it.
-- HONOR EXPLICIT REQUESTS: if the user clearly asks for a plan, the whole picture, a draft, a list, or "just tell me", DELIVER it this turn, do not deflect with another question. Move to ready_to_act or acting, lay the real route in refreshed_easiest_path, put the first concrete step in refreshed_next_action, and give the short shape of the rest (step 1 to step 4 or 5) in the reply. Where a fact is missing, state your assumption and proceed. You may ask ONE refining question after, never instead.
+- HONOR EXPLICIT REQUESTS: if the user clearly asks for a plan, the whole picture, a draft, a list, "just tell me", OR asks you to suggest / recommend / pick / choose / decide ("give me an idea", "which one", "what should I build"), DELIVER it this turn, do not deflect with another question. Move to ready_to_act or acting, lay the real route in refreshed_easiest_path, put the first concrete step in refreshed_next_action, and give the short shape of the rest (step 1 to step 4 or 5) in the reply. When they ask you to SUGGEST or RECOMMEND, COMMIT to ONE specific, named option, never a category, a menu, or "it depends": name it, say in one line why it fits THEM specifically, and give the first move. Naming a broad category (e.g. "vertical AI") in place of one concrete pick counts as deflecting and is banned. Where a fact is missing, state your assumption and proceed. You may ask ONE refining question AFTER you deliver, never instead of delivering.
 - QUESTION STRATEGY: there are two kinds of question. STATIC clarifiers (where are you now, what is the real constraint, what does done look like) are asked ONCE, early, then never repeated. DYNAMIC questions emerge from the specific situation, the one fork that changes the next move. Ask the dynamic one. Never ask a question whose answer you could reasonably assume and state instead.
 - MIRROR: every reply must contain one short sentence that names what the user did NOT say but is true beneath their message - the fear, the pattern, the real trade-off. Said gently and plainly, never clinically, never accusing. Soft openers welcome: "I may be wrong, but…", "It sounds a little like…", "If I had to guess…". This is the moment they feel seen, not exposed.
 - ACT ON THE FEAR, do not just name it: the moment you sense a fear or blocker, name it gently in the mirror, then in the SAME reply unfold it (what is really underneath, why it blocks them) and give the concrete way to act THROUGH it. A named fear with no way forward leaves the user worse off. Every blocker you surface comes with the move that shrinks it.
@@ -400,7 +432,7 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                       "cache_control": {"type": "ephemeral"}}]
     for model in chain:
         try:
-            kwargs = {"model": model, "max_tokens": 1200, "system": system_blocks,
+            kwargs = {"model": model, "max_tokens": 2000, "system": system_blocks,
                       "messages": [{"role": "user", "content": user_content}]}
             if has_file_context and model != ULTRA_MODEL:
                 kwargs["max_tokens"] = 3500  # room for richer analysis on file/recall turns
@@ -410,8 +442,7 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                 kwargs["extra_body"] = {"output_config": {"effort": "high"}}
             r = client().messages.create(**kwargs)
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
-            txt = re.sub(r"^```(json)?|```$", "", txt, flags=re.M).strip()
-            out = json.loads(txt)
+            out = json.loads(_extract_json(txt))
             if not all(k in out for k in REQUIRED_KEYS):
                 raise ValueError("incomplete JSON keys")
             # phase guardrails: clamp invalid phases, enforce null-fields by phase, enforce

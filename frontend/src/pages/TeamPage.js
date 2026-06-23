@@ -5,9 +5,10 @@ import { api } from '../lib/api';
 import { TopBar } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
 import {
-  Users, Building2, Link2, Copy, Trash2, Crown, UserPlus, Loader2, ShieldCheck,
+  Users, Building2, Link2, Copy, Trash2, Crown, UserPlus, Loader2, ShieldCheck, Target, Lock, Save,
 } from 'lucide-react';
 
 export default function TeamPage() {
@@ -23,12 +24,22 @@ export default function TeamPage() {
   const [joinCode, setJoinCode] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const [strategy, setStrategy] = useState({ north_star: '', target: '', deadline: '', priorities: '', decision_rules: '' });
+  const [savingStrategy, setSavingStrategy] = useState(false);
+
   const loadOwnerData = useCallback(async () => {
     try {
       const [m, i] = await Promise.all([api.get('/org/members'), api.get('/org/invites')]);
       setMembers(m.data.members || []);
       setInvites(i.data.invites || []);
     } catch (_e) { /* member or transient */ }
+    try {
+      const s = await api.get('/org/strategy');
+      setStrategy({
+        north_star: s.data.north_star || '', target: s.data.target || '', deadline: s.data.deadline || '',
+        priorities: (s.data.priorities || []).join('\n'), decision_rules: s.data.decision_rules || '',
+      });
+    } catch (_e) { /* not owner */ }
   }, []);
 
   const load = useCallback(async () => {
@@ -118,6 +129,22 @@ export default function TeamPage() {
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not remove member.');
     }
+  };
+
+  const saveStrategy = async () => {
+    if (savingStrategy) return;
+    setSavingStrategy(true);
+    try {
+      const priorities = strategy.priorities.split('\n').map((s) => s.trim()).filter(Boolean);
+      const r = await api.put('/org/strategy', {
+        north_star: strategy.north_star, target: strategy.target, deadline: strategy.deadline,
+        priorities, decision_rules: strategy.decision_rules,
+      });
+      setOrg((o) => (o ? { ...o, strategy_set: r.data.strategy_set } : o));
+      toast.success('North Star saved. It now quietly guides every decision your team makes.');
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Could not save your North Star.');
+    } finally { setSavingStrategy(false); }
   };
 
   // ---------------------------------------------------------------- render
@@ -210,6 +237,64 @@ export default function TeamPage() {
                 <Crown size={12} /> Owner
               </span>
             </div>
+
+            {/* North Star — the hidden moat (founder-only) */}
+            <section className="rounded-2xl border bg-card p-6">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Target size={16} strokeWidth={1.75} />
+                  <h3 className="font-medium text-sm">Your North Star</h3>
+                </div>
+                <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border bg-background text-muted-foreground">
+                  <Lock size={11} /> Private to you
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Only you can see this. Your team never sees it, yet every decision the brain gives them is quietly steered toward it.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-muted-foreground">The dream</label>
+                  <Textarea data-testid="strategy-northstar" value={strategy.north_star}
+                    onChange={(e) => setStrategy((s) => ({ ...s, north_star: e.target.value }))}
+                    placeholder="e.g. Reach 100 crore annual revenue and become the top C&I solar EPC in North India."
+                    className="rounded-xl mt-1 min-h-[64px]" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground">Target</label>
+                    <Input data-testid="strategy-target" value={strategy.target}
+                      onChange={(e) => setStrategy((s) => ({ ...s, target: e.target.value }))}
+                      placeholder="100 Cr ARR" className="rounded-xl mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">By when</label>
+                    <Input data-testid="strategy-deadline" value={strategy.deadline}
+                      onChange={(e) => setStrategy((s) => ({ ...s, deadline: e.target.value }))}
+                      placeholder="Mar 2027" className="rounded-xl mt-1" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Strategic priorities (one per line)</label>
+                  <Textarea data-testid="strategy-priorities" value={strategy.priorities}
+                    onChange={(e) => setStrategy((s) => ({ ...s, priorities: e.target.value }))}
+                    placeholder={"Win commercial & industrial rooftop deals\nPush EPC ticket sizes above 50L\nProtect 18% margins"}
+                    className="rounded-xl mt-1 min-h-[80px]" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Decision rules</label>
+                  <Textarea data-testid="strategy-rules" value={strategy.decision_rules}
+                    onChange={(e) => setStrategy((s) => ({ ...s, decision_rules: e.target.value }))}
+                    placeholder="Never quote below 18% margin. Prefer C&I over residential."
+                    className="rounded-xl mt-1 min-h-[64px]" />
+                </div>
+                <div className="flex justify-end">
+                  <Button data-testid="strategy-save" onClick={saveStrategy} disabled={savingStrategy} className="rounded-xl">
+                    {savingStrategy ? <Loader2 className="animate-spin" size={15} /> : <><Save size={14} className="mr-1.5" /> Save North Star</>}
+                  </Button>
+                </div>
+              </div>
+            </section>
 
             {/* Invite */}
             <section className="rounded-2xl border bg-card p-6">

@@ -1,426 +1,350 @@
-"""Phase 2 Hidden Strategy Core - Backend Testing
-Test ONLY the org-strategy endpoints and org-scoped Decision Brain.
-BUDGET: AT MOST 2 calls to POST /api/brain/ask (ANTHROPIC key is LIVE).
+#!/usr/bin/env python3
 """
+Light regression test for Coach-engine fix (iteration 9).
+BUDGET: AT MOST 3 LLM calls total.
+"""
+
 import requests
 import json
+import sys
 import time
-import uuid
-import base64
 
-# Read backend URL from frontend/.env
-with open("/app/frontend/.env") as f:
-    for line in f:
-        if line.startswith("REACT_APP_BACKEND_URL="):
-            BACKEND_URL = line.split("=", 1)[1].strip()
-            break
+# Backend URL from frontend/.env
+BASE_URL = "https://software-audit-2.preview.emergentagent.com/api"
 
-BASE = f"{BACKEND_URL}/api"
-
-# Test credentials
+# Founder credentials
 FOUNDER_EMAIL = "ceo@smartdecigen.com"
 FOUNDER_PASSWORD = "FounderOS@2026"
 
-# Track test results
-results = []
-llm_ask_count = 0  # CRITICAL: must not exceed 2
+# Track LLM call count
+llm_call_count = 0
+MAX_LLM_CALLS = 3
 
-def log_test(name, passed, details=""):
-    """Log test result"""
-    status = "✓ PASS" if passed else "✗ FAIL"
-    results.append({"name": name, "passed": passed, "details": details})
-    print(f"{status}: {name}")
-    if details:
-        print(f"  {details}")
+def log(msg):
+    print(f"[TEST] {msg}")
 
-def signup_member(email, password="Member123"):
-    """Create a fresh member account"""
-    resp = requests.post(f"{BASE}/auth/signup", json={
+def login(email, password):
+    """Login and return token."""
+    log(f"Logging in as {email}...")
+    resp = requests.post(f"{BASE_URL}/auth/login", json={
         "email": email,
-        "password": password,
-        "name": email.split("@")[0].title()
+        "password": password
     })
-    if resp.status_code == 200:
-        return resp.json()["token"]
-    elif resp.status_code == 409:
-        # Already exists, login
-        resp = requests.post(f"{BASE}/auth/login", json={"email": email, "password": password})
-        return resp.json()["token"]
-    else:
-        raise Exception(f"Signup failed: {resp.status_code} {resp.text}")
+    if resp.status_code != 200:
+        log(f"❌ Login failed: {resp.status_code} {resp.text}")
+        sys.exit(1)
+    data = resp.json()
+    token = data.get("token")
+    log(f"✅ Login successful, token: {token[:20]}...")
+    return token
 
-def check_leakage(text, test_name):
-    """Check if response text contains any leaked strategy information.
-    Returns (leaked, details)"""
-    if not isinstance(text, str):
-        return False, ""
+def create_goal(token, title, why_now):
+    """Create a goal (LLM call #1)."""
+    global llm_call_count
+    llm_call_count += 1
+    log(f"[LLM CALL #{llm_call_count}] Creating goal: {title}")
     
-    text_lower = text.lower()
+    resp = requests.post(f"{BASE_URL}/goals", 
+        headers={"Authorization": f"Bearer {token}"},
+        json={"title": title, "why_now": why_now}
+    )
     
-    # Forbidden strings (case-insensitive)
-    forbidden = [
-        "100 crore",
-        "100 cr",
-        "north star",
-        "north-star",
-        "mar 2027",
-        "2027",
-        "confidential",
-        "leadership direction",
+    log(f"Response status: {resp.status_code}")
+    if resp.status_code != 200:
+        log(f"❌ Create goal failed: {resp.status_code} {resp.text}")
+        return None, resp.status_code
+    
+    data = resp.json()
+    log(f"Response data keys: {list(data.keys())}")
+    log(f"Full response: {json.dumps(data, indent=2)[:500]}")
+    
+    # Try different possible response structures
+    thread_id = None
+    if "thread" in data:
+        thread_obj = data["thread"]
+        thread_id = thread_obj.get("thread_id") or thread_obj.get("id")
+    elif "id" in data:
+        thread_id = data["id"]
+    elif "thread_id" in data:
+        thread_id = data["thread_id"]
+    
+    log(f"✅ Goal created, thread_id: {thread_id}")
+    return thread_id, resp.status_code
+
+def send_turn(token, thread_id, message, mode="normal"):
+    """Send a turn (LLM call)."""
+    global llm_call_count
+    llm_call_count += 1
+    log(f"[LLM CALL #{llm_call_count}] Sending turn to thread {thread_id}")
+    log(f"Message: {message}")
+    
+    resp = requests.post(f"{BASE_URL}/threads/{thread_id}/turn",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"message": message, "mode": mode}
+    )
+    
+    log(f"Response status: {resp.status_code}")
+    if resp.status_code != 200:
+        log(f"❌ Turn failed: {resp.status_code}")
+        log(f"Response body: {resp.text[:500]}")
+        return None, resp.status_code
+    
+    data = resp.json()
+    log(f"✅ Turn successful")
+    log(f"Intent: {data.get('intent')}")
+    log(f"Model: {data.get('model')}")
+    log(f"Credits: {data.get('credits')}")
+    log(f"Cost: {data.get('cost')}")
+    log(f"Acknowledgment in turn response: {data.get('acknowledgment', '')[:200]}")
+    
+    return data, resp.status_code
+
+def get_thread(token, thread_id):
+    """Get thread details."""
+    log(f"Getting thread {thread_id}...")
+    resp = requests.get(f"{BASE_URL}/threads/{thread_id}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    if resp.status_code != 200:
+        log(f"❌ Get thread failed: {resp.status_code}")
+        return None
+    
+    data = resp.json()
+    log(f"Thread response keys: {list(data.keys())}")
+    log(f"Thread response (first 1000 chars): {json.dumps(data, indent=2)[:1000]}")
+    log(f"✅ Thread retrieved")
+    return data
+
+def check_pass_criteria(turn_response, thread_data):
+    """Check if the turn meets all PASS criteria."""
+    log("\n" + "="*80)
+    log("CHECKING PASS CRITERIA")
+    log("="*80)
+    
+    failures = []
+    
+    # 1. HTTP 200 (already checked, but confirm)
+    log("✅ Criterion 1: HTTP 200 (NOT 502)")
+    
+    # 2. Response includes intent, model, credits
+    intent = turn_response.get("intent")
+    model = turn_response.get("model")
+    credits = turn_response.get("credits")
+    
+    if not intent:
+        failures.append("Missing 'intent' in response")
+    else:
+        log(f"✅ Criterion 2a: intent present = '{intent}'")
+    
+    if not model:
+        failures.append("Missing 'model' in response")
+    else:
+        log(f"✅ Criterion 2b: model present = '{model}'")
+    
+    if credits is None:
+        failures.append("Missing 'credits' in response")
+    else:
+        log(f"✅ Criterion 2c: credits present = {credits}")
+    
+    # 3. Get thread state - the fields are nested inside thread_data["thread"]
+    thread = thread_data.get("thread", {})
+    acknowledgment = thread.get("current_acknowledgment", "")
+    next_action = thread.get("current_next_action", "")
+    easiest_path = thread.get("current_easiest_path", "")
+    open_question = thread.get("current_open_question", "")
+    phase = thread.get("current_phase", "")
+    state_summary = thread.get("current_state_summary", "")
+    
+    # Also check if acknowledgment is in the turn_response
+    if not acknowledgment and "acknowledgment" in turn_response:
+        acknowledgment = turn_response.get("acknowledgment", "")
+        log(f"Note: Using acknowledgment from turn response instead of thread")
+    
+    log(f"\nThread state:")
+    log(f"  Phase: {phase}")
+    log(f"  State summary: {state_summary[:200] if state_summary else '(empty)'}...")
+    log(f"  Acknowledgment: {acknowledgment[:200] if acknowledgment else '(empty)'}...")
+    log(f"  Next action: {next_action[:200] if next_action else '(empty)'}...")
+    log(f"  Easiest path: {easiest_path[:200] if easiest_path else '(empty)'}...")
+    log(f"  Open question: {open_question[:200] if open_question else '(empty)'}...")
+    
+    # 4. Check if acknowledgment commits to ONE specific named idea
+    # FAIL if: only a category (like "vertical AI"), or only a question, or deflection
+    ack_lower = acknowledgment.lower() if acknowledgment else ""
+    
+    # Check for deflection patterns
+    deflection_patterns = [
+        "which one",
+        "what kind",
+        "what type",
+        "tell me more about",
+        "can you clarify",
+        "do you prefer"
     ]
     
-    # Check for "strategy" used to describe a hidden objective
-    # (but allow normal usage like "sales strategy" or "pricing strategy")
-    if "hidden" in text_lower and "strategy" in text_lower:
-        return True, "Contains 'hidden strategy' reference"
-    if "secret" in text_lower and "strategy" in text_lower:
-        return True, "Contains 'secret strategy' reference"
+    has_deflection = any(pattern in ack_lower for pattern in deflection_patterns)
     
-    for term in forbidden:
-        if term in text_lower:
-            # Special case: "arr" inside "warranty" is NOT a leak
-            if term == "100 cr":
-                # Word-aware check: ensure it's not part of another word
-                import re
-                if re.search(r'\b100\s*cr\b', text_lower):
-                    return True, f"LEAKED: '{term}' found in response"
-            else:
-                return True, f"LEAKED: '{term}' found in response"
+    # Check if it's just a category without a specific named idea
+    # A good acknowledgment should name a concrete problem/product
+    # Bad: "Let's explore vertical AI opportunities"
+    # Good: "AI prior-authorization in US healthcare"
     
-    return False, ""
-
-print("=" * 80)
-print("PHASE 2 HIDDEN STRATEGY CORE - BACKEND TESTING")
-print("=" * 80)
-print(f"Backend URL: {BASE}")
-print(f"LLM Budget: AT MOST 2 calls to POST /api/brain/ask")
-print("=" * 80)
-
-# ============================================================================
-# FREE TESTS (no LLM - do all)
-# ============================================================================
-
-print("\n" + "=" * 80)
-print("FREE TESTS (no LLM)")
-print("=" * 80)
-
-# TEST 1: Founder creates organization
-print("\n--- TEST 1: Founder creates organization ---")
-try:
-    # Login as founder
-    resp = requests.post(f"{BASE}/auth/login", json={
-        "email": FOUNDER_EMAIL,
-        "password": FOUNDER_PASSWORD
-    })
-    if resp.status_code != 200:
-        log_test("TEST 1: Founder login", False, f"Login failed: {resp.status_code} {resp.text}")
-        exit(1)
-    
-    founder_token = resp.json()["token"]
-    founder_headers = {"Authorization": f"Bearer {founder_token}"}
-    
-    # Check if founder already has an org
-    resp = requests.get(f"{BASE}/org", headers=founder_headers)
-    if resp.status_code == 200:
-        # Already has org, use it
-        org_data = resp.json()
-        log_test("TEST 1: Founder has existing org", True, f"Org: {org_data['name']}")
+    if len(acknowledgment) < 20:
+        failures.append(f"Acknowledgment too short ({len(acknowledgment)} chars) - likely not a concrete pick")
+    elif has_deflection and len(acknowledgment) < 100:
+        failures.append("Acknowledgment appears to be a deflecting question, not a concrete pick")
     else:
-        # Create new org
-        resp = requests.post(f"{BASE}/org", headers=founder_headers, json={
-            "name": "Acme Solar"
-        })
-        if resp.status_code != 200:
-            log_test("TEST 1: Create org", False, f"Failed: {resp.status_code} {resp.text}")
-            exit(1)
+        log(f"✅ Criterion 3: Acknowledgment commits to a specific idea (length: {len(acknowledgment)} chars)")
+    
+    # 5. current_next_action is concrete and non-empty
+    if not next_action or len(next_action) < 20:
+        failures.append(f"current_next_action is empty or too short: '{next_action}'")
+    else:
+        log(f"✅ Criterion 4: current_next_action is concrete and non-empty ({len(next_action)} chars)")
+    
+    # 6. current_easiest_path is multi-step
+    if not easiest_path or len(easiest_path) < 50:
+        failures.append(f"current_easiest_path is empty or too short: '{easiest_path}'")
+    else:
+        # Check if it contains multiple steps (look for numbering, bullet points, or sequential actions)
+        step_indicators = ["1.", "2.", "3.", "step 1", "step 2", "first", "then", "next", "finally", "after that"]
+        has_steps = any(indicator in easiest_path.lower() for indicator in step_indicators)
         
-        org_data = resp.json()
-        # Verify response structure
-        required_keys = ["id", "name", "role", "member_count", "is_owner", "strategy_set"]
-        missing = [k for k in required_keys if k not in org_data]
-        if missing:
-            log_test("TEST 1: Create org response structure", False, f"Missing keys: {missing}")
-        elif org_data["role"] != "owner" or not org_data["is_owner"]:
-            log_test("TEST 1: Create org role", False, f"Expected owner role, got: {org_data}")
-        else:
-            log_test("TEST 1: Create org", True, f"Org created: {org_data['name']}, role: {org_data['role']}")
-    
-    org_id = org_data["id"]
-except Exception as e:
-    log_test("TEST 1: Exception", False, str(e))
-    exit(1)
-
-# TEST 2: Owner sets and retrieves strategy
-print("\n--- TEST 2: Owner sets and retrieves strategy ---")
-try:
-    strategy_data = {
-        "north_star": "Reach 100 crore annual revenue",
-        "target": "100 Cr ARR",
-        "deadline": "Mar 2027",
-        "priorities": [
-            "Win commercial & industrial rooftop deals",
-            "Push EPC ticket sizes above 50L",
-            "Protect 18% margins"
-        ],
-        "decision_rules": "Never quote below 18% margin. Prefer C&I over residential."
-    }
-    
-    # PUT strategy
-    resp = requests.put(f"{BASE}/org/strategy", headers=founder_headers, json=strategy_data)
-    if resp.status_code != 200:
-        log_test("TEST 2a: PUT strategy", False, f"Failed: {resp.status_code} {resp.text}")
-    else:
-        put_result = resp.json()
-        # Verify echoed fields
-        if (put_result.get("north_star") == strategy_data["north_star"] and
-            put_result.get("target") == strategy_data["target"] and
-            put_result.get("deadline") == strategy_data["deadline"] and
-            len(put_result.get("priorities", [])) == 3 and
-            put_result.get("decision_rules") == strategy_data["decision_rules"] and
-            put_result.get("strategy_set") == True):
-            log_test("TEST 2a: PUT strategy", True, "Strategy saved and echoed correctly")
-        else:
-            log_test("TEST 2a: PUT strategy response", False, f"Response mismatch: {put_result}")
-    
-    # GET strategy
-    resp = requests.get(f"{BASE}/org/strategy", headers=founder_headers)
-    if resp.status_code != 200:
-        log_test("TEST 2b: GET strategy", False, f"Failed: {resp.status_code} {resp.text}")
-    else:
-        get_result = resp.json()
-        if (get_result.get("north_star") == strategy_data["north_star"] and
-            get_result.get("target") == strategy_data["target"] and
-            get_result.get("deadline") == strategy_data["deadline"] and
-            len(get_result.get("priorities", [])) == 3 and
-            get_result.get("decision_rules") == strategy_data["decision_rules"]):
-            log_test("TEST 2b: GET strategy", True, "Strategy retrieved correctly")
-        else:
-            log_test("TEST 2b: GET strategy mismatch", False, f"Got: {get_result}")
-except Exception as e:
-    log_test("TEST 2: Exception", False, str(e))
-
-# TEST 3: GET /api/org must NOT leak strategy
-print("\n--- TEST 3: GET /api/org must NOT leak strategy ---")
-try:
-    resp = requests.get(f"{BASE}/org", headers=founder_headers)
-    if resp.status_code != 200:
-        log_test("TEST 3: GET org", False, f"Failed: {resp.status_code} {resp.text}")
-    else:
-        org_view = resp.json()
-        # MUST include strategy_set:true
-        if not org_view.get("strategy_set"):
-            log_test("TEST 3: strategy_set flag", False, f"Expected strategy_set:true, got: {org_view}")
-        else:
-            # MUST NOT contain secret keys
-            forbidden_keys = ["north_star", "target", "deadline", "priorities", "decision_rules"]
-            leaked_keys = [k for k in forbidden_keys if k in org_view]
-            if leaked_keys:
-                log_test("TEST 3: Strategy leakage via keys", False, f"LEAKED KEYS: {leaked_keys} in {org_view}")
-            else:
-                log_test("TEST 3: No strategy leakage", True, "strategy_set:true present, secret keys NOT leaked")
-except Exception as e:
-    log_test("TEST 3: Exception", False, str(e))
-
-# TEST 4: Member permissions
-print("\n--- TEST 4: Member permissions ---")
-try:
-    # Create fresh member
-    member_email = f"member_{uuid.uuid4().hex[:8]}@acmesolar.com"
-    member_token = signup_member(member_email)
-    member_headers = {"Authorization": f"Bearer {member_token}"}
-    
-    log_test("TEST 4a: Member signup", True, f"Member: {member_email}")
-    
-    # Owner creates invite
-    resp = requests.post(f"{BASE}/org/invites", headers=founder_headers, json={})
-    if resp.status_code != 200:
-        log_test("TEST 4b: Create invite", False, f"Failed: {resp.status_code} {resp.text}")
-        exit(1)
-    
-    invite_code = resp.json()["code"]
-    log_test("TEST 4b: Create invite", True, f"Code: {invite_code}")
-    
-    # Member joins
-    resp = requests.post(f"{BASE}/org/join", headers=member_headers, json={"code": invite_code})
-    if resp.status_code != 200:
-        log_test("TEST 4c: Member join", False, f"Failed: {resp.status_code} {resp.text}")
-        exit(1)
-    
-    log_test("TEST 4c: Member join", True, f"Joined as: {resp.json()['role']}")
-    
-    # Member GET /api/org/strategy -> 403
-    resp = requests.get(f"{BASE}/org/strategy", headers=member_headers)
-    if resp.status_code == 403:
-        log_test("TEST 4d: Member GET strategy -> 403", True)
-    else:
-        log_test("TEST 4d: Member GET strategy", False, f"Expected 403, got {resp.status_code}")
-    
-    # Member PUT /api/org/strategy -> 403
-    resp = requests.put(f"{BASE}/org/strategy", headers=member_headers, json={
-        "north_star": "test"
-    })
-    if resp.status_code == 403:
-        log_test("TEST 4e: Member PUT strategy -> 403", True)
-    else:
-        log_test("TEST 4e: Member PUT strategy", False, f"Expected 403, got {resp.status_code}")
-    
-    # Member POST /api/brain/upload -> 403
-    test_doc = base64.b64encode(b"Test document content").decode()
-    resp = requests.post(f"{BASE}/brain/upload", headers=member_headers, json={
-        "filename": "test.txt",
-        "mime": "text/plain",
-        "base64": test_doc
-    })
-    if resp.status_code == 403:
-        log_test("TEST 4f: Member POST brain/upload -> 403", True)
-    else:
-        log_test("TEST 4f: Member POST brain/upload", False, f"Expected 403, got {resp.status_code}")
-    
-    # Member POST /api/brain/settings -> 403
-    resp = requests.post(f"{BASE}/brain/settings", headers=member_headers, json={
-        "instructions": "test"
-    })
-    if resp.status_code == 403:
-        log_test("TEST 4g: Member POST brain/settings -> 403", True)
-    else:
-        log_test("TEST 4g: Member POST brain/settings", False, f"Expected 403, got {resp.status_code}")
-    
-    # Member GET /api/brain/documents -> 200 with can_train:false
-    resp = requests.get(f"{BASE}/brain/documents", headers=member_headers)
-    if resp.status_code != 200:
-        log_test("TEST 4h: Member GET brain/documents", False, f"Expected 200, got {resp.status_code}")
-    else:
-        docs_data = resp.json()
-        if docs_data.get("can_train") == False:
-            log_test("TEST 4h: Member GET brain/documents", True, "can_train:false")
-        else:
-            log_test("TEST 4h: Member can_train flag", False, f"Expected can_train:false, got: {docs_data}")
-    
-    # Owner GET /api/brain/documents -> can_train:true
-    resp = requests.get(f"{BASE}/brain/documents", headers=founder_headers)
-    if resp.status_code != 200:
-        log_test("TEST 4i: Owner GET brain/documents", False, f"Expected 200, got {resp.status_code}")
-    else:
-        docs_data = resp.json()
-        if docs_data.get("can_train") == True:
-            log_test("TEST 4i: Owner GET brain/documents", True, "can_train:true")
-        else:
-            log_test("TEST 4i: Owner can_train flag", False, f"Expected can_train:true, got: {docs_data}")
-    
-except Exception as e:
-    log_test("TEST 4: Exception", False, str(e))
-
-# TEST 5: Owner sets brain instructions
-print("\n--- TEST 5: Owner sets brain instructions ---")
-try:
-    resp = requests.post(f"{BASE}/brain/settings", headers=founder_headers, json={
-        "instructions": "Always confirm warranty terms in writing before closing."
-    })
-    if resp.status_code != 200:
-        log_test("TEST 5: Owner POST brain/settings", False, f"Failed: {resp.status_code} {resp.text}")
-    else:
-        settings_result = resp.json()
-        if settings_result.get("instructions") == "Always confirm warranty terms in writing before closing.":
-            log_test("TEST 5: Owner POST brain/settings", True, "Instructions persisted")
-        else:
-            log_test("TEST 5: Instructions mismatch", False, f"Got: {settings_result}")
-except Exception as e:
-    log_test("TEST 5: Exception", False, str(e))
-
-# ============================================================================
-# LLM TESTS (AT MOST 2 ask calls total)
-# ============================================================================
-
-print("\n" + "=" * 80)
-print("LLM TESTS (AT MOST 2 ask calls)")
-print("=" * 80)
-
-# TEST 6: Member asks a decide question, check for leakage
-print("\n--- TEST 6: Member asks decide question (LLM call #1) ---")
-try:
-    question = "A walk-in residential customer wants a small 2kW rooftop system but is pushing the price down to about a 9% margin. Should I take the deal?"
-    
-    resp = requests.post(f"{BASE}/brain/ask", headers=member_headers, json={
-        "question": question
-    })
-    llm_ask_count += 1
-    
-    if resp.status_code != 200:
-        log_test("TEST 6: Member brain/ask", False, f"Failed: {resp.status_code} {resp.text}")
-    else:
-        ask_result = resp.json()
+        # Also check for multiple sentences with action verbs (indicates a sequence)
+        sentences = easiest_path.split(". ")
+        if len(sentences) >= 3:
+            has_steps = True
         
-        # Check mode
-        if ask_result.get("mode") != "decide":
-            log_test("TEST 6a: Response mode", False, f"Expected mode='decide', got: {ask_result.get('mode')}")
+        if not has_steps:
+            failures.append("current_easiest_path doesn't appear to contain multiple steps")
         else:
-            log_test("TEST 6a: Response mode", True, "mode='decide'")
-        
-        # Check recommendation consistency
-        recommendation = ask_result.get("recommendation", "")
-        answer = ask_result.get("answer", "")
-        key_takeaway = ask_result.get("key_takeaway", "")
-        
-        # Should lean toward declining / counter / favour C&I
-        consistent = False
-        if any(term in recommendation.lower() for term in ["decline", "counter", "18%", "margin", "commercial", "industrial"]):
-            consistent = True
-            log_test("TEST 6b: Recommendation consistency", True, f"Recommendation aligns with hidden rules")
-        else:
-            log_test("TEST 6b: Recommendation consistency", False, f"Recommendation may not align: {recommendation}")
-        
-        # CRITICAL LEAKAGE CHECK
-        full_response = f"{key_takeaway} {answer} {recommendation}"
-        leaked, leak_details = check_leakage(full_response, "TEST 6c")
-        
-        if leaked:
-            log_test("TEST 6c: LEAKAGE CHECK", False, f"FAILURE - {leak_details}")
-            print(f"\n!!! LEAKED RESPONSE !!!")
-            print(f"key_takeaway: {key_takeaway}")
-            print(f"answer: {answer}")
-            print(f"recommendation: {recommendation}")
-        else:
-            log_test("TEST 6c: LEAKAGE CHECK", True, "PASS - No strategy leakage detected")
-        
-        # Print full response for manual review
-        print(f"\n--- Full Response (for manual review) ---")
-        print(f"Mode: {ask_result.get('mode')}")
-        print(f"Key Takeaway: {key_takeaway}")
-        print(f"Answer: {answer}")
-        print(f"Recommendation: {recommendation}")
-        print(f"Cost: {ask_result.get('cost')} credits")
-        print(f"Model: {ask_result.get('model')}")
-        
-except Exception as e:
-    log_test("TEST 6: Exception", False, str(e))
+            log(f"✅ Criterion 5: current_easiest_path is multi-step ({len(easiest_path)} chars, {len(sentences)} sentences)")
+    
+    # 7. current_open_question is a single consent/refining question
+    if not open_question or len(open_question) < 10:
+        failures.append(f"current_open_question is empty or too short: '{open_question}'")
+    else:
+        log(f"✅ Criterion 6: current_open_question is present ({len(open_question)} chars)")
+    
+    return failures
 
-# ============================================================================
-# SUMMARY
-# ============================================================================
+def main():
+    log("="*80)
+    log("COACH ENGINE REGRESSION TEST - ITERATION 9")
+    log("Budget: AT MOST 3 LLM calls")
+    log("="*80)
+    
+    # Login
+    token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
+    
+    # TEST 1: Create goal (LLM call #1)
+    log("\n" + "="*80)
+    log("TEST 1: Create goal 'Build an AI startup'")
+    log("="*80)
+    
+    thread_id, status = create_goal(
+        token,
+        "Build an AI startup",
+        "I want to build a 100 billion dollar AI startup in one year."
+    )
+    
+    if status != 200:
+        log(f"❌ FAIL: Goal creation returned {status} instead of 200")
+        sys.exit(1)
+    
+    if not thread_id:
+        log("❌ FAIL: No thread_id returned")
+        sys.exit(1)
+    
+    log(f"✅ PASS: Goal created successfully, thread_id: {thread_id}")
+    
+    # TEST 2: Send "suggest" turn (LLM call #2)
+    log("\n" + "="*80)
+    log("TEST 2: Send 'suggest' turn - the critical test")
+    log("="*80)
+    
+    turn_response, status = send_turn(
+        token,
+        thread_id,
+        "Suggest me one painful problem I can build an AI startup around, and how to start.",
+        mode="normal"
+    )
+    
+    if status == 502:
+        log("❌ FAIL: Turn returned 502 (the bug this fix was supposed to address)")
+        sys.exit(1)
+    
+    if status != 200:
+        log(f"❌ FAIL: Turn returned {status} instead of 200")
+        sys.exit(1)
+    
+    log("✅ PASS: Turn returned 200 (not 502)")
+    
+    # Get thread details
+    thread_data = get_thread(token, thread_id)
+    if not thread_data:
+        log("❌ FAIL: Could not retrieve thread data")
+        sys.exit(1)
+    
+    # Check all pass criteria
+    failures = check_pass_criteria(turn_response, thread_data)
+    
+    if failures:
+        log("\n" + "="*80)
+        log("❌ FAIL: Some criteria not met:")
+        for failure in failures:
+            log(f"  - {failure}")
+        log("="*80)
+        sys.exit(1)
+    
+    log("\n" + "="*80)
+    log("✅ PASS: All criteria met for TEST 2")
+    log("="*80)
+    
+    # TEST 3: Optional second goal (LLM call #3)
+    if llm_call_count < MAX_LLM_CALLS:
+        log("\n" + "="*80)
+        log("TEST 3: Optional second goal (exploring/naming phase)")
+        log("="*80)
+        
+        thread_id2, status = create_goal(
+            token,
+            "Grow my business",
+            "I'm not sure where to start."
+        )
+        
+        if status != 200:
+            log(f"❌ FAIL: Second goal creation returned {status}")
+            sys.exit(1)
+        
+        log(f"✅ PASS: Second goal created successfully, thread_id: {thread_id2}")
+        
+        # Get thread to check phase
+        thread_data2 = get_thread(token, thread_id2)
+        if thread_data2:
+            thread = thread_data2.get("thread", {})
+            phase = thread.get("current_phase", "")
+            open_question = thread.get("current_open_question", "")
+            log(f"Phase: {phase}")
+            log(f"Open question: {open_question[:200] if open_question else '(empty)'}...")
+            
+            if phase in ["exploring", "naming"]:
+                log(f"✅ PASS: Phase is {phase} (expected for vague goal)")
+            
+            if open_question:
+                log("✅ PASS: Has open question (no crash)")
+    else:
+        log("\n" + "="*80)
+        log("TEST 3: SKIPPED (would exceed 3 LLM call budget)")
+        log("="*80)
+    
+    # Final summary
+    log("\n" + "="*80)
+    log("FINAL SUMMARY")
+    log("="*80)
+    log(f"Total LLM calls used: {llm_call_count}/{MAX_LLM_CALLS}")
+    log("✅ ALL TESTS PASSED")
+    log("="*80)
 
-print("\n" + "=" * 80)
-print("TEST SUMMARY")
-print("=" * 80)
-
-passed = sum(1 for r in results if r["passed"])
-failed = sum(1 for r in results if not r["passed"])
-
-print(f"\nTotal: {len(results)} tests")
-print(f"Passed: {passed}")
-print(f"Failed: {failed}")
-print(f"LLM ask calls used: {llm_ask_count} / 2")
-
-if failed > 0:
-    print("\n--- FAILED TESTS ---")
-    for r in results:
-        if not r["passed"]:
-            print(f"✗ {r['name']}")
-            if r["details"]:
-                print(f"  {r['details']}")
-
-print("\n" + "=" * 80)
-if failed == 0:
-    print("ALL TESTS PASSED ✓")
-else:
-    print(f"SOME TESTS FAILED ({failed} failures)")
-print("=" * 80)
+if __name__ == "__main__":
+    main()

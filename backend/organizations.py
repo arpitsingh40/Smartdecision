@@ -16,15 +16,20 @@ Data model (all UUID ids, never Mongo ObjectId):
                    created_at, accepted_by, accepted_at}
 """
 import os
+import json
 import uuid
 import secrets
+import logging
 from datetime import timedelta, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, EmailStr
 
-from db import orgs_col, members_col, invites_col, users_col, decisions_col
+from db import orgs_col, members_col, invites_col, users_col, decisions_col, plans_col
 from security import current_user, now_utc
+from engine import client, _extract_json
+
+log = logging.getLogger("org")
 
 router = APIRouter(prefix="/api/org", tags=["organizations"])
 
@@ -42,6 +47,8 @@ def ensure_org_startup():
     invites_col.create_index("id", unique=True)
     invites_col.create_index("code", unique=True)
     invites_col.create_index([("org_id", 1), ("status", 1)])
+    plans_col.create_index("id", unique=True)
+    plans_col.create_index([("org_id", 1), ("status", 1)])
 
 
 # ----------------------------------------------------------------- models
@@ -65,6 +72,9 @@ class StrategyIn(BaseModel):
     deadline: str = Field(default="", max_length=120)
     priorities: list[str] = Field(default_factory=list)
     decision_rules: str = Field(default="", max_length=4000)
+    # Layer 3: transparent pacing inputs (founder-entered, used only for arithmetic projection).
+    current_arr: float | None = Field(default=None, ge=0)
+    target_arr: float | None = Field(default=None, ge=0)
 
 
 # ----------------------------------------------------------------- helpers
@@ -126,6 +136,8 @@ def create_org(body: CreateOrgIn, user: dict = Depends(current_user)):
         # ---- Phase-2 hidden strategy (founder-only, never sent to members) ----
         "north_star": "", "target": "", "deadline": "",
         "priorities": [], "decision_rules": "", "strategy_updated_at": None,
+        # ---- Layer 0/5: strategy versioning + pacing inputs ----
+        "strategy_version": 0, "current_arr": None, "target_arr": None,
     }
     orgs_col.insert_one(org)
     members_col.insert_one({
@@ -275,6 +287,9 @@ def _strategy_view(org: dict) -> dict:
         "decision_rules": org.get("decision_rules", "") or "",
         "strategy_updated_at": org.get("strategy_updated_at"),
         "strategy_set": bool(org.get("north_star")),
+        "strategy_version": org.get("strategy_version", 0),
+        "current_arr": org.get("current_arr"),
+        "target_arr": org.get("target_arr"),
     }
 
 
@@ -290,15 +305,30 @@ def get_strategy(user: dict = Depends(current_user)):
 
 @router.put("/strategy")
 def set_strategy(body: StrategyIn, user: dict = Depends(current_user)):
-    """Owner-only. Saves the hidden steering that silently guides every member's decisions."""
+    """Owner-only. Saves the hidden steering that silently guides every member's decisions.
+    Layer 5: a meaningful change to the strategy bumps strategy_version, so every decision is
+    stamped with the strategy that was active when it was made (before/after comparisons)."""
     m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
     priorities = [p.strip() for p in body.priorities if isinstance(p, str) and p.strip()][:8]
+    # bump the version only when the steering content actually changed (not on a no-op save)
+    prev = (org.get("north_star", ""), org.get("target", ""), org.get("deadline", ""),
+            tuple(org.get("priorities", []) or []), org.get("decision_rules", ""))
+    nxt = (body.north_star.strip(), body.target.strip(), body.deadline.strip(),
+           tuple(priorities), body.decision_rules.strip())
+    cur_ver = int(org.get("strategy_version", 0) or 0)
+    new_ver = cur_ver + 1 if (nxt != prev or cur_ver == 0) else cur_ver
     orgs_col.update_one({"id": m["org_id"]}, {"$set": {
         "north_star": body.north_star.strip(),
         "target": body.target.strip(),
         "deadline": body.deadline.strip(),
         "priorities": priorities,
         "decision_rules": body.decision_rules.strip(),
+        "current_arr": body.current_arr,
+        "target_arr": body.target_arr,
+        "strategy_version": new_ver,
         "strategy_updated_at": now_utc(),
     }})
     org = orgs_col.find_one({"id": m["org_id"]})
@@ -313,6 +343,45 @@ def _scores_of(rows):
         if isinstance(a, dict) and isinstance(a.get("score"), int):
             out.append(a["score"])
     return out
+
+
+def _effectiveness_by_function(org_id):
+    """Layer 3: per-function decision count, avg alignment, and correlational effectiveness %."""
+    rows = list(decisions_col.find({"org_id": org_id},
+                                   {"_id": 0, "function": 1, "strategic_alignment": 1, "outcome": 1}))
+    teams = {}
+    for r in rows:
+        f = r.get("function") or "general"
+        t = teams.setdefault(f, {"function": f, "decisions": 0, "_sc": [], "_oc": []})
+        t["decisions"] += 1
+        a = r.get("strategic_alignment")
+        if isinstance(a, dict) and isinstance(a.get("score"), int):
+            t["_sc"].append(a["score"])
+        oc = r.get("outcome")
+        if isinstance(oc, dict) and oc.get("status") in ("success", "partial", "failed"):
+            t["_oc"].append(oc["status"])
+    out = []
+    for f, t in teams.items():
+        sc, oc = t["_sc"], t["_oc"]
+        out.append({
+            "function": f, "decisions": t["decisions"],
+            "avg_alignment": round(sum(sc) / len(sc)) if sc else None,
+            "outcomes_scored": len(oc),
+            "effectiveness_pct": round(100 * (oc.count("success") + 0.5 * oc.count("partial")) / len(oc)) if oc else None,
+        })
+    out.sort(key=lambda x: (x["avg_alignment"] is None, x["avg_alignment"] if x["avg_alignment"] is not None else 0))
+    return out
+
+
+def _pacing(org):
+    """Layer 3: transparent arithmetic gap from founder-entered ARR. Not an AI forecast."""
+    ca, ta = org.get("current_arr"), org.get("target_arr")
+    if not ca or not ta or ca <= 0 or ta <= 0:
+        return None
+    gap_pct = round(100 * (ta - ca) / ca)
+    return {"current_arr": ca, "target_arr": ta, "deadline": org.get("deadline", "") or "",
+            "gap_pct": gap_pct,
+            "note": f"Arithmetic only: to reach the target, ARR must grow {gap_pct}% from here. Not a forecast."}
 
 
 @router.get("/cockpit")
@@ -402,14 +471,213 @@ def cockpit(user: dict = Depends(current_user)):
         "result": r.get("result"), "result_at": _iso(r.get("result_at")),
     } for r in result_rows]
 
+    # ---- Layer 1: outcome effectiveness (correlational) ----
+    oc_rows = list(decisions_col.find(
+        {**base, "outcome.status": {"$in": ["success", "partial", "failed"]}},
+        {"_id": 0, "outcome": 1, "alignment_band": 1}))
+    n_oc = len(oc_rows)
+    n_succ = sum(1 for r in oc_rows if r["outcome"]["status"] == "success")
+    n_part = sum(1 for r in oc_rows if r["outcome"]["status"] == "partial")
+    n_fail = sum(1 for r in oc_rows if r["outcome"]["status"] == "failed")
+    eff_pct = round(100 * (n_succ + 0.5 * n_part) / n_oc) if n_oc else None
+    effectiveness = {"scored": n_oc, "success": n_succ, "partial": n_part, "failed": n_fail,
+                     "effectiveness_pct": eff_pct}
+
+    # ---- Layer 2: alignment calibration (does a high alignment score actually predict success?) ----
+    def _succ_rate(band):
+        b = [r for r in oc_rows if r.get("alignment_band") == band]
+        if not b:
+            return None, 0
+        return round(100 * sum(1 for r in b if r["outcome"]["status"] == "success") / len(b)), len(b)
+    hi_rate, _hi_n = _succ_rate("high")
+    lo_rate, _lo_n = _succ_rate("low")
+    lift = (hi_rate - lo_rate) if (hi_rate is not None and lo_rate is not None) else None
+    predictive = bool(n_oc >= 12 and lift is not None and lift > 0)
+    calibration = {"high_success_rate": hi_rate, "low_success_rate": lo_rate, "lift": lift,
+                   "samples": n_oc, "predictive": predictive,
+                   "note": "Alignment is a DIAGNOSTIC until proven predictive (positive lift with enough samples)."}
+
+    # ---- Layer 3: per-team rollup, alignment trend, transparent pacing ----
+    team_alignment = _effectiveness_by_function(org_id)
+    recent_scored = _scores_of(list(decisions_col.find(
+        {**base, "strategic_alignment.score": {"$ne": None}, "created_at": {"$gte": since7}},
+        {"_id": 0, "strategic_alignment": 1})))
+    prior_scored = _scores_of(list(decisions_col.find(
+        {**base, "strategic_alignment.score": {"$ne": None}, "created_at": {"$lt": since7}},
+        {"_id": 0, "strategic_alignment": 1})))
+    recent_avg = round(sum(recent_scored) / len(recent_scored)) if recent_scored else None
+    prior_avg = round(sum(prior_scored) / len(prior_scored)) if prior_scored else None
+    align_trend = (recent_avg - prior_avg) if (recent_avg is not None and prior_avg is not None) else None
+    pacing = _pacing(org)
+
+    # ---- Layer 4: deterministic contradiction detection (declared vs observed) ----
+    prox_rows = list(decisions_col.find({**base, "revenue_proximity": {"$ne": None}}, {"_id": 0, "revenue_proximity": 1}))
+    internal_share = round(100 * sum(1 for r in prox_rows if r["revenue_proximity"] == "internal") / len(prox_rows)) if prox_rows else None
+    contradictions = []
+    if overdue >= 2:
+        contradictions.append({"title": "Committed but not done",
+                               "evidence": f"{overdue} committed actions are overdue.", "severity": "high"})
+    if follow_through is not None and follow_through < 60 and (done + dropped) >= 5:
+        contradictions.append({"title": "Low follow-through",
+                               "evidence": f"Only {follow_through}% of acted decisions were completed.", "severity": "high"})
+    prio_text = (" ".join(org.get("priorities", []) or []) + " " + (org.get("north_star", "") or "")).lower()
+    growth_focus = any(w in prio_text for w in ("revenue", "growth", "arr", "sales", "customer", "enterprise", "acqui"))
+    if growth_focus and internal_share is not None and internal_share >= 60:
+        contradictions.append({"title": "Declared growth, internal effort",
+                               "evidence": f"{internal_share}% of decisions are internal-facing despite a growth-focused strategy.",
+                               "severity": "medium"})
+    if align_trend is not None and align_trend <= -8:
+        contradictions.append({"title": "Alignment slipping",
+                               "evidence": f"Average alignment fell {abs(align_trend)} points vs the prior period.",
+                               "severity": "medium"})
+
     return {
         "north_star": _strategy_view(org),
         "totals": {"decisions": total, "last_7d": last7, "members": len(members)},
         "alignment": {"avg": avg_align, "high": high, "medium": medium, "low": low, "scored": len(scores)},
         "execution": {"committed": committed, "open": open_count, "done": done,
                       "dropped": dropped, "overdue": overdue, "follow_through_pct": follow_through},
+        "effectiveness": effectiveness,
+        "calibration": calibration,
+        "team_alignment": team_alignment,
+        "alignment_trend": align_trend,
+        "pacing": pacing,
+        "contradictions": contradictions,
         "per_member": per_member,
         "drift": drift,
         "active_actions": active_actions,
         "results": results_feed,
     }
+
+
+# ----------------------------------------------------------------- Layer 6: autonomous planning (human-gated)
+DEP_FUNCTIONS = ("sales", "marketing", "product", "engineering", "operations", "finance", "leadership", "general")
+
+
+def norm_dep_function(f):
+    f = (f or "general").strip().lower()
+    return f if f in DEP_FUNCTIONS else "general"
+
+
+PLAN_SYSTEM = (
+    "You are a strategy operator. Given a company's North Star, priorities, and what has historically "
+    "worked per function, draft an objective cascade: ONE company objective, then a short objective plus "
+    "2-3 measurable key results for each relevant function. Ground proposals in the historical "
+    "effectiveness data provided (favour functions and plays that have actually worked). Be concrete and "
+    "numeric where possible. This is a DRAFT for a human to ratify, never a final plan. "
+    'Return ONLY JSON, no fences: {"company_objective": "...", "departments": [{"function": '
+    '"sales|marketing|product|engineering|operations|finance|leadership", "objective": "...", '
+    '"key_results": ["...", "..."]}]}'
+)
+
+
+class PlanDraftIn(BaseModel):
+    target: str = Field(min_length=2, max_length=300)
+
+
+def _plan_adherence(org_id, plan):
+    since = plan.get("activated_at") or plan.get("created_at")
+    q = {"org_id": org_id}
+    if since:
+        q["created_at"] = {"$gte": since}
+    rows = list(decisions_col.find(q, {"_id": 0, "function": 1, "strategic_alignment": 1, "outcome": 1}))
+    by_fn = {}
+    for r in rows:
+        f = r.get("function") or "general"
+        d = by_fn.setdefault(f, {"_sc": [], "_oc": [], "n": 0})
+        d["n"] += 1
+        a = r.get("strategic_alignment")
+        if isinstance(a, dict) and isinstance(a.get("score"), int):
+            d["_sc"].append(a["score"])
+        oc = r.get("outcome")
+        if isinstance(oc, dict) and oc.get("status") in ("success", "partial", "failed"):
+            d["_oc"].append(oc["status"])
+    depts = []
+    for dep in plan.get("departments", []) or []:
+        f = dep.get("function", "general")
+        d = by_fn.get(f, {"_sc": [], "_oc": [], "n": 0})
+        oc = d["_oc"]
+        depts.append({**dep, "decisions": d["n"],
+                      "avg_alignment": round(sum(d["_sc"]) / len(d["_sc"])) if d["_sc"] else None,
+                      "effectiveness_pct": round(100 * (oc.count("success") + 0.5 * oc.count("partial")) / len(oc)) if oc else None})
+    total_dec = sum(x["n"] for x in by_fn.values())
+    return depts, total_dec
+
+
+def _plan_view(plan, org_id):
+    out = {k: plan.get(k) for k in ("id", "target", "status", "company_objective", "created_at", "activated_at")}
+    if plan.get("status") == "active":
+        depts, total_dec = _plan_adherence(org_id, plan)
+        out["departments"] = depts
+        out["decisions_since_activation"] = total_dec
+    else:
+        out["departments"] = plan.get("departments", [])
+    return out
+
+
+@router.post("/plan/draft")
+def draft_plan(body: PlanDraftIn, user: dict = Depends(current_user)):
+    """Owner-only. AI DRAFTS an objective cascade grounded in what has worked; a human must ratify it."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    eff = _effectiveness_by_function(org["id"])
+    eff_text = "\n".join(
+        f"- {e['function']}: {e['decisions']} decisions, avg alignment {e['avg_alignment']}, "
+        f"effectiveness {e['effectiveness_pct']}% (n={e['outcomes_scored']})" for e in eff) or "(no history yet)"
+    prio = "; ".join(org.get("priorities", []) or []) or "(none set)"
+    prompt = (
+        f"NORTH STAR: {org.get('north_star','') or '(not set)'}\n"
+        f"TARGET: {org.get('target','')} {org.get('deadline','')}\n"
+        f"PRIORITIES: {prio}\n"
+        f"DECISION RULES: {org.get('decision_rules','') or '(none)'}\n"
+        f"NEW OBJECTIVE THE FOUNDER WANTS: {body.target.strip()}\n\n"
+        f"HISTORICAL EFFECTIVENESS BY FUNCTION (ground the plan in this):\n{eff_text}\n"
+    )
+    try:
+        r = client().messages.create(model="claude-sonnet-4-5", max_tokens=1600,
+                                     system=[{"type": "text", "text": PLAN_SYSTEM}],
+                                     messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        data = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"plan draft failed: {e}")
+        raise HTTPException(502, "Could not draft a plan right now. Try again.")
+    depts = []
+    for d in (data.get("departments") or [])[:8]:
+        if not isinstance(d, dict):
+            continue
+        krs = [str(k) for k in (d.get("key_results") or []) if str(k).strip()][:4]
+        depts.append({"function": norm_dep_function(d.get("function")),
+                      "objective": str(d.get("objective", ""))[:600], "key_results": krs})
+    plan = {"id": str(uuid.uuid4()), "org_id": org["id"], "target": body.target.strip(),
+            "status": "draft", "created_at": now_utc(), "activated_at": None, "created_by": user["id"],
+            "company_objective": str(data.get("company_objective", ""))[:800], "departments": depts}
+    plans_col.insert_one(plan)
+    return _plan_view(plan, org["id"])
+
+
+@router.get("/plan")
+def get_plan(user: dict = Depends(current_user)):
+    """Owner-only. The active ratified plan (with adherence) + the latest draft awaiting ratification."""
+    m = _require_owner(user)
+    org_id = m["org_id"]
+    active = plans_col.find_one({"org_id": org_id, "status": "active"})
+    draft = plans_col.find_one({"org_id": org_id, "status": "draft"}, sort=[("created_at", -1)])
+    return {"active": _plan_view(active, org_id) if active else None,
+            "draft": _plan_view(draft, org_id) if draft else None}
+
+
+@router.post("/plan/{plan_id}/ratify")
+def ratify_plan(plan_id: str, user: dict = Depends(current_user)):
+    """Owner-only human ratification gate: a generated plan goes live ONLY when a human approves it."""
+    m = _require_owner(user)
+    org_id = m["org_id"]
+    p = plans_col.find_one({"id": plan_id, "org_id": org_id})
+    if not p:
+        raise HTTPException(404, "Plan not found")
+    plans_col.update_many({"org_id": org_id, "status": "active"}, {"$set": {"status": "archived"}})
+    plans_col.update_one({"id": plan_id}, {"$set": {"status": "active", "activated_at": now_utc()}})
+    p = plans_col.find_one({"id": plan_id})
+    return _plan_view(p, org_id)

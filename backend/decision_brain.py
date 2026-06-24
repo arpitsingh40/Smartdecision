@@ -72,7 +72,7 @@ def _resolve_context(user: dict):
     return kb_id(user["id"]), True, None, (user.get("brain_instructions") or "")
 
 
-def _strategy_block(org: dict | None) -> str:
+def _strategy_block(org: dict | None, function: str = "general") -> str:
     """Build the CONFIDENTIAL steering block from the founder's North Star.
     Empty string when there is no org or no strategy set."""
     if not org:
@@ -102,7 +102,11 @@ def _strategy_block(org: dict | None) -> str:
     lines.append(
         "ALSO include a private JSON field strategic_alignment as "
         '{"score": <0-100>, "reason": "<one short line>"} estimating how strongly your recommendation '
-        "advances the North Star above. This is internal telemetry: include it in the JSON, but it is "
+        "advances the North Star above. " + (
+            f"The user's function is {norm_function(function)}; judge the score by how well the recommendation "
+            f"advances the North Star THROUGH that function's real contribution ({FUNCTION_RUBRIC.get(norm_function(function), FUNCTION_RUBRIC['general'])}). "
+        ) +
+        "This is internal telemetry: include it in the JSON, but it is "
         "stripped before the user sees anything and the user must never sense it exists."
     )
     return "\n".join(lines)
@@ -121,6 +125,74 @@ def ensure_brain_startup():
 def token_cost(tin: int, tout: int) -> int:
     total = (tin or 0) + (tout or 0)
     return max(1, math.ceil(total / 1000) * CREDITS_PER_1K_TOKENS)
+
+
+# ---------------------------------------------------------------- learning-loop primitives (Layers 0/2/5)
+FUNCTIONS = ("sales", "marketing", "product", "engineering", "operations", "finance", "leadership", "general")
+MIN_LEARN_N = 4   # min prior outcome-scored decisions before we surface a correlational pattern
+
+# Per-function rubric — what "good" means for each role (Layer 2: alignment judged per function).
+FUNCTION_RUBRIC = {
+    "sales": "closing ICP-fit revenue, expansion and pipeline quality (not raw activity)",
+    "marketing": "qualified pipeline, CAC and virality / growth loops (not impressions)",
+    "product": "activation, retention and conversion (not feature count or aesthetics)",
+    "engineering": "shipping speed + reliability that moves activation/retention/ARR (not refactors users never see)",
+    "operations": "throughput, cost efficiency and unblocking revenue (not internal busywork)",
+    "finance": "capital efficiency, runway and margin (not reporting volume)",
+    "leadership": "company-level focus, alignment and capital efficiency",
+    "general": "the most direct contribution to revenue and the North Star",
+}
+# Deterministic default revenue-proximity by function (Layer 0 stamp).
+PROXIMITY_BY_FUNCTION = {
+    "sales": "direct", "marketing": "indirect", "product": "indirect",
+    "engineering": "internal", "operations": "internal", "finance": "internal",
+    "leadership": "indirect", "general": "internal",
+}
+
+
+def norm_function(fn):
+    fn = (fn or "general").strip().lower()
+    return fn if fn in FUNCTIONS else "general"
+
+
+def _band(alignment):
+    """Map the founder-only alignment score to a band (founder-only, never sent to members)."""
+    if isinstance(alignment, dict) and isinstance(alignment.get("score"), int):
+        s = alignment["score"]
+        return "high" if s >= 70 else ("medium" if s >= 40 else "low")
+    return None
+
+
+def _proximity(function):
+    return PROXIMITY_BY_FUNCTION.get(norm_function(function), "internal")
+
+
+def _org_learning_block(org, function, k=40):
+    """Layer 5: a CORRELATIONAL 'what has worked here before' prior for the same org+function.
+    Strictly labelled as correlation (never causal), gated behind MIN_LEARN_N. Empty when scarce."""
+    if not org:
+        return ""
+    function = norm_function(function)
+    rows = list(decisions_col.find(
+        {"org_id": org["id"], "function": function,
+         "outcome.status": {"$in": ["success", "partial", "failed"]}},
+        {"_id": 0, "outcome": 1, "next_action": 1, "recommendation": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(k))
+    n = len(rows)
+    if n < MIN_LEARN_N:
+        return ""
+    succ = sum(1 for r in rows if (r.get("outcome") or {}).get("status") == "success")
+    part = sum(1 for r in rows if (r.get("outcome") or {}).get("status") == "partial")
+    worked_pct = round(100 * (succ + 0.5 * part) / n)
+    wins = [_clean(r.get("next_action") or r.get("recommendation") or "") for r in rows
+            if (r.get("outcome") or {}).get("status") == "success"]
+    wins = [w for w in wins if w][:3]
+    lines = [f"ORG_LEARNING (CORRELATIONAL, not causal - from {n} past {function} decisions in this company):",
+             f"- Historically, {function} actions like these were marked worked about {worked_pct}% of the time."]
+    if wins:
+        lines.append("- Moves that worked here before: " + " | ".join(w[:120] for w in wins))
+    lines.append("Treat this as a prior, never a guarantee. Do NOT mention these statistics to the user.")
+    return "\n".join(lines) + "\n\n"
 
 
 # ---------------------------------------------------------------- retrieval (KB-scoped)
@@ -234,7 +306,7 @@ def _clean(s):
     return s
 
 
-def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = ""):
+def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = ""):
     """ONE LLM call. Returns (out_dict, model, usage)."""
     if passages:
         psg = "\n\n".join(f"[{p['doc']} -> {p['chapter']}] (score {p['score']})\n{p['text']}" for p in passages)
@@ -242,10 +314,12 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
     else:
         passages_block = "RETRIEVED_PASSAGES: (none found in the company's documents for this message)\n\n"
     docs_line = f"DOCUMENTS IN THE COMPANY KNOWLEDGE BASE: {', '.join(doc_names) if doc_names else '(none uploaded yet)'}\n"
+    role_line = f"USER_FUNCTION: {norm_function(function)} - their decisions should serve {FUNCTION_RUBRIC.get(norm_function(function), FUNCTION_RUBRIC['general'])}.\n"
     rules_block = f"COMPANY_RULES (set by the admin, treat as policy you must respect):\n{instructions.strip()}\n\n" if (instructions or "").strip() else ""
     strat_section = f"{strategy_block}\n\n" if (strategy_block or "").strip() else ""
+    learn_section = learning_block if (learning_block or "").strip() else ""
     hist_section = session_history if (session_history or "").strip() else ""
-    prompt = f"{docs_line}\n{rules_block}{strat_section}{hist_section}{passages_block}USER MESSAGE: {question}"
+    prompt = f"{docs_line}{role_line}\n{rules_block}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
 
     system_blocks = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
     last_err = None
@@ -433,7 +507,9 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
         raise HTTPException(422, "Empty question")
     session_id = session_id or str(uuid.uuid4())
     kb_ns, _is_admin, org, instructions = _resolve_context(user)
-    strategy_block = _strategy_block(org)
+    function = norm_function(user.get("function"))
+    strategy_block = _strategy_block(org, function)
+    learning_block = _org_learning_block(org, function)
     reserve = BRAIN_RESERVE
     u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
                                       {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
@@ -442,7 +518,8 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
     try:
         passages, doc_map, doc_names = kb_retrieve(kb_ns, question)
         history = _session_history(user["id"], session_id)
-        out, model, usage = brain_answer(question, passages, doc_names, instructions, strategy_block, history)
+        out, model, usage = brain_answer(question, passages, doc_names, instructions,
+                                         strategy_block, history, function, learning_block)
     except Exception as e:
         try:
             users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
@@ -490,6 +567,12 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
             "result": None,
             "status": "open",
             "strategic_alignment": alignment,
+            # ---- Layer 0: immutable learning-loop stamps (write now, analyse later) ----
+            "function": function,
+            "revenue_proximity": _proximity(function),
+            "strategy_version": (org.get("strategy_version", 0) if org else 0),
+            "alignment_band": _band(alignment),   # founder-only (derived from the private score)
+            "outcome": {"status": "unknown", "score": None, "source": None, "at": None},
         })
     except Exception as e:
         log.warning(f"decision persist failed: {e}")
@@ -510,9 +593,28 @@ def my_decisions(user: dict = Depends(current_user)):
     """A member's own decision history. Never exposes the founder-only alignment field."""
     rows = list(decisions_col.find(
         {"user_id": user["id"]},
-        {"_id": 0, "strategic_alignment": 0},
+        {"_id": 0, "strategic_alignment": 0, "alignment_band": 0},
     ).sort("created_at", -1).limit(50))
     return {"decisions": rows}
+
+
+class FunctionIn(BaseModel):
+    function: str = Field(min_length=2, max_length=30)
+
+
+@router.get("/profile")
+def get_profile(user: dict = Depends(current_user)):
+    """The member's function/role (drives per-function alignment rubric + team rollups)."""
+    return {"function": norm_function(user.get("function")), "functions": list(FUNCTIONS)}
+
+
+@router.post("/profile")
+def set_profile(body: FunctionIn, user: dict = Depends(current_user)):
+    fn = body.function.strip().lower()
+    if fn not in FUNCTIONS:
+        raise HTTPException(422, f"function must be one of {', '.join(FUNCTIONS)}")
+    users_col.update_one({"id": user["id"]}, {"$set": {"function": fn}})
+    return {"function": fn}
 
 
 class CommitIn(BaseModel):
@@ -523,6 +625,11 @@ class CommitIn(BaseModel):
 class StatusIn(BaseModel):
     status: str
     result: str | None = Field(default=None, max_length=2000)
+    outcome: str | None = Field(default=None, max_length=20)  # worked | partly | didnt (one-tap self-report)
+
+
+OUTCOME_MAP = {"worked": "success", "partly": "partial", "didnt": "failed", "didn't": "failed",
+               "success": "success", "partial": "partial", "failed": "failed"}
 
 
 def _iso(dt):
@@ -575,7 +682,8 @@ def commit_action(decision_id: str, body: CommitIn, user: dict = Depends(current
 @router.post("/decisions/{decision_id}/status")
 def set_status(decision_id: str, body: StatusIn, user: dict = Depends(current_user)):
     """Mark a committed action done / dropped / open. On done, capture the result achieved
-    (both the member and the founder will see it)."""
+    (both the member and the founder will see it) AND an outcome score (Layer 1 keystone):
+    one-tap self-report (worked/partly/didnt) wins; otherwise a deterministic auto-rule applies."""
     st = body.status.strip().lower()
     if st not in ("open", "done", "dropped"):
         raise HTTPException(422, "status must be open, done, or dropped")
@@ -583,11 +691,35 @@ def set_status(decision_id: str, body: StatusIn, user: dict = Depends(current_us
     if not d:
         raise HTTPException(404, "Decision not found")
     upd = {"status": st, "status_at": now_utc()}
-    if st == "done" and (body.result or "").strip():
-        upd["result"] = body.result.strip()
-        upd["result_at"] = now_utc()
+
+    # --- Layer 1: outcome scoring. Precedence self > auto. LLM enrichment is out of scope here. ---
+    outcome = None
+    self_oc = (body.outcome or "").strip().lower()
+    if self_oc in OUTCOME_MAP:
+        outcome = {"status": OUTCOME_MAP[self_oc], "score": None, "source": "self", "at": now_utc()}
+
+    if st == "done":
+        if (body.result or "").strip():
+            upd["result"] = body.result.strip()
+            upd["result_at"] = now_utc()
+        if outcome is None:
+            # deterministic auto-rule: a completed action is at least a partial win; flag if it ran late.
+            due = d.get("due_at")
+            on_time = True
+            if isinstance(due, datetime):
+                dd = due.replace(tzinfo=timezone.utc) if due.tzinfo is None else due
+                on_time = now_utc() <= dd
+            outcome = {"status": "partial", "score": None, "source": "auto",
+                       "at": now_utc(), "on_time": on_time}
+    elif st == "dropped" and outcome is None:
+        # deterministic auto-rule: a dropped commitment is a failed outcome.
+        outcome = {"status": "failed", "score": None, "source": "auto", "at": now_utc()}
+
+    if outcome is not None:
+        upd["outcome"] = outcome
     decisions_col.update_one({"id": decision_id}, {"$set": upd})
-    return {"ok": True, "decision_id": decision_id, "status": st, "result": upd.get("result")}
+    return {"ok": True, "decision_id": decision_id, "status": st,
+            "result": upd.get("result"), "outcome": upd.get("outcome")}
 
 
 @router.post("/decisions/{decision_id}/next-step")

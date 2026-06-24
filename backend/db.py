@@ -25,3 +25,4 @@ orgs_col = db.organizations            # one row per company workspace (+ hidden
 members_col = db.org_members           # user <-> org membership with role (owner|member)
 invites_col = db.org_invites           # invite codes / join links for a company workspace
 decisions_col = db.decisions           # every brain decision (history, execution status, founder-only alignment)
+plans_col = db.org_plans               # Layer 6: founder-ratified objective cascades (autonomous planning)

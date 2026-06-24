@@ -256,6 +256,18 @@ backend:
         agent: "testing"
         comment: "PASS - All Decision Brain tests passed (6/6 test scenarios, 8 credits used). TEST 1: POST /api/brain/upload with refund policy markdown (600 words) -> 200 {tree_id, status:processing}. Polled GET /api/brain/documents until status:ready with node_count=12 (~15s background indexing). TEST 2 (Answer mode): POST /api/brain/ask 'What is our refund window for damaged goods?' -> 200, mode=answer, found_in_docs=true, answer mentions '45 days', citations=[{doc:refund_policy.md, chapter:Damaged Goods}], cost=2, credits decreased (1000->998). TEST 3 (Plan mode): POST /api/brain/ask 'Give me a plan to reduce refund requests next quarter' -> 200, mode=plan, plan=[7 ordered concrete steps], cost=2. TEST 4 (Decide + rules): POST /api/brain/settings {instructions:'Never approve refund after 45 days...'} -> 200. GET /api/brain/settings verified. POST /api/brain/ask 'Customer wants refund 60 days after purchase for damaged item' -> 200, mode=decide, recommendation='Deny the refund...outside 45-day policy', respects company rule, cost=2. TEST 5 (Guardrail): POST /api/brain/ask 'What is our parental leave policy?' (NOT in docs) -> 200, mode=answer, found_in_docs=false, answer='I could not find information...only cover refund policy', NO HALLUCINATION, cost=2. TEST 6 (Guards): POST /api/brain/ask without token -> 401. POST /api/brain/upload without token -> 401. POST /api/brain/upload with mime=image/png -> 415. DELETE /api/brain/documents/{tree_id} -> 200, verified doc no longer listed. All endpoints working correctly. Used founder account (ceo@smartdecigen.com, 1000 credits). Final credits: 992."
 
+  - task: "Learning Loop (6 layers): decision outcome scoring (Layer 1) + Layer 0 stamps (function/revenue_proximity/strategy_version/alignment_band) + per-function alignment rubric (Layer 2) + org learning prior (Layer 5) + strategy versioning + cockpit effectiveness/calibration/team_alignment/contradictions/pacing (Layers 1-4) + autonomous plan draft/ratify (Layer 6)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/decision_brain.py, /app/backend/organizations.py, /app/backend/db.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (6-layer learning loop). LAYER 0 stamping: every brain decision now stamped at write-time in _answer_and_log with function (from user.function, default general), revenue_proximity (derived from function), strategy_version (org.strategy_version when made), alignment_band (high>=70/medium>=40/low, derived from founder-only score, ALSO founder-only - excluded from GET /api/brain/decisions projection), and an outcome skeleton {status:unknown,score,source,at}. LAYER 1 outcome scoring: POST /api/brain/decisions/{id}/status now accepts optional outcome in {worked|partly|didnt} -> maps to success|partial|failed source=self; precedence self>auto; deterministic auto-rules: done -> partial(auto, on_time flag), dropped -> failed(auto). LAYER 2 per-function rubric: brain_answer takes function -> ROLE_CONTEXT line + _strategy_block judges strategic_alignment via that function's contribution. NEW endpoints GET/POST /api/brain/profile {function in sales|marketing|product|engineering|operations|finance|leadership|general}. LAYER 5 org learning: _org_learning_block injects a CORRELATIONAL 'in N past <function> decisions, X% worked' prior (gated >= MIN_LEARN_N=4), never causal, never shown to user. STRATEGY VERSIONING: org.strategy_version starts 0, PUT /api/org/strategy bumps only on real content change (no-op stays), stores numeric current_arr/target_arr; _strategy_view exposes strategy_version+arr (owner-only). COCKPIT gains: effectiveness {scored,success,partial,failed,effectiveness_pct}, calibration {high/low_success_rate,lift,samples,predictive,note} (alignment is diagnostic until predictive), team_alignment[] per function {decisions,avg_alignment,outcomes_scored,effectiveness_pct}, alignment_trend (recent7 vs prior), pacing {current_arr,target_arr,gap_pct,note} (arithmetic only), contradictions[] (deterministic: overdue>=2, follow_through<60, growth-declared-but-internal>=60%, alignment slipping). LAYER 6 autonomous planning (owner-only, human-gated): POST /api/org/plan/draft {target} -> 1 LLM call (claude-sonnet-4-5) drafts cascade {company_objective, departments[{function,objective,key_results}]} grounded in _effectiveness_by_function, stored status=draft; GET /api/org/plan -> {active(with adherence: per-dept decisions/avg_alignment/effectiveness since activation), draft}; POST /api/org/plan/{id}/ratify -> archives prior active, sets active+activated_at (generated plan goes live ONLY after human ratify). SELF-VERIFIED via curl: profile set sales; strategy v1 then no-op stays v1; ARR stored, pacing gap computed; brain /ask -> decision stamped function=sales/proximity=direct/strategy_version=1/alignment_band=high(72)/outcome skeleton, NO strategic_alignment leak; status done outcome=worked -> outcome.status=success source=self; cockpit effectiveness scored=1 success=1 100%, team_alignment sales 100%. Lint clean, backend boots clean. NEEDS automated test. LLM BUDGET <=3 calls (>=1 brain /ask + 1 plan draft)."
+
 frontend:
 
   - task: "Phase 2 UI: TeamPage North Star (founder-only private strategy panel) + BrainPage member-gating (hide upload/train/delete via can_train)"
@@ -338,12 +350,12 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "2.0"
-  test_sequence: 17
+  test_sequence: 18
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Connected Decision Session: brain /ask multi-turn session memory + clarity/next_action/hook/sharpening_question; commit-with-deadline, result capture, /active timer, /next-step; cockpit active_actions + results + overdue (NO member leak)"
+    - "Learning Loop (6 layers): decision outcome scoring (Layer 1) + Layer 0 stamps (function/revenue_proximity/strategy_version/alignment_band) + per-function alignment rubric (Layer 2) + org learning prior (Layer 5) + strategy versioning + cockpit effectiveness/calibration/team_alignment/contradictions/pacing (Layers 1-4) + autonomous plan draft/ratify (Layer 6)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -351,6 +363,35 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: >
+      NEW (6-layer learning loop) - please test the BACKEND only. ANTHROPIC IS LIVE (real money):
+      LLM BUDGET <= 3 calls total (>=1 POST /api/brain/ask, 1 POST /api/org/plan/draft). Everything
+      else is FREE. Do NOT touch payments (Zoho LIVE). Founder/admin: ceo@smartdecigen.com /
+      FounderOS@2026 (currently OWNS org "Acme AI" with a North Star + ARR set, strategy_version=1, and
+      already has 1 sales decision marked success). Reuse it; create a fresh member via signup+join if
+      you need a non-owner. VERIFY:
+      (1) FREE - GET /api/brain/profile -> {function, functions:[8 roles]}; POST /api/brain/profile
+      {function:"sales"} -> 200 {function:"sales"}; invalid function -> 422.
+      (2) LLM CALL 1 - POST /api/brain/ask (founder, function=sales) -> 200; member-safe payload has NO
+      "strategic_alignment". Then fetch the row in DB OR rely on cockpit: confirm the decision is stamped
+      function="sales", revenue_proximity="direct", strategy_version=1, alignment_band in
+      {high,medium,low}, outcome.status="unknown". Confirm GET /api/brain/decisions does NOT leak
+      "alignment_band" or "strategic_alignment".
+      (3) FREE - POST /api/brain/decisions/{id}/commit {action:"...",due_in_hours:48} -> 200 (NOTE: action
+      is REQUIRED; commit without action -> 422). POST .../status {status:"done",outcome:"worked",
+      result:"..."} -> outcome {status:"success",source:"self"}. Separately verify deterministic auto:
+      a done with NO outcome -> source:"auto",status:"partial"; a dropped with NO outcome ->
+      source:"auto",status:"failed".
+      (4) FREE - Strategy versioning: PUT /api/org/strategy with a CHANGED priority -> strategy_version
+      increments; PUT again identical -> version unchanged. ARR fields current_arr/target_arr persist and
+      GET /api/org/cockpit.pacing.gap_pct is correct arithmetic.
+      (5) FREE - GET /api/org/cockpit (owner) returns new keys: effectiveness{effectiveness_pct},
+      calibration{lift,predictive,note}, team_alignment[]{function,avg_alignment,effectiveness_pct},
+      alignment_trend, pacing{gap_pct}, contradictions[]. Member GET /api/org/cockpit -> 403.
+      (6) LLM CALL 2 - POST /api/org/plan/draft {target:"Reach $100M ARR"} (owner) -> 200 with
+      company_objective + departments[{function,objective,key_results}]; status=draft. GET /api/org/plan
+      -> {active:null or prior, draft:present}. POST /api/org/plan/{id}/ratify -> status=active + adherence
+      (departments with decisions/avg_alignment/effectiveness). Member calling any /api/org/plan* -> 403.
+      Report PASS/FAIL per item + total LLM calls used.
       NEW (Decision Ledger + Founder Cockpit + execution). ANTHROPIC LIVE: AT MOST 1 /api/brain/ask
       call total; everything else here is FREE (no LLM). Do NOT touch payments. Founder
       ceo@smartdecigen.com / FounderOS@2026 currently OWNS org "Acme Solar" with a North Star set and

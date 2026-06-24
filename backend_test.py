@@ -10,7 +10,7 @@ import requests
 from datetime import datetime
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://software-audit-2.preview.emergentagent.com/api"
+BACKEND_URL = "https://expectation-checker.preview.emergentagent.com/api"
 
 # Test credentials
 FOUNDER_EMAIL = "ceo@smartdecigen.com"

@@ -11,10 +11,30 @@ import {
 import { toast } from 'sonner';
 import {
   Send, Upload, FileText, X, SlidersHorizontal, Loader2, BookOpen,
-  CheckCircle2, AlertCircle, Quote,
+  CheckCircle2, AlertCircle, Quote, Clock, ArrowRight, Target, Sparkles,
 } from 'lucide-react';
 
 const MODE_LABEL = { answer: 'Answer', decide: 'Decision', plan: 'Plan' };
+const DUE_OPTIONS = [
+  { label: 'Today', hours: 8 },
+  { label: '24h', hours: 24 },
+  { label: '48h', hours: 48 },
+  { label: '3 days', hours: 72 },
+  { label: '1 week', hours: 168 },
+];
+const newSessionId = () =>
+  (typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `s_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+const fmtLeft = (iso) => {
+  if (!iso) return '';
+  const ms = new Date(iso).getTime() - Date.now();
+  const overdue = ms < 0;
+  const m = Math.abs(Math.round(ms / 60000));
+  const d = Math.floor(m / 1440); const h = Math.floor((m % 1440) / 60); const mm = m % 60;
+  const txt = d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${mm}m` : `${mm}m`;
+  return overdue ? `${txt} overdue` : `${txt} left`;
+};
 
 export default function BrainPage() {
   const { setCredits } = useAuth();
@@ -25,6 +45,11 @@ export default function BrainPage() {
   const [committed, setCommitted] = useState(null);
   const [decisionStatus, setDecisionStatus] = useState(null);
   const [execBusy, setExecBusy] = useState(false);
+  const [sessionId, setSessionId] = useState(() => newSessionId());
+  const [dueHours, setDueHours] = useState(48);
+  const [dueAt, setDueAt] = useState(null);
+  const [showResult, setShowResult] = useState(false);
+  const [resultInput, setResultInput] = useState('');
   const [docs, setDocs] = useState([]);
   const [canTrain, setCanTrain] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -54,21 +79,55 @@ export default function BrainPage() {
     return () => clearInterval(id);
   }, [docs, loadDocs]);
 
-  const ask = useCallback(async () => {
-    if (!question.trim() || loading) return;
+  const runAsk = useCallback(async (q, sid) => {
+    if (!q.trim() || loading) return;
     setLoading(true);
-    setResult(null);
+    setResult(null); setShowResult(false); setResultInput(''); setDueAt(null);
     try {
-      const r = await api.post('/brain/ask', { question: question.trim() });
+      const r = await api.post('/brain/ask', { question: q.trim(), session_id: sid });
       setResult(r.data);
-      setCommitted(null); setDecisionStatus(null); setActionInput('');
+      if (r.data.session_id) setSessionId(r.data.session_id);
+      setCommitted(null); setDecisionStatus(null);
+      setActionInput(r.data.next_action || '');
       if (r.data.credits != null) setCredits(r.data.credits);
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not get an answer. Try again.');
     } finally {
       setLoading(false);
     }
-  }, [question, loading, setCredits]);
+  }, [loading, setCredits]);
+
+  const ask = useCallback(() => runAsk(question, sessionId), [runAsk, question, sessionId]);
+
+  const askNew = useCallback(() => {
+    const sid = newSessionId();
+    setSessionId(sid);
+    runAsk(question, sid);
+  }, [runAsk, question]);
+
+  const goDeeper = useCallback(() => {
+    if (!result?.sharpening_question) return;
+    setQuestion(result.sharpening_question);
+    runAsk(result.sharpening_question, sessionId);
+  }, [result, runAsk, sessionId]);
+
+  const findNextStep = useCallback(async () => {
+    if (!result?.decision_id || execBusy) return;
+    setExecBusy(true);
+    try {
+      const r = await api.post(`/brain/decisions/${result.decision_id}/next-step`);
+      setResult(r.data);
+      if (r.data.session_id) setSessionId(r.data.session_id);
+      setCommitted(null); setDecisionStatus(null);
+      setActionInput(r.data.next_action || '');
+      setShowResult(false); setResultInput(''); setDueAt(null);
+      if (r.data.credits != null) setCredits(r.data.credits);
+      window.dispatchEvent(new Event('sdg-actions-changed'));
+      toast.success('Here is your next step.');
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Could not find the next step.');
+    } finally { setExecBusy(false); }
+  }, [result, execBusy, setCredits]);
 
   const onFile = (e) => {
     const file = e.target.files?.[0];
@@ -113,20 +172,26 @@ export default function BrainPage() {
     if (!actionInput.trim() || !result?.decision_id || execBusy) return;
     setExecBusy(true);
     try {
-      const r = await api.post(`/brain/decisions/${result.decision_id}/commit`, { action: actionInput.trim() });
+      const r = await api.post(`/brain/decisions/${result.decision_id}/commit`,
+        { action: actionInput.trim(), due_in_hours: dueHours });
       setCommitted(r.data.committed_action); setDecisionStatus('open');
-      toast.success('Locked in as your move.');
+      setDueAt(r.data.due_at || null);
+      window.dispatchEvent(new Event('sdg-actions-changed'));
+      toast.success('Locked in. The clock is running.');
     } catch (_e) { toast.error('Could not save your move.'); }
     finally { setExecBusy(false); }
   };
 
-  const markStatus = async (status) => {
+  const markStatus = async (status, resultText) => {
     if (!result?.decision_id || execBusy) return;
     setExecBusy(true);
     try {
-      await api.post(`/brain/decisions/${result.decision_id}/status`, { status });
+      await api.post(`/brain/decisions/${result.decision_id}/status`,
+        { status, result: resultText || null });
       setDecisionStatus(status);
-      toast.success(status === 'done' ? 'Marked done.' : 'Noted.');
+      setShowResult(false);
+      window.dispatchEvent(new Event('sdg-actions-changed'));
+      toast.success(status === 'done' ? 'Done. Logged for your founder too.' : 'Noted.');
     } catch (_e) { toast.error('Could not update.'); }
     finally { setExecBusy(false); }
   };
@@ -163,21 +228,29 @@ export default function BrainPage() {
                 placeholder="What's our refund window for damaged goods? · Should I approve this discount? · Plan our Q3 launch in Pune."
                 className="min-h-[96px] border-0 bg-transparent focus-visible:ring-0 resize-none text-[15px] leading-6"
               />
-              <div className="flex items-center justify-between px-1 pt-1">
-                <span className="text-xs text-muted-foreground">
+              <div className="flex items-center justify-between px-1 pt-1 gap-2">
+                <span className="text-xs text-muted-foreground min-w-0 truncate">
                   {readyCount > 0
                     ? `${readyCount} document${readyCount > 1 ? 's' : ''} in knowledge`
                     : (canTrain ? 'No documents yet — upload some on the right' : 'Ask anything — backed by your team’s knowledge')}
                 </span>
-                <Button
-                  data-testid="brain-ask-button"
-                  onClick={ask}
-                  disabled={loading || !question.trim()}
-                  className="rounded-xl active:scale-[0.98]"
-                >
-                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} strokeWidth={1.75} />}
-                  <span className="ml-2">{loading ? 'Thinking' : 'Ask'}</span>
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {result && (
+                    <Button data-testid="brain-new-topic" variant="ghost" onClick={askNew}
+                      disabled={loading || !question.trim()} className="rounded-xl text-muted-foreground">
+                      New topic
+                    </Button>
+                  )}
+                  <Button
+                    data-testid="brain-ask-button"
+                    onClick={ask}
+                    disabled={loading || !question.trim()}
+                    className="rounded-xl active:scale-[0.98]"
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} strokeWidth={1.75} />}
+                    <span className="ml-2">{loading ? 'Thinking' : (result ? 'Continue' : 'Ask')}</span>
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -211,6 +284,14 @@ export default function BrainPage() {
                   </p>
                 )}
 
+                {/* clarity: what's really going on */}
+                {result.situation_read && (
+                  <p data-testid="brain-situation-read"
+                    className="text-sm text-muted-foreground italic border-l-2 border-border pl-3">
+                    {result.situation_read}
+                  </p>
+                )}
+
                 {/* main answer */}
                 <p className="text-[15px] md:text-base leading-7 whitespace-pre-wrap text-foreground">
                   {result.answer}
@@ -241,6 +322,19 @@ export default function BrainPage() {
                   </ol>
                 )}
 
+                {/* NEXT ACTION — the hero, the hook to act now */}
+                {result.next_action && (
+                  <div data-testid="brain-next-action" className="rounded-xl bg-[hsl(var(--accent))]/60 border border-border/70 border-l-2 border-l-[hsl(var(--ring))] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-1 flex items-center gap-1.5">
+                      <Target size={12} /> Your next move (24-48h)
+                    </div>
+                    <p className="text-[15px] md:text-base leading-6 font-display tracking-[-0.01em]">{result.next_action}</p>
+                    {result.hook && (
+                      <p data-testid="brain-hook" className="text-sm text-muted-foreground mt-1.5">{result.hook}</p>
+                    )}
+                  </div>
+                )}
+
                 {/* citations */}
                 {Array.isArray(result.citations) && result.citations.length > 0 && (
                   <div className="pt-1">
@@ -264,39 +358,85 @@ export default function BrainPage() {
                   {result.model} · {result.cost} credits · {result.tokens} tokens
                 </div>
 
-                {/* execution: turn the decision into a tracked move */}
+                {/* execution: commit with a deadline, track the timer, capture the result */}
                 {result.decision_id && (
-                  <div data-testid="brain-execution" className="pt-3 border-t border-border/60">
+                  <div data-testid="brain-execution" className="pt-3 border-t border-border/60 space-y-3">
                     {!committed ? (
-                      <div className="flex flex-col sm:flex-row gap-2">
+                      <>
                         <input
                           data-testid="brain-commit-input"
                           value={actionInput}
                           onChange={(e) => setActionInput(e.target.value)}
                           placeholder="Make it your move: the one thing you'll do next…"
-                          className="flex-1 rounded-xl border border-border/70 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitMove(); } }}
+                          className="w-full rounded-xl border border-border/70 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                         />
-                        <Button data-testid="brain-commit-btn" variant="secondary" onClick={commitMove}
-                          disabled={execBusy || !actionInput.trim()} className="rounded-xl border border-border/70 shrink-0">
-                          Lock it in
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div className="text-sm min-w-0">
-                          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Your move</span>
-                          <p className={`truncate ${decisionStatus === 'done' ? 'line-through text-muted-foreground' : ''}`}>{committed}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Clock size={12} /> Done by</span>
+                          {DUE_OPTIONS.map((o) => (
+                            <button key={o.hours} data-testid="brain-due-option"
+                              onClick={() => setDueHours(o.hours)}
+                              className={`text-xs rounded-full px-3 py-1 border transition-colors ${dueHours === o.hours ? 'bg-primary text-primary-foreground border-primary' : 'border-border/70 text-muted-foreground hover:text-foreground'}`}>
+                              {o.label}
+                            </button>
+                          ))}
+                          <Button data-testid="brain-commit-btn" onClick={commitMove}
+                            disabled={execBusy || !actionInput.trim()} className="rounded-xl ml-auto shrink-0">
+                            Commit it
+                          </Button>
                         </div>
+                      </>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div className="text-sm min-w-0">
+                            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Your move</span>
+                            <p className={`${decisionStatus === 'done' ? 'line-through text-muted-foreground' : ''}`}>{committed}</p>
+                          </div>
+                          {decisionStatus !== 'done' && dueAt && (
+                            <span data-testid="brain-countdown" className="text-xs font-mono-plex inline-flex items-center gap-1 text-[hsl(var(--ring))]">
+                              <Clock size={12} /> {fmtLeft(dueAt)}
+                            </span>
+                          )}
+                        </div>
+
                         {decisionStatus === 'done' ? (
-                          <span className="text-xs text-emerald-600 flex items-center gap-1"><CheckCircle2 size={13} /> Done</span>
+                          <div className="rounded-xl border border-border/70 bg-secondary/40 px-4 py-3">
+                            <span className="text-xs text-emerald-600 flex items-center gap-1 mb-2"><CheckCircle2 size={13} /> Achieved</span>
+                            <Button data-testid="brain-next-step-btn" onClick={findNextStep} disabled={execBusy}
+                              className="rounded-xl w-full sm:w-auto">
+                              {execBusy ? <Loader2 size={15} className="animate-spin mr-2" /> : <ArrowRight size={15} className="mr-2" />}
+                              Find my next step
+                            </Button>
+                          </div>
+                        ) : showResult ? (
+                          <div className="rounded-xl border border-border/70 bg-background px-3 py-3 space-y-2">
+                            <textarea
+                              data-testid="brain-result-input"
+                              value={resultInput}
+                              onChange={(e) => setResultInput(e.target.value)}
+                              placeholder="What happened? The outcome in a line or two…"
+                              className="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm min-h-[64px] focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="ghost" onClick={() => setShowResult(false)} disabled={execBusy} className="rounded-xl text-muted-foreground">Cancel</Button>
+                              <Button data-testid="brain-result-save" size="sm" onClick={() => markStatus('done', resultInput)} disabled={execBusy} className="rounded-xl">Log result</Button>
+                            </div>
+                          </div>
                         ) : (
-                          <div className="flex gap-2 shrink-0">
-                            <Button data-testid="brain-mark-done" size="sm" onClick={() => markStatus('done')} disabled={execBusy} className="rounded-xl">I did it</Button>
+                          <div className="flex gap-2">
+                            <Button data-testid="brain-mark-done" size="sm" onClick={() => setShowResult(true)} disabled={execBusy} className="rounded-xl">I did it</Button>
                             <Button size="sm" variant="ghost" onClick={() => markStatus('dropped')} disabled={execBusy} className="rounded-xl text-muted-foreground">Dropped it</Button>
                           </div>
                         )}
                       </div>
+                    )}
+
+                    {/* go deeper: continue the same connected session */}
+                    {!committed && result.sharpening_question && (
+                      <button data-testid="brain-sharpen" onClick={goDeeper}
+                        className="text-sm text-[hsl(var(--ring))] hover:underline flex items-center gap-1.5 text-left">
+                        <Sparkles size={13} /> {result.sharpening_question}
+                      </button>
                     )}
                   </div>
                 )}

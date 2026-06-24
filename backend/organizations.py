@@ -18,7 +18,7 @@ Data model (all UUID ids, never Mongo ObjectId):
 import os
 import uuid
 import secrets
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, EmailStr
@@ -362,12 +362,54 @@ def cockpit(user: dict = Depends(current_user)):
         {"_id": 0, "id": 1, "user_name": 1, "question": 1, "strategic_alignment": 1, "created_at": 1},
     ).sort("created_at", -1).limit(10))
 
+    # in-flight committed actions across the team (drives the founder's live timers)
+    now = now_utc()
+
+    def _iso(dt):
+        return dt.isoformat() if hasattr(dt, "isoformat") else dt
+
+    active_rows = list(decisions_col.find(
+        {**base, "status": "open", "committed_action": {"$ne": None}, "due_at": {"$ne": None}},
+        {"_id": 0, "id": 1, "user_name": 1, "committed_action": 1, "due_at": 1},
+    ).sort("due_at", 1).limit(25))
+    
+    def _is_overdue(due_at):
+        """Check if due_at is overdue, handling both offset-aware and offset-naive datetimes"""
+        if not due_at:
+            return False
+        if isinstance(due_at, datetime):
+            if due_at.tzinfo is None:
+                due_at = due_at.replace(tzinfo=timezone.utc)
+            return due_at < now
+        return False
+    
+    active_actions = [{
+        "id": r["id"], "user_name": r.get("user_name") or "Member",
+        "action": r.get("committed_action"), "due_at": _iso(r.get("due_at")),
+        "overdue": _is_overdue(r.get("due_at")),
+    } for r in active_rows]
+    overdue = sum(1 for a in active_actions if a["overdue"])
+
+    # results the team has actually achieved (founder + member both see the outcome)
+    result_rows = list(decisions_col.find(
+        {**base, "status": "done", "result": {"$ne": None}},
+        {"_id": 0, "id": 1, "user_name": 1, "committed_action": 1, "next_action": 1,
+         "result": 1, "result_at": 1},
+    ).sort("result_at", -1).limit(12))
+    results_feed = [{
+        "id": r["id"], "user_name": r.get("user_name") or "Member",
+        "action": r.get("committed_action") or r.get("next_action") or "",
+        "result": r.get("result"), "result_at": _iso(r.get("result_at")),
+    } for r in result_rows]
+
     return {
         "north_star": _strategy_view(org),
         "totals": {"decisions": total, "last_7d": last7, "members": len(members)},
         "alignment": {"avg": avg_align, "high": high, "medium": medium, "low": low, "scored": len(scores)},
         "execution": {"committed": committed, "open": open_count, "done": done,
-                      "dropped": dropped, "follow_through_pct": follow_through},
+                      "dropped": dropped, "overdue": overdue, "follow_through_pct": follow_through},
         "per_member": per_member,
         "drift": drift,
+        "active_actions": active_actions,
+        "results": results_feed,
     }

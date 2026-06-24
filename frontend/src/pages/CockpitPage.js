@@ -4,8 +4,17 @@ import { api } from '../lib/api';
 import { TopBar } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import {
-  Target, Loader2, TrendingUp, CheckCircle2, Users, Activity, AlertTriangle, Lock, Gauge,
+  Target, Loader2, TrendingUp, CheckCircle2, Users, Activity, AlertTriangle, Lock, Gauge, Clock, Award,
 } from 'lucide-react';
+
+const fmtLeft = (iso) => {
+  if (!iso) return '';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms < 0) return 'overdue';
+  const m = Math.round(ms / 60000);
+  const d = Math.floor(m / 1440); const h = Math.floor((m % 1440) / 60);
+  return d > 0 ? `${d}d ${h}h left` : `${h || 1}h left`;
+};
 
 const Stat = ({ icon: Icon, label, value, sub }) => (
   <div className="rounded-2xl border bg-card p-4">
@@ -141,6 +150,53 @@ export default function CockpitPage() {
                   </div>
                   <p className="text-sm mt-1 truncate" title={d.question}>{d.question}</p>
                   {d.strategic_alignment?.reason ? <p className="text-xs text-muted-foreground mt-1">{d.strategic_alignment.reason}</p> : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* in-flight actions — live timers */}
+        <section className="rounded-2xl border bg-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2"><Clock size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">In flight — what the team is doing now</h3></div>
+            {(ex.overdue ?? 0) > 0 && (
+              <span data-testid="cockpit-overdue" className="text-xs text-amber-600 inline-flex items-center gap-1"><AlertTriangle size={12} /> {ex.overdue} overdue</span>
+            )}
+          </div>
+          {(!data.active_actions || data.active_actions.length === 0) ? (
+            <p className="text-xs text-muted-foreground">No commitments in flight. When the team commits to a move, the countdown shows here.</p>
+          ) : (
+            <div className="space-y-2">
+              {data.active_actions.map((a) => (
+                <div key={a.id} data-testid="cockpit-active-action" className="flex items-center justify-between gap-3 rounded-xl border bg-background px-4 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-xs text-muted-foreground truncate">{a.user_name}</div>
+                    <p className="text-sm truncate" title={a.action}>{a.action}</p>
+                  </div>
+                  <span className={`shrink-0 text-xs font-mono-plex inline-flex items-center gap-1 ${a.overdue ? 'text-amber-600' : 'text-[hsl(var(--ring))]'}`}>
+                    <Clock size={12} /> {fmtLeft(a.due_at)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* achieved — results feed */}
+        <section className="rounded-2xl border bg-card p-6">
+          <div className="flex items-center gap-2 mb-4"><Award size={16} strokeWidth={1.75} className="text-emerald-600" /><h3 className="font-medium text-sm">Achieved — the dream coming true</h3></div>
+          {(!data.results || data.results.length === 0) ? (
+            <p className="text-xs text-muted-foreground">No results logged yet. As the team finishes commitments and logs what happened, the wins land here.</p>
+          ) : (
+            <div className="space-y-3">
+              {data.results.map((r) => (
+                <div key={r.id} data-testid="cockpit-result-item" className="rounded-xl border bg-background px-4 py-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <CheckCircle2 size={13} className="text-emerald-600" /> {r.user_name}
+                  </div>
+                  {r.action ? <p className="text-sm mt-1 truncate" title={r.action}>{r.action}</p> : null}
+                  <p className="text-sm text-foreground mt-1">{r.result}</p>
                 </div>
               ))}
             </div>

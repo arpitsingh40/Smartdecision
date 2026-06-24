@@ -1,452 +1,546 @@
 #!/usr/bin/env python3
 """
-Backend test for Phase 3.0+4: Decision Ledger + execution endpoints + Founder Cockpit
-BUDGET: AT MOST 1 call to POST /api/brain/ask total (everything else is FREE)
+Backend test for Connected Decision Session (Execution OS Sprint 1)
+Testing /app/backend/decision_brain.py and /app/backend/organizations.py
+
+CRITICAL: ANTHROPIC IS LIVE - HARD CAP: at most 3 LLM calls total
+LLM endpoints: POST /api/brain/ask, POST /api/brain/decisions/{id}/next-step
+All other endpoints are FREE
 """
-import os
-import sys
-import json
 import requests
-from datetime import datetime
+import uuid
+import json
+import time
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://expectation-checker.preview.emergentagent.com/api"
+BASE_URL = "https://87accb52-51df-41be-9938-10ad721ed87e.preview.emergentagent.com/api"
 
-# Test credentials
+# Credentials
 FOUNDER_EMAIL = "ceo@smartdecigen.com"
 FOUNDER_PASSWORD = "FounderOS@2026"
-MEMBER_EMAIL = "priya@acmesolar.com"
-MEMBER_PASSWORD = "Member1234!"
 
-# Track LLM calls
-llm_calls_made = 0
-MAX_LLM_CALLS = 1
+# Test state
+founder_token = None
+member_token = None
+org_id = None
+session_id = None
+decision_id_1 = None
+decision_id_2 = None
+member_email = None
+member_password = "Member1234!"
 
 def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+    print(f"\n{'='*80}")
+    print(f"  {msg}")
+    print(f"{'='*80}")
 
-def login(email, password):
-    """Login and return token"""
-    r = requests.post(f"{BACKEND_URL}/auth/login", json={"email": email, "password": password})
-    if r.status_code != 200:
-        log(f"❌ Login failed for {email}: {r.status_code} {r.text}")
-        return None
-    data = r.json()
-    log(f"✅ Logged in as {email}")
-    return data.get("token")
-
-def signup(email, password, name):
-    """Signup new user"""
-    r = requests.post(f"{BACKEND_URL}/auth/signup", json={"email": email, "password": password, "name": name})
-    if r.status_code != 200:
-        log(f"❌ Signup failed for {email}: {r.status_code} {r.text}")
-        return None
-    data = r.json()
-    log(f"✅ Signed up as {email}")
-    return data.get("token")
-
-def check_org_state(founder_token):
-    """Check if org 'Acme Solar' exists with North Star set"""
-    headers = {"Authorization": f"Bearer {founder_token}"}
-    r = requests.get(f"{BACKEND_URL}/org", headers=headers)
-    if r.status_code == 404:
-        return None, None
-    if r.status_code != 200:
-        log(f"❌ GET /org failed: {r.status_code}")
-        return None, None
-    org = r.json()
-    log(f"✅ Org exists: {org.get('name')} (strategy_set={org.get('strategy_set')})")
-    return org, org.get("id")
-
-def create_org_and_strategy(founder_token):
-    """Create org 'Acme Solar' and set North Star"""
-    headers = {"Authorization": f"Bearer {founder_token}"}
+def assert_field(response, field, expected=None, should_exist=True, should_not_exist=False):
+    """Assert field presence/absence and optionally value"""
+    data = response.json() if hasattr(response, 'json') else response
     
-    # Create org
-    r = requests.post(f"{BACKEND_URL}/org", headers=headers, json={"name": "Acme Solar"})
-    if r.status_code != 200:
-        log(f"❌ POST /org failed: {r.status_code} {r.text}")
-        return None
-    org = r.json()
-    org_id = org.get("id")
-    log(f"✅ Created org: {org.get('name')} (id={org_id})")
+    if should_not_exist:
+        if field in data:
+            raise AssertionError(f"❌ Field '{field}' should NOT exist but found: {data.get(field)}")
+        print(f"  ✓ Field '{field}' correctly NOT present")
+        return
     
-    # Set strategy
-    strategy = {
-        "north_star": "Reach 100 crore annual revenue",
-        "target": "100 Cr ARR",
-        "deadline": "Mar 2027",
-        "priorities": [
-            "Win commercial & industrial rooftop deals",
-            "Push EPC ticket sizes above 50L",
-            "Protect 18% margins"
-        ],
-        "decision_rules": "Never quote below 18% margin. Prefer C&I over residential."
-    }
-    r = requests.put(f"{BACKEND_URL}/org/strategy", headers=headers, json=strategy)
-    if r.status_code != 200:
-        log(f"❌ PUT /org/strategy failed: {r.status_code} {r.text}")
-        return None
-    log(f"✅ Set North Star strategy")
-    return org_id
+    if should_exist:
+        if field not in data:
+            raise AssertionError(f"❌ Field '{field}' missing from response: {json.dumps(data, indent=2)}")
+        print(f"  ✓ Field '{field}' present: {data[field]}")
+    
+    if expected is not None:
+        actual = data.get(field)
+        if actual != expected:
+            raise AssertionError(f"❌ Field '{field}' expected {expected}, got {actual}")
+        print(f"  ✓ Field '{field}' = {expected}")
+    
+    return data.get(field)
 
-def invite_and_join_member(founder_token, member_email, member_password):
-    """Create invite and have member join"""
-    headers = {"Authorization": f"Bearer {founder_token}"}
+def assert_non_empty_string(response, field):
+    """Assert field is a non-empty string"""
+    data = response.json() if hasattr(response, 'json') else response
+    value = data.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise AssertionError(f"❌ Field '{field}' should be non-empty string, got: {value}")
+    print(f"  ✓ Field '{field}' is non-empty string: '{value[:100]}...'")
+    return value
+
+def assert_string_or_null(response, field):
+    """Assert field is either a string or null"""
+    data = response.json() if hasattr(response, 'json') else response
+    value = data.get(field)
+    if value is not None and not isinstance(value, str):
+        raise AssertionError(f"❌ Field '{field}' should be string or null, got: {type(value).__name__}")
+    print(f"  ✓ Field '{field}' is string or null: {value}")
+    return value
+
+def setup_org_and_member():
+    """Setup: Login as founder, create org, set strategy, create member"""
+    global founder_token, member_token, org_id, member_email
+    
+    log("SETUP: Login as founder")
+    r = requests.post(f"{BASE_URL}/auth/login", json={
+        "email": FOUNDER_EMAIL,
+        "password": FOUNDER_PASSWORD
+    })
+    assert r.status_code == 200, f"Founder login failed: {r.status_code} {r.text}"
+    founder_token = r.json()["token"]
+    print(f"  ✓ Founder logged in, token: {founder_token[:20]}...")
+    
+    # Check if org already exists
+    log("SETUP: Check if org exists")
+    r = requests.get(f"{BASE_URL}/org", headers={"Authorization": f"Bearer {founder_token}"})
+    if r.status_code == 200:
+        org_id = r.json()["id"]
+        print(f"  ✓ Org already exists: {r.json()['name']} (id: {org_id})")
+        
+        # Check if strategy is set
+        r = requests.get(f"{BASE_URL}/org/strategy", headers={"Authorization": f"Bearer {founder_token}"})
+        if r.status_code == 200 and r.json().get("north_star"):
+            print(f"  ✓ Strategy already set: {r.json()['north_star'][:50]}...")
+        else:
+            log("SETUP: Set strategy")
+            r = requests.put(f"{BASE_URL}/org/strategy", headers={"Authorization": f"Bearer {founder_token}"}, json={
+                "north_star": "Reach 100 crore annual revenue in solar EPC",
+                "target": "100 Cr ARR",
+                "deadline": "Mar 2027",
+                "priorities": [
+                    "Win commercial & industrial rooftop deals",
+                    "Push EPC ticket sizes above 50L",
+                    "Protect 18% margins"
+                ],
+                "decision_rules": "Never quote below 18% margin. Prefer C&I over residential. Decline deals that squeeze margins below 18%."
+            })
+            assert r.status_code == 200, f"Set strategy failed: {r.status_code} {r.text}"
+            print(f"  ✓ Strategy set")
+    else:
+        log("SETUP: Create org")
+        r = requests.post(f"{BASE_URL}/org", headers={"Authorization": f"Bearer {founder_token}"}, json={
+            "name": "Acme Solar"
+        })
+        assert r.status_code == 200, f"Create org failed: {r.status_code} {r.text}"
+        org_id = r.json()["id"]
+        print(f"  ✓ Org created: Acme Solar (id: {org_id})")
+        
+        log("SETUP: Set strategy")
+        r = requests.put(f"{BASE_URL}/org/strategy", headers={"Authorization": f"Bearer {founder_token}"}, json={
+            "north_star": "Reach 100 crore annual revenue in solar EPC",
+            "target": "100 Cr ARR",
+            "deadline": "Mar 2027",
+            "priorities": [
+                "Win commercial & industrial rooftop deals",
+                "Push EPC ticket sizes above 50L",
+                "Protect 18% margins"
+            ],
+            "decision_rules": "Never quote below 18% margin. Prefer C&I over residential. Decline deals that squeeze margins below 18%."
+        })
+        assert r.status_code == 200, f"Set strategy failed: {r.status_code} {r.text}"
+        print(f"  ✓ Strategy set")
+    
+    # Create member
+    log("SETUP: Create member and join org")
+    member_email = f"member_{uuid.uuid4().hex[:8]}@acmesolar.com"
     
     # Create invite
-    r = requests.post(f"{BACKEND_URL}/org/invites", headers=headers, json={})
-    if r.status_code != 200:
-        log(f"❌ POST /org/invites failed: {r.status_code} {r.text}")
-        return None
-    invite = r.json()
-    code = invite.get("code")
-    log(f"✅ Created invite code: {code}")
+    r = requests.post(f"{BASE_URL}/org/invites", headers={"Authorization": f"Bearer {founder_token}"}, json={})
+    assert r.status_code == 200, f"Create invite failed: {r.status_code} {r.text}"
+    invite_code = r.json()["code"]
+    print(f"  ✓ Invite created: {invite_code}")
     
-    # Check if member exists, if not signup
-    member_token = login(member_email, member_password)
-    if not member_token:
-        member_token = signup(member_email, member_password, "Priya")
-        if not member_token:
-            return None
+    # Signup member
+    r = requests.post(f"{BASE_URL}/auth/signup", json={
+        "name": "Test Member",
+        "email": member_email,
+        "password": member_password
+    })
+    assert r.status_code == 200, f"Member signup failed: {r.status_code} {r.text}"
+    member_token = r.json()["token"]
+    print(f"  ✓ Member signed up: {member_email}")
     
     # Join org
-    headers_member = {"Authorization": f"Bearer {member_token}"}
-    r = requests.post(f"{BACKEND_URL}/org/join", headers=headers_member, json={"code": code})
-    if r.status_code == 409:
-        log(f"✅ Member already in org")
-        return member_token
-    if r.status_code != 200:
-        log(f"❌ POST /org/join failed: {r.status_code} {r.text}")
-        return None
-    log(f"✅ Member joined org")
-    return member_token
+    r = requests.post(f"{BASE_URL}/org/join", headers={"Authorization": f"Bearer {member_token}"}, json={
+        "code": invite_code
+    })
+    assert r.status_code == 200, f"Join org failed: {r.status_code} {r.text}"
+    print(f"  ✓ Member joined org")
 
-def seed_member_decision(member_token):
-    """Create one decision for member via /api/brain/ask"""
-    global llm_calls_made
-    if llm_calls_made >= MAX_LLM_CALLS:
-        log(f"⚠️  Skipping seed decision (LLM budget exhausted)")
-        return None
+def test_1_llm_call_1():
+    """LLM CALL 1 - POST /api/brain/ask with session_id"""
+    global session_id, decision_id_1
     
-    headers = {"Authorization": f"Bearer {member_token}"}
-    question = "A client wants a big discount on a residential install that would push margin to 8%. What should I do?"
-    r = requests.post(f"{BACKEND_URL}/brain/ask", headers=headers, json={"question": question})
-    if r.status_code != 200:
-        log(f"❌ POST /brain/ask (seed) failed: {r.status_code} {r.text}")
-        return None
-    llm_calls_made += 1
+    log("TEST 1: LLM CALL 1 - POST /api/brain/ask (first turn)")
+    
+    session_id = str(uuid.uuid4())
+    print(f"  Generated session_id: {session_id}")
+    
+    r = requests.post(f"{BASE_URL}/brain/ask", headers={"Authorization": f"Bearer {member_token}"}, json={
+        "question": "A walk-in customer wants a steep discount that drops our margin to about 9%. Should I take it?",
+        "session_id": session_id
+    })
+    
+    assert r.status_code == 200, f"Ask failed: {r.status_code} {r.text}"
+    print(f"  ✓ Status: 200")
+    
     data = r.json()
-    decision_id = data.get("decision_id")
-    log(f"✅ Seeded decision: {decision_id} (LLM calls: {llm_calls_made}/{MAX_LLM_CALLS})")
-    return decision_id
+    
+    # Assert required fields
+    decision_id_1 = assert_field(data, "decision_id", should_exist=True)
+    assert_field(data, "session_id", expected=session_id)
+    
+    # Assert next_action is non-empty string
+    next_action = assert_non_empty_string(data, "next_action")
+    
+    # Assert hook is non-empty string
+    hook = assert_non_empty_string(data, "hook")
+    
+    # Assert situation_read is present (may be empty string)
+    assert_field(data, "situation_read", should_exist=True)
+    
+    # Assert sharpening_question is string or null
+    assert_string_or_null(data, "sharpening_question")
+    
+    # CRITICAL: response MUST NOT contain "strategic_alignment"
+    assert_field(data, "strategic_alignment", should_not_exist=True)
+    
+    print(f"\n  📊 Response summary:")
+    print(f"     - decision_id: {decision_id_1}")
+    print(f"     - session_id: {session_id}")
+    print(f"     - next_action: {next_action[:80]}...")
+    print(f"     - hook: {hook[:80]}...")
+    print(f"     - mode: {data.get('mode')}")
+    print(f"     - cost: {data.get('cost')} credits")
+    
+    return data
 
-def test_1_member_decisions_no_alignment(member_token):
-    """TEST 1 (FREE): Member GET /api/brain/decisions -> 200, NO strategic_alignment in any row"""
-    log("\n=== TEST 1: Member decision history (NO strategic_alignment) ===")
-    headers = {"Authorization": f"Bearer {member_token}"}
-    r = requests.get(f"{BACKEND_URL}/brain/decisions", headers=headers)
+def test_2_llm_call_2():
+    """LLM CALL 2 - POST /api/brain/ask with SAME session_id (multi-turn)"""
+    global decision_id_2
     
-    if r.status_code != 200:
-        log(f"❌ FAIL: GET /brain/decisions returned {r.status_code}")
-        return False
+    log("TEST 2: LLM CALL 2 - POST /api/brain/ask (second turn, SAME session)")
+    
+    print(f"  Using SAME session_id: {session_id}")
+    
+    r = requests.post(f"{BASE_URL}/brain/ask", headers={"Authorization": f"Bearer {member_token}"}, json={
+        "question": "Okay, what if instead I offer them a referral deal to keep the margin healthy?",
+        "session_id": session_id
+    })
+    
+    assert r.status_code == 200, f"Ask failed: {r.status_code} {r.text}"
+    print(f"  ✓ Status: 200")
     
     data = r.json()
-    decisions = data.get("decisions", [])
-    log(f"✅ GET /brain/decisions -> 200, {len(decisions)} decisions")
     
-    # CRITICAL: assert NO row contains strategic_alignment
-    for i, d in enumerate(decisions):
-        if "strategic_alignment" in d:
-            log(f"❌ FAIL: Decision {i} contains 'strategic_alignment' key (MUST be stripped from member data)")
-            return False
+    # Assert required fields
+    decision_id_2 = assert_field(data, "decision_id", should_exist=True)
+    assert_field(data, "session_id", expected=session_id)
     
-    log(f"✅ PASS: NO decision contains 'strategic_alignment' key (founder-only field correctly stripped)")
-    return True
+    # Assert next_action is non-empty string
+    next_action = assert_non_empty_string(data, "next_action")
+    
+    # Assert hook is non-empty string
+    hook = assert_non_empty_string(data, "hook")
+    
+    # CRITICAL: response MUST NOT contain "strategic_alignment"
+    assert_field(data, "strategic_alignment", should_not_exist=True)
+    
+    print(f"\n  📊 Response summary:")
+    print(f"     - decision_id: {decision_id_2}")
+    print(f"     - session_id: {session_id}")
+    print(f"     - next_action: {next_action[:80]}...")
+    print(f"     - hook: {hook[:80]}...")
+    print(f"     - mode: {data.get('mode')}")
+    print(f"     - cost: {data.get('cost')} credits")
+    
+    # Verify both decisions share same session_id
+    log("TEST 2: Verify both decisions share same session_id")
+    r = requests.get(f"{BASE_URL}/brain/decisions", headers={"Authorization": f"Bearer {member_token}"})
+    assert r.status_code == 200, f"Get decisions failed: {r.status_code} {r.text}"
+    
+    decisions = r.json()["decisions"]
+    d1 = next((d for d in decisions if d["id"] == decision_id_1), None)
+    d2 = next((d for d in decisions if d["id"] == decision_id_2), None)
+    
+    assert d1 is not None, f"Decision 1 not found in history"
+    assert d2 is not None, f"Decision 2 not found in history"
+    
+    assert d1["session_id"] == session_id, f"Decision 1 session_id mismatch"
+    assert d2["session_id"] == session_id, f"Decision 2 session_id mismatch"
+    
+    print(f"  ✓ Both decisions share session_id: {session_id}")
+    
+    return data
 
-def test_2_execution_endpoints(member_token):
-    """TEST 2 (FREE): Commit/status endpoints with validation"""
-    log("\n=== TEST 2: Execution endpoints (commit/status) ===")
-    headers = {"Authorization": f"Bearer {member_token}"}
+def test_3_commit():
+    """FREE - POST /api/brain/decisions/{id}/commit"""
+    log("TEST 3: FREE - POST /api/brain/decisions/{id}/commit")
     
-    # Get member's decisions
-    r = requests.get(f"{BACKEND_URL}/brain/decisions", headers=headers)
-    if r.status_code != 200 or not r.json().get("decisions"):
-        log(f"❌ FAIL: No decisions found for member")
-        return False
+    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_1}/commit", 
+                     headers={"Authorization": f"Bearer {member_token}"}, 
+                     json={
+                         "action": "Call the customer and offer the referral deal",
+                         "due_in_hours": 24
+                     })
     
-    decision_id = r.json()["decisions"][0]["id"]
-    log(f"Using decision_id: {decision_id}")
+    assert r.status_code == 200, f"Commit failed: {r.status_code} {r.text}"
+    print(f"  ✓ Status: 200")
     
-    # 2a. POST /decisions/{id}/commit -> 200
-    action = "Send minimum-margin pricing and pivot to a referral."
-    r = requests.post(f"{BACKEND_URL}/brain/decisions/{decision_id}/commit", 
-                     headers=headers, json={"action": action})
-    if r.status_code != 200:
-        log(f"❌ FAIL: POST /decisions/{decision_id}/commit returned {r.status_code}")
-        return False
     data = r.json()
-    if data.get("committed_action") != action or data.get("status") != "open":
-        log(f"❌ FAIL: commit response incorrect: {data}")
-        return False
-    log(f"✅ POST /decisions/{decision_id}/commit -> 200 (committed_action set, status=open)")
+    assert_field(data, "status", expected="open")
+    assert_field(data, "due_at", should_exist=True)
     
-    # 2b. POST /decisions/{id}/status {"status":"done"} -> 200
-    r = requests.post(f"{BACKEND_URL}/brain/decisions/{decision_id}/status",
-                     headers=headers, json={"status": "done"})
-    if r.status_code != 200:
-        log(f"❌ FAIL: POST /decisions/{decision_id}/status done returned {r.status_code}")
-        return False
+    print(f"  ✓ Committed action: {data['committed_action']}")
+    print(f"  ✓ Status: {data['status']}")
+    print(f"  ✓ Due at: {data['due_at']}")
+    
+    # Test GET /api/brain/active
+    log("TEST 3: FREE - GET /api/brain/active")
+    r = requests.get(f"{BASE_URL}/brain/active", headers={"Authorization": f"Bearer {member_token}"})
+    assert r.status_code == 200, f"Get active failed: {r.status_code} {r.text}"
+    
     data = r.json()
-    if data.get("status") != "done":
-        log(f"❌ FAIL: status response incorrect: {data}")
-        return False
-    log(f"✅ POST /decisions/{decision_id}/status done -> 200")
+    assert_field(data, "open_commitments", should_exist=True)
+    assert data["open_commitments"] >= 1, f"Expected open_commitments >= 1, got {data['open_commitments']}"
+    print(f"  ✓ open_commitments: {data['open_commitments']}")
     
-    # 2c. Negative: {"status":"bogus"} -> 422
-    r = requests.post(f"{BACKEND_URL}/brain/decisions/{decision_id}/status",
-                     headers=headers, json={"status": "bogus"})
-    if r.status_code != 422:
-        log(f"❌ FAIL: POST /decisions/{decision_id}/status bogus returned {r.status_code} (expected 422)")
-        return False
-    log(f"✅ POST /decisions/{decision_id}/status bogus -> 422")
+    assert_field(data, "next", should_exist=True)
+    next_item = data["next"]
+    assert next_item["decision_id"] == decision_id_1, f"Expected next.decision_id == {decision_id_1}, got {next_item['decision_id']}"
+    assert_field(next_item, "due_at", should_exist=True)
+    assert_field(next_item, "overdue", expected=False)
     
-    # 2d. Negative: founder tries to commit member's decision -> 404
-    founder_token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
-    headers_founder = {"Authorization": f"Bearer {founder_token}"}
-    r = requests.post(f"{BACKEND_URL}/brain/decisions/{decision_id}/commit",
-                     headers=headers_founder, json={"action": "test"})
-    if r.status_code != 404:
-        log(f"❌ FAIL: Founder commit on member decision returned {r.status_code} (expected 404)")
-        return False
-    log(f"✅ Founder POST /decisions/{decision_id}/commit -> 404 (not their decision)")
-    
-    log(f"✅ PASS: All execution endpoint tests passed")
-    return True
+    print(f"  ✓ next.decision_id: {next_item['decision_id']}")
+    print(f"  ✓ next.due_at: {next_item['due_at']}")
+    print(f"  ✓ next.overdue: {next_item['overdue']}")
 
-def test_3_founder_cockpit(founder_token, member_token):
-    """TEST 3 (FREE): Owner GET /api/org/cockpit -> 200 with all keys, member -> 403"""
-    log("\n=== TEST 3: Founder Cockpit ===")
+def test_4_status():
+    """FREE - POST /api/brain/decisions/{id}/status"""
+    log("TEST 4: FREE - POST /api/brain/decisions/{id}/status")
     
-    # 3a. Owner GET /cockpit -> 200
-    headers = {"Authorization": f"Bearer {founder_token}"}
-    r = requests.get(f"{BACKEND_URL}/org/cockpit", headers=headers)
-    if r.status_code != 200:
-        log(f"❌ FAIL: GET /org/cockpit (owner) returned {r.status_code}")
-        return False
+    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_1}/status", 
+                     headers={"Authorization": f"Bearer {member_token}"}, 
+                     json={
+                         "status": "done",
+                         "result": "Customer accepted the referral deal, margin protected at 18%"
+                     })
+    
+    assert r.status_code == 200, f"Status update failed: {r.status_code} {r.text}"
+    print(f"  ✓ Status: 200")
     
     data = r.json()
-    log(f"✅ GET /org/cockpit (owner) -> 200")
+    assert_field(data, "status", expected="done")
+    assert_field(data, "result", expected="Customer accepted the referral deal, margin protected at 18%")
+    
+    print(f"  ✓ Status: {data['status']}")
+    print(f"  ✓ Result: {data['result']}")
+    
+    # Test GET /api/brain/active again
+    log("TEST 4: FREE - GET /api/brain/active (after done)")
+    r = requests.get(f"{BASE_URL}/brain/active", headers={"Authorization": f"Bearer {member_token}"})
+    assert r.status_code == 200, f"Get active failed: {r.status_code} {r.text}"
+    
+    data = r.json()
+    assert_field(data, "done_total", should_exist=True)
+    assert data["done_total"] >= 1, f"Expected done_total >= 1, got {data['done_total']}"
+    print(f"  ✓ done_total: {data['done_total']}")
+    
+    # The decision should no longer be the "next" one
+    if data.get("next"):
+        assert data["next"]["decision_id"] != decision_id_1, f"Decision {decision_id_1} should not be next after marking done"
+        print(f"  ✓ Decision {decision_id_1} no longer the next (correctly decremented)")
+    else:
+        print(f"  ✓ No next commitment (open_commitments decremented to 0)")
+
+def test_5_llm_call_3():
+    """LLM CALL 3 - POST /api/brain/decisions/{id}/next-step"""
+    log("TEST 5: LLM CALL 3 - POST /api/brain/decisions/{id}/next-step")
+    
+    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_1}/next-step", 
+                     headers={"Authorization": f"Bearer {member_token}"})
+    
+    assert r.status_code == 200, f"Next-step failed: {r.status_code} {r.text}"
+    print(f"  ✓ Status: 200")
+    
+    data = r.json()
+    
+    # Assert returns a NEW decision with DIFFERENT decision_id
+    new_decision_id = assert_field(data, "decision_id", should_exist=True)
+    assert new_decision_id != decision_id_1, f"Expected NEW decision_id, got same: {new_decision_id}"
+    print(f"  ✓ NEW decision_id: {new_decision_id} (different from {decision_id_1})")
+    
+    # Assert SAME session_id
+    assert_field(data, "session_id", expected=session_id)
+    print(f"  ✓ SAME session_id: {session_id}")
+    
+    # Assert non-empty next_action and hook
+    next_action = assert_non_empty_string(data, "next_action")
+    hook = assert_non_empty_string(data, "hook")
+    
+    # CRITICAL: NO "strategic_alignment" key
+    assert_field(data, "strategic_alignment", should_not_exist=True)
+    
+    print(f"\n  📊 Response summary:")
+    print(f"     - decision_id: {new_decision_id}")
+    print(f"     - session_id: {session_id}")
+    print(f"     - next_action: {next_action[:80]}...")
+    print(f"     - hook: {hook[:80]}...")
+    print(f"     - mode: {data.get('mode')}")
+    print(f"     - cost: {data.get('cost')} credits")
+
+def test_6_cockpit():
+    """FREE - GET /api/org/cockpit (owner-only)"""
+    log("TEST 6: FREE - GET /api/org/cockpit (owner)")
+    
+    r = requests.get(f"{BASE_URL}/org/cockpit", headers={"Authorization": f"Bearer {founder_token}"})
+    assert r.status_code == 200, f"Cockpit failed: {r.status_code} {r.text}"
+    print(f"  ✓ Status: 200")
+    
+    data = r.json()
     
     # Assert required keys
-    required_keys = ["north_star", "totals", "alignment", "execution", "per_member", "drift"]
-    for key in required_keys:
-        if key not in data:
-            log(f"❌ FAIL: cockpit missing key '{key}'")
-            return False
-    log(f"✅ Cockpit has all required keys: {required_keys}")
+    assert_field(data, "north_star", should_exist=True)
+    assert_field(data, "totals", should_exist=True)
+    assert_field(data, "alignment", should_exist=True)
+    assert_field(data, "execution", should_exist=True)
+    assert_field(data, "per_member", should_exist=True)
+    assert_field(data, "drift", should_exist=True)
+    assert_field(data, "active_actions", should_exist=True)
+    assert_field(data, "results", should_exist=True)
     
-    # Assert north_star structure
-    ns = data["north_star"]
-    if not ns.get("strategy_set") or not ns.get("north_star"):
-        log(f"❌ FAIL: north_star structure incorrect: {ns}")
-        return False
-    log(f"✅ north_star: strategy_set={ns.get('strategy_set')}, north_star='{ns.get('north_star')[:50]}...'")
+    # Check active_actions structure
+    active_actions = data["active_actions"]
+    assert isinstance(active_actions, list), f"active_actions should be array"
+    print(f"  ✓ active_actions is array with {len(active_actions)} items")
     
-    # Assert totals
-    totals = data["totals"]
-    if not isinstance(totals.get("decisions"), int) or not isinstance(totals.get("members"), int):
-        log(f"❌ FAIL: totals structure incorrect: {totals}")
-        return False
-    log(f"✅ totals: decisions={totals.get('decisions')}, last_7d={totals.get('last_7d')}, members={totals.get('members')}")
+    # Check results structure
+    results = data["results"]
+    assert isinstance(results, list), f"results should be array"
+    print(f"  ✓ results is array with {len(results)} items")
     
-    # Assert alignment (avg is a number, scored count)
-    alignment = data["alignment"]
-    if not isinstance(alignment.get("scored"), int):
-        log(f"❌ FAIL: alignment.scored not an int: {alignment}")
-        return False
-    if alignment.get("avg") is not None and not isinstance(alignment.get("avg"), int):
-        log(f"❌ FAIL: alignment.avg not a number: {alignment}")
-        return False
-    log(f"✅ alignment: avg={alignment.get('avg')}, high={alignment.get('high')}, medium={alignment.get('medium')}, low={alignment.get('low')}, scored={alignment.get('scored')}")
-    
-    # Assert execution
+    # Check execution.overdue
     execution = data["execution"]
-    if not isinstance(execution.get("committed"), int) or not isinstance(execution.get("done"), int):
-        log(f"❌ FAIL: execution structure incorrect: {execution}")
-        return False
-    log(f"✅ execution: committed={execution.get('committed')}, open={execution.get('open')}, done={execution.get('done')}, dropped={execution.get('dropped')}, follow_through_pct={execution.get('follow_through_pct')}")
+    assert_field(execution, "overdue", should_exist=True)
+    assert isinstance(execution["overdue"], int), f"execution.overdue should be number"
+    print(f"  ✓ execution.overdue: {execution['overdue']}")
     
-    # Assert per_member is a list
-    per_member = data["per_member"]
-    if not isinstance(per_member, list):
-        log(f"❌ FAIL: per_member not a list: {per_member}")
-        return False
-    log(f"✅ per_member: {len(per_member)} members")
-    for m in per_member:
-        log(f"   - {m.get('email')}: decisions={m.get('decisions')}, avg_alignment={m.get('avg_alignment')}, done={m.get('done')}")
+    # Check that results contain the done decision with result text
+    if results:
+        result_item = results[0]
+        assert_field(result_item, "result", should_exist=True)
+        print(f"  ✓ results[0].result: {result_item['result'][:50]}...")
     
-    # Assert drift is a list
-    drift = data["drift"]
-    if not isinstance(drift, list):
-        log(f"❌ FAIL: drift not a list: {drift}")
-        return False
-    log(f"✅ drift: {len(drift)} low-alignment decisions")
+    # Test member GET /api/org/cockpit -> 403
+    log("TEST 6: FREE - GET /api/org/cockpit (member -> 403)")
+    r = requests.get(f"{BASE_URL}/org/cockpit", headers={"Authorization": f"Bearer {member_token}"})
+    assert r.status_code == 403, f"Expected 403 for member, got {r.status_code}"
+    print(f"  ✓ Member correctly blocked with 403")
     
-    # 3b. Member GET /cockpit -> 403
-    headers_member = {"Authorization": f"Bearer {member_token}"}
-    r = requests.get(f"{BACKEND_URL}/org/cockpit", headers=headers_member)
-    if r.status_code != 403:
-        log(f"❌ FAIL: GET /org/cockpit (member) returned {r.status_code} (expected 403)")
-        return False
-    log(f"✅ GET /org/cockpit (member) -> 403")
+    # Test member-facing payloads do NOT contain strategic_alignment
+    log("TEST 6: FREE - Verify NO strategic_alignment in member-facing payloads")
     
-    log(f"✅ PASS: Founder Cockpit tests passed")
-    return data  # Return for test 4
+    # Check GET /api/brain/decisions
+    r = requests.get(f"{BASE_URL}/brain/decisions", headers={"Authorization": f"Bearer {member_token}"})
+    assert r.status_code == 200, f"Get decisions failed: {r.status_code} {r.text}"
+    decisions = r.json()["decisions"]
+    for d in decisions:
+        if "strategic_alignment" in d:
+            raise AssertionError(f"❌ strategic_alignment found in decision {d['id']}")
+    print(f"  ✓ GET /api/brain/decisions: NO strategic_alignment in {len(decisions)} decisions")
+    
+    # Check GET /api/brain/active
+    r = requests.get(f"{BASE_URL}/brain/active", headers={"Authorization": f"Bearer {member_token}"})
+    assert r.status_code == 200, f"Get active failed: {r.status_code} {r.text}"
+    active_data = r.json()
+    if "strategic_alignment" in active_data:
+        raise AssertionError(f"❌ strategic_alignment found in /active response")
+    print(f"  ✓ GET /api/brain/active: NO strategic_alignment")
 
-def test_4_llm_alignment_capture(member_token, founder_token, cockpit_before):
-    """TEST 4 (LLM, 1 call): Member ask -> NO strategic_alignment in response, but cockpit scored increases"""
-    global llm_calls_made
-    log("\n=== TEST 4: LLM alignment capture (1 call) ===")
+def test_7_validation():
+    """FREE - Validation tests"""
+    log("TEST 7: FREE - Validation tests")
     
-    if llm_calls_made >= MAX_LLM_CALLS:
-        log(f"❌ FAIL: LLM budget exhausted (already made {llm_calls_made} calls)")
-        return False
+    # Test commit with due_in_hours=0 -> 422
+    print("\n  Test: commit with due_in_hours=0 -> 422")
+    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_2}/commit", 
+                     headers={"Authorization": f"Bearer {member_token}"}, 
+                     json={
+                         "action": "Test action",
+                         "due_in_hours": 0
+                     })
+    assert r.status_code == 422, f"Expected 422 for due_in_hours=0, got {r.status_code}"
+    print(f"  ✓ due_in_hours=0 correctly rejected with 422")
     
-    # Get alignment.scored before
-    scored_before = cockpit_before["alignment"]["scored"]
-    log(f"Alignment scored before: {scored_before}")
+    # Test commit with due_in_hours=99999 -> 422
+    print("\n  Test: commit with due_in_hours=99999 -> 422")
+    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_2}/commit", 
+                     headers={"Authorization": f"Bearer {member_token}"}, 
+                     json={
+                         "action": "Test action",
+                         "due_in_hours": 99999
+                     })
+    assert r.status_code == 422, f"Expected 422 for due_in_hours=99999, got {r.status_code}"
+    print(f"  ✓ due_in_hours=99999 correctly rejected with 422")
     
-    # Member POST /brain/ask
-    headers = {"Authorization": f"Bearer {member_token}"}
-    question = "A client wants a big discount on a residential install that would push margin to 8%. What should I do?"
-    r = requests.post(f"{BACKEND_URL}/brain/ask", headers=headers, json={"question": question})
-    if r.status_code != 200:
-        log(f"❌ FAIL: POST /brain/ask returned {r.status_code} {r.text}")
-        return False
-    llm_calls_made += 1
+    # Test status with status="bogus" -> 422
+    print("\n  Test: status with status='bogus' -> 422")
+    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_2}/status", 
+                     headers={"Authorization": f"Bearer {member_token}"}, 
+                     json={
+                         "status": "bogus"
+                     })
+    assert r.status_code == 422, f"Expected 422 for status='bogus', got {r.status_code}"
+    print(f"  ✓ status='bogus' correctly rejected with 422")
     
-    data = r.json()
-    log(f"✅ POST /brain/ask -> 200 (LLM calls: {llm_calls_made}/{MAX_LLM_CALLS})")
+    # Test next-step on unknown decision -> 404
+    print("\n  Test: next-step on unknown decision -> 404")
+    fake_id = str(uuid.uuid4())
+    r = requests.post(f"{BASE_URL}/brain/decisions/{fake_id}/next-step", 
+                     headers={"Authorization": f"Bearer {member_token}"})
+    assert r.status_code == 404, f"Expected 404 for unknown decision, got {r.status_code}"
+    print(f"  ✓ Unknown decision correctly rejected with 404")
     
-    # CRITICAL: assert response has decision_id and NO strategic_alignment
-    if "decision_id" not in data:
-        log(f"❌ FAIL: response missing 'decision_id': {data}")
-        return False
-    log(f"✅ Response has decision_id: {data.get('decision_id')}")
-    
-    if "strategic_alignment" in data:
-        log(f"❌ FAIL: response contains 'strategic_alignment' key (MUST be stripped from member response)")
-        return False
-    log(f"✅ Response does NOT contain 'strategic_alignment' key")
-    
-    # Get cockpit again and check alignment.scored increased
-    headers_founder = {"Authorization": f"Bearer {founder_token}"}
-    r = requests.get(f"{BACKEND_URL}/org/cockpit", headers=headers_founder)
-    if r.status_code != 200:
-        log(f"❌ FAIL: GET /org/cockpit (after ask) returned {r.status_code}")
-        return False
-    
-    cockpit_after = r.json()
-    scored_after = cockpit_after["alignment"]["scored"]
-    log(f"Alignment scored after: {scored_after}")
-    
-    if scored_after != scored_before + 1:
-        log(f"❌ FAIL: alignment.scored did not increase by 1 (before={scored_before}, after={scored_after})")
-        return False
-    log(f"✅ alignment.scored increased by 1 (alignment WAS captured server-side even though member never saw it)")
-    
-    log(f"✅ PASS: LLM alignment capture test passed")
-    return True
+    # Test next-step on someone else's decision -> 404
+    print("\n  Test: next-step on someone else's decision -> 404")
+    # Use founder token to try to access member's decision
+    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_1}/next-step", 
+                     headers={"Authorization": f"Bearer {founder_token}"})
+    assert r.status_code == 404, f"Expected 404 for other user's decision, got {r.status_code}"
+    print(f"  ✓ Other user's decision correctly rejected with 404")
 
 def main():
-    log("=== Phase 3.0+4 Backend Test: Decision Ledger + Execution + Founder Cockpit ===")
-    log(f"Backend URL: {BACKEND_URL}")
-    log(f"LLM Budget: {MAX_LLM_CALLS} call(s)")
-    
-    # Login founder
-    founder_token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
-    if not founder_token:
-        log("❌ CRITICAL: Cannot login as founder")
-        sys.exit(1)
-    
-    # Check org state
-    org, org_id = check_org_state(founder_token)
-    
-    # If org doesn't exist or no strategy, recreate
-    if not org or not org.get("strategy_set"):
-        log("\n=== Setting up org state ===")
-        org_id = create_org_and_strategy(founder_token)
-        if not org_id:
-            log("❌ CRITICAL: Cannot create org")
-            sys.exit(1)
+    try:
+        setup_org_and_member()
         
-        # Invite and join member
-        member_token = invite_and_join_member(founder_token, MEMBER_EMAIL, MEMBER_PASSWORD)
-        if not member_token:
-            log("❌ CRITICAL: Cannot setup member")
-            sys.exit(1)
+        # LLM CALLS (max 3)
+        test_1_llm_call_1()  # LLM CALL 1
+        test_2_llm_call_2()  # LLM CALL 2
         
-        # Seed one decision
-        decision_id = seed_member_decision(member_token)
-        if not decision_id:
-            log("❌ CRITICAL: Cannot seed decision")
-            sys.exit(1)
-    else:
-        log(f"✅ Org state exists, reusing")
-        member_token = login(MEMBER_EMAIL, MEMBER_PASSWORD)
-        if not member_token:
-            log("❌ CRITICAL: Cannot login as member")
-            sys.exit(1)
-    
-    # Run tests
-    results = []
-    
-    # TEST 1 (FREE)
-    results.append(("TEST 1: Member decisions NO alignment", test_1_member_decisions_no_alignment(member_token)))
-    
-    # TEST 2 (FREE)
-    results.append(("TEST 2: Execution endpoints", test_2_execution_endpoints(member_token)))
-    
-    # TEST 3 (FREE)
-    cockpit_before = test_3_founder_cockpit(founder_token, member_token)
-    results.append(("TEST 3: Founder Cockpit", cockpit_before is not False))
-    
-    # TEST 4 (LLM, 1 call) - only if we haven't used LLM budget yet
-    if llm_calls_made < MAX_LLM_CALLS and cockpit_before:
-        results.append(("TEST 4: LLM alignment capture", test_4_llm_alignment_capture(member_token, founder_token, cockpit_before)))
-    else:
-        log("\n⚠️  Skipping TEST 4 (LLM budget exhausted during setup)")
-        results.append(("TEST 4: LLM alignment capture", None))
-    
-    # Summary
-    log("\n" + "="*80)
-    log("=== TEST SUMMARY ===")
-    log(f"LLM calls made: {llm_calls_made}/{MAX_LLM_CALLS}")
-    log("")
-    
-    passed = 0
-    failed = 0
-    skipped = 0
-    for name, result in results:
-        if result is True:
-            log(f"✅ PASS: {name}")
-            passed += 1
-        elif result is False:
-            log(f"❌ FAIL: {name}")
-            failed += 1
-        else:
-            log(f"⚠️  SKIP: {name}")
-            skipped += 1
-    
-    log("")
-    log(f"Total: {passed} passed, {failed} failed, {skipped} skipped")
-    
-    if failed > 0:
-        sys.exit(1)
-    else:
-        log("\n🎉 ALL TESTS PASSED")
-        sys.exit(0)
+        # FREE TESTS
+        test_3_commit()
+        test_4_status()
+        
+        # LLM CALL 3
+        test_5_llm_call_3()  # LLM CALL 3
+        
+        # FREE TESTS
+        test_6_cockpit()
+        test_7_validation()
+        
+        log("✅ ALL TESTS PASSED")
+        print("\n🎉 Connected Decision Session backend is working correctly!")
+        print(f"\n📊 LLM calls used: 3 (within budget)")
+        print(f"   - Call 1: POST /api/brain/ask (first turn)")
+        print(f"   - Call 2: POST /api/brain/ask (second turn, multi-turn memory)")
+        print(f"   - Call 3: POST /api/brain/decisions/{{id}}/next-step")
+        
+    except AssertionError as e:
+        log(f"❌ TEST FAILED")
+        print(f"\n{e}")
+        raise
+    except Exception as e:
+        log(f"❌ UNEXPECTED ERROR")
+        print(f"\n{e}")
+        raise
 
 if __name__ == "__main__":
     main()

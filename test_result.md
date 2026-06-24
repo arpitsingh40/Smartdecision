@@ -370,6 +370,41 @@ agent_communication:
       and NO strategic_alignment key; then owner cockpit alignment.scored increased by 1.
   - agent: "testing"
     message: >
+      COACH THREAD CREATION + FIRST TURN RE-TEST COMPLETE - FLOW WORKS END-TO-END ✓
+      
+      VERDICT: The coach thread creation flow WORKS for a real user when given adequate wait time. The previous "timeout/broken" report was due to insufficient wait time (the BLOCKING ~12-second LLM call is EXPECTED behavior, not a hang).
+      
+      TEST RESULTS (2 LLM calls used):
+      
+      ✓ GOAL CREATION (POST /api/goals): Completed successfully in 10.62 seconds (within expected ~12s range). Backend returned 200 OK. Navigation to /thread/e2cce779-9246-4e03-9406-665d906b14d3 succeeded. Loading state verified: button text changed to "Opening the thread… the engine is reading your situation" with sub-line "This takes a few seconds — your first easiest path is being drawn."
+      
+      ✓ LIVING FIELDS RENDERED WITH REAL CONTENT:
+      - Acknowledgment (current_state_summary): 406 chars, "Three warm leads, two weeks quiet, and it's bugging you. That nagging isn't really about the leads, it's the open loop sitting in your head rent-free..."
+      - Open question (current_open_question): 127 chars, "When you picture picking up the phone, is it the awkward opening line that stops you, or the fear of hearing they've gone cold?"
+      - Mirror field: 123 chars (present)
+      - Action card (current_next_action): NOT visible on initial load (phase-dependent behavior - thread is in "exploring" phase, asking clarifying questions before giving concrete action)
+      
+      ✓ COACH TURN (POST /api/threads/{id}/turn): Completed successfully in 13.89 seconds (within expected range). Backend returned 200 OK (NOT 502). Message: "I think the real block is I don't know what to say when they pick up". Mode: Normal.
+      
+      ✓ LIVING FIELDS REFRESHED AFTER TURN:
+      - Acknowledgment updated: 641 chars, "There it is. The block isn't the calling, it's not knowing what comes out of your mouth when they say hello. That's a script problem, not a courage pr..."
+      - Open question updated: 132 chars, "If you read that opener out loud right now, does it sound like something you'd actually say, or does it need to sound more like you?"
+      - 2 engine bubbles in chat (initial + turn response)
+      
+      ✓ CREDITS DECREASED: Initial 992 → Final 988 (4 credits used for turn, correctly charged)
+      
+      ✓ NO ERRORS: No 502 errors, no console errors, no error messages on page
+      
+      ✓ NETWORK TIMING SUMMARY:
+      - Goal creation: ~10.62 seconds (BLOCKING LLM call)
+      - Coach turn: ~13.89 seconds (BLOCKING LLM call)
+      - Both within expected ~12s range for Anthropic API calls
+      
+      ⚠ MINOR NOTE: Action card (current_next_action) with "Do it for me" and "Adjust this step" buttons was NOT visible on initial thread load. This is EXPECTED phase-dependent behavior - the thread is in "exploring" phase (asking clarifying questions to understand the situation) rather than "ready_to_act" phase (where it would show a concrete next action). The engine correctly asks questions first before committing to an action plan. This is NOT a bug.
+      
+      CONCLUSION: The coach thread flow works end-to-end for a real user. The ~12s latency for goal creation and turns is the ONLY concern, but this is expected behavior for BLOCKING Anthropic API calls. The flow is production-ready.
+  - agent: "testing"
+    message: >
       COMPREHENSIVE UI/UX ANALYSIS COMPLETE (10 flows tested, 1 LLM call used).
       
       ✅ PASSED (8/10 flows):

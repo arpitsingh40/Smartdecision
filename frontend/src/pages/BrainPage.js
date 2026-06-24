@@ -71,6 +71,20 @@ export default function BrainPage() {
     api.get('/brain/settings').then((r) => setInstructions(r.data.instructions || '')).catch(() => {});
   }, [loadDocs]);
 
+  // hand-off from My Decisions: seed the workspace with a freshly generated "next step"
+  useEffect(() => {
+    const seed = sessionStorage.getItem('sdg_workspace_seed');
+    if (!seed) return;
+    try {
+      const d = JSON.parse(seed);
+      setResult(d);
+      if (d.session_id) setSessionId(d.session_id);
+      setCommitted(null); setDecisionStatus(null);
+      setActionInput(d.next_action || '');
+    } catch (_e) { /* noop */ }
+    sessionStorage.removeItem('sdg_workspace_seed');
+  }, []);
+
   // poll only while a document is still indexing
   useEffect(() => {
     const hasProcessing = docs.some((d) => d.status === 'processing');
@@ -204,18 +218,18 @@ export default function BrainPage() {
 
   return (
     <div className="min-h-screen">
-      <TopBar title="Decision Brain" backTo="/" />
+      <TopBar />
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8 lg:gap-10">
 
           {/* ---------- main column: ask + answer ---------- */}
           <section className="min-w-0">
             <h2 className="font-display text-3xl sm:text-4xl tracking-[-0.02em] leading-[1.05]">
-              Ask your company&apos;s brain.
+              Your decision workspace.
             </h2>
             <p className="mt-3 text-sm md:text-base text-muted-foreground leading-6 max-w-xl">
-              Answers from your documents. Decisions in your favour. Plans that move the objective forward.
-              Just type. It works out the rest.
+              Bring any call, big or small. You get a grounded answer, the one move to make next,
+              and a clock to keep you honest. Just type. It works out the rest.
             </p>
 
             {/* ask box */}

@@ -370,6 +370,42 @@ agent_communication:
       and NO strategic_alignment key; then owner cockpit alignment.scored increased by 1.
   - agent: "testing"
     message: >
+      COMPREHENSIVE UI/UX ANALYSIS COMPLETE (10 flows tested, 1 LLM call used).
+      
+      ✅ PASSED (8/10 flows):
+      1. AUTH/LANDING (/auth): Hero "You already know what to do", tagline "SmartDeciGen helps you actually do it", signup card with Start free/Sign in toggle, value props (One goal, One action, Real progress), "What happens next" section all render correctly. Fresh signup via form (test259850@acmesolar.com) successful, lands on / (Decision Brain) as expected. Clean B2B aesthetic, action-oriented copy, professional design.
+      
+      2. DECISION BRAIN (/): Premium ask box renders with question input + Ask button. Knowledge sidebar present. Sent 1 LLM ask "Should I take a thin-margin deal to win my first customer?" -> Answer card renders with ALL required elements: mode badge (Decision), situation read (clarity: "You need validation that someone will pay for what you built..."), next action hero ("Add one sentence to the proposal that names this as a founding customer rate..."), hook present, commit/deadline control present. Multi-turn "Continue" vs "New topic" buttons working. LLM BUDGET: 1/2 brain asks used.
+      
+      3. DECISIONS HISTORY (/decisions): Page renders correctly with 6 decision items displayed. History list functional.
+      
+      4. TEAM/ORG (/team): No-org state renders with Create workspace + Join-by-code cards. Created workspace "Acme Solar" -> owner view renders with org name, member count, invite link generator (copy + revoke buttons). North Star panel (Private-to-you) found with all fields: dream/target/deadline/priorities/decision_rules. SET North Star ("Reach 100 crore annual revenue...100 Cr ARR...Mar 2027...") -> SAVED -> RELOADED -> North Star persisted correctly. Smooth UX, clean no-org state.
+      
+      5. COCKPIT (/cockpit): Renders with North Star header, stat cards (Decisions: 0 in last 7 days, Avg alignment: 0 scored, Follow-through: 0 done - 0 dropped, Team: 1 members). Graceful empty state for new org with no data yet. "How on-strategy the team is deciding", "Drift radar", "In flight", "Achieved" sections all present.
+      
+      6. BILLING (/billing): 3-pack grid renders correctly (Starter ₹49/10 credits, Pro ₹399/50 credits, Elite ₹999/500 credits with "BEST VALUE" badge). Purchase history section present (empty state for new user). DID NOT CLICK BUY (Zoho Payments is LIVE).
+      
+      7. ADMIN / FOUNDER OS (/admin): All tabs render (Overview, Users, Traffic, Usage, Feedback) with tables/data. Users tab shows 7 user rows. User drilldown accessible. Member (test259850@acmesolar.com) correctly DENIED access to /admin (403 or redirect).
+      
+      8. POLISH: NO console errors detected. Mobile responsive (390x844) on /auth and / (Decision Brain). Visual consistency maintained across pages. Loading states graceful.
+      
+      ❌ FAILED (2/10 flows):
+      1. COACH THREAD (/new -> /thread/:id): /new page renders correctly with goal input. Created goal "I keep avoiding my follow-ups" but navigation to /thread/:id TIMED OUT after clicking submit. The coach engine may not be creating threads or there's a routing issue. NEEDS INVESTIGATION: Check if POST /api/goals is working and returning thread_id, verify /thread/:id route is accessible.
+      
+      2. FEEDBACK (from TopBar): Feedback link NOT visible in TopBar directly. Found in ACCOUNT MENU (user avatar dropdown). This is a UX issue - feedback should be more discoverable. RECOMMENDATION: Add Feedback link directly to TopBar or make account menu more prominent.
+      
+      OVERALL UI READINESS VERDICT:
+      ✅ POLISHED: Landing page (professional B2B aesthetic), Decision Brain (premium ask box + answer cards with all required fields), Team/Org (smooth workspace creation + North Star), Cockpit (data visualization), Admin (comprehensive tabs), Billing (clear pricing), Mobile responsive.
+      
+      ⚠️ MINOR ISSUES: Feedback link hidden in account menu (discoverability issue), Coach thread navigation timeout (needs backend investigation).
+      
+      ❌ BROKEN: Coach thread creation flow not completing (timeout on navigation to /thread/:id).
+      
+      🚀 READY FOR LAUNCH: Core Decision Brain flow (the primary B2B surface) is polished and working. Team/Org, Cockpit, Admin, Billing all functional. Coach engine needs debugging but is secondary to the Decision Brain pivot.
+      
+      SCREENSHOTS CAPTURED: 01_landing.png, 02_brain_initial.png, 02_brain_answer.png, 03_decisions.png, 05_team_no_org.png, 05_team_owner_view.png, 05_team_north_star.png, 06_cockpit.png, 07_billing.png, 08_admin_overview.png, 08_admin_users.png, 10_mobile_landing.png, 10_mobile_brain.png, billing_full.png, topbar.png.
+  - agent: "testing"
+    message: >
       COMPREHENSIVE UI/UX ANALYSIS ATTEMPTED - CRITICAL ROUTING MISMATCH DISCOVERED.
       
       CRITICAL FINDING: The review request describes an app architecture that does NOT match the current codebase.

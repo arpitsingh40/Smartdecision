@@ -13,7 +13,7 @@ import json
 import time
 
 # Backend URL from frontend/.env
-BASE_URL = "https://87accb52-51df-41be-9938-10ad721ed87e.preview.emergentagent.com/api"
+BASE_URL = "https://perf-audit-13.preview.emergentagent.com/api"
 
 # Credentials
 FOUNDER_EMAIL = "ceo@smartdecigen.com"

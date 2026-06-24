@@ -7,7 +7,7 @@ import requests
 import sys
 
 # Backend URL from frontend/.env
-BASE_URL = "https://expectation-checker.preview.emergentagent.com/api"
+BASE_URL = "https://perf-audit-13.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 DEMO_EMAIL = "demo@smartdecigen.com"

@@ -42,15 +42,18 @@ backend:
         comment: "PASS - COMPLETE END-TO-END JOURNEY TEST: All 24 tests passed (4 phases, 0 LLM calls, fully free). PHASE A (Founder sets up goal) 4/4 ✅: A1-Login as founder returns 200 with token, org_id, org_role=owner ✓. A2-GET /api/org returns is_owner=true, strategy_set=true ✓. A3-PUT /api/org/strategy with north_star='Reach 100 crore annual revenue and be the top C&I solar EPC in North India', target='100 Cr ARR', deadline='Mar 2027', priorities=['Win C&I rooftop deals','Push EPC ticket above 50L','Protect 18% margins'], decision_rules='Never quote below 18% margin. Prefer C&I over residential.', current_arr=200000000, target_arr=1000000000 returns 200, captured strategy_version=3 ✓. A4-GET /api/org/strategy returns same values (current_arr=200000000, target_arr=1000000000) ✓. PHASE B (Founder invites, member joins) 6/6 ✅: B1-POST /api/org/invites returns 200 with code and join_url ✓. B2-GET /api/org/invites/{code} public (no auth) returns 200 with valid=true, org_name='Acme Solar', role='member' ✓. B3-Fresh member signup (member_vqid8tel@acmesolar.com) returns 200, org_id=null initially ✓. B4-POST /api/org/join with code returns 200, role='member' ✓. B5-GET /api/org as member returns 200 with is_owner=false, role='member', name='Acme Solar' ✓. B6-GET /api/org/members as founder returns roster with 4 members (founder+owner + new member) ✓. PHASE C (Member walled off) 5/5 ✅: C1-Member GET /api/org/strategy returns 403 ✓. C2-Member GET /api/org/progress returns 403 ✓. C3-Member GET /api/org/cockpit returns 403 ✓. C4-Member POST /api/org/progress returns 403 ✓. C5-No-token GET /api/org/progress returns 401 ✓. PHASE D (Goal→Achievement progress climb) 9/9 ✅: D1-GET /api/org/progress returns progress_pct=20 (200M/1B), status='Just getting started' ✓. D2-POST current_arr=300000000 returns progress_pct=30, status='Building momentum', history length=7 ✓. D3-POST current_arr=650000000 returns progress_pct=65, status='Closing in', history length=8 ✓. D4-POST current_arr=950000000 returns progress_pct=95, status='Almost there', history length=9 ✓. D5-POST current_arr=1000000000 returns progress_pct=100, status='Goal reached', history length=10, remaining=0 ✓. D6-IDEMPOTENCY: POST current_arr=1000000000 AGAIN, history length stays 10 (does NOT grow, identical value skipped) ✓. D7-CRITICAL: GET /api/org/strategy returns strategy_version=3 (unchanged through all Phase D progress updates, strategy_version does NOT bump on POST /progress) ✓. D8-GET /api/org/cockpit returns 200 with goal_progress.progress_pct=100, status='Goal reached', pacing key present (backward compat), totals.members=4 ✓. D9-Reset to mid value: POST current_arr=300000000 returns progress_pct=30 (org left in demo state) ✓. Journey is production-ready."
   - task: "Feature (c): founder-only goal_impact on Decision Brain answers (/api/brain/ask + /api/brain/decisions/{id}/next-step); members NEVER receive it"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/decision_brain.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "NEW (feature c). REQUIRES REAL ANTHROPIC KEY (currently PLACEHOLDER -> /ask 502+refund, so goal_impact cannot be triggered live yet). decision_brain.py _answer_and_log: renamed _is_admin->is_owner; new _goal_impact(alignment,org,is_owner) returns founder-only {score,band(high>=70/med>=40/low),label,reason} ONLY when is_owner AND org has a North Star AND alignment.score present; appended to /ask + /next-step response as 'goal_impact' (members are never owner -> never see it; solo users org=None -> none). strategic_alignment still popped/founder-only; GET /api/brain/decisions still strips strategic_alignment+alignment_band (goal_impact is response-only, never stored, never in history). NOTE TO TESTER: if ANTHROPIC key is still placeholder, do NOT spend LLM budget; this task stays needs_retesting until a real key is set."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL 5 TESTS PASSED (2 LLM calls used, within budget of 3). TEST 1 (LLM CALL 1 - Founder POST /api/brain/ask): Founder asked decide question about 9% margin residential deal -> 200, mode=decide ✓, decision_id present (64d4ef72-0c8a-4b1d-8ee8-02fa170afcab) ✓. CRITICAL ASSERTIONS ✓: Response CONTAINS 'goal_impact' key with all required fields {score:85 (int 0-100), band:'high' (high/medium/low), label:'Strongly moves you toward your goal', reason:'Declining low-margin residential deals protects margin discipline and frees capacity to pursue higher-ticket C&I opportunities that directly advance revenue and market position.'} ✓. goal_impact.reason does NOT contain forbidden phrases ('100 crore', '100 Cr', 'Mar 2027') - NO LEAKAGE ✓. Response does NOT contain 'strategic_alignment' key (correctly stripped) ✓. TEST 2 (LLM CALL 2 - Member POST /api/brain/ask): Member asked decide question about 18% margin C&I deal -> 200, mode=decide ✓, decision_id present (2c07bf05-ca1a-4657-9da2-fc302d986794) ✓. CRITICAL ASSERTIONS ✓: Response does NOT contain 'goal_impact' key (correctly hidden from members) ✓. Response does NOT contain 'strategic_alignment' key (correctly stripped) ✓. TEST 3 (FREE - Member GET /api/brain/decisions): Retrieved 1 decision from member's history. CRITICAL ASSERTION ✓: NO decision contains 'goal_impact', 'strategic_alignment', or 'alignment_band' keys (all founder-only fields correctly stripped from history) ✓. TEST 4 (FREE - Achievement via decisions): Member POST /api/brain/decisions/{id}/commit with action 'Send the C&I proposal at 19% margin today', due_in_hours:48 -> 200, status=open ✓. Member POST /api/brain/decisions/{id}/status with status:'done', outcome:'worked', result:'Closed a C&I deal at 19% margin' -> 200, outcome.status=success (worked correctly mapped to success) ✓. Founder GET /api/org/cockpit -> 200 with all required keys: alignment.scored=3 (increased, >= 2 from founder + member asks) ✓, execution.done=1 (>= 1) ✓, results[] contains member's result text 'Closed a C&I deal at 19% margin' ✓, follow_through_pct=100 (present) ✓, goal_progress key present (features a/b intact) ✓, pacing key present ✓. TEST 5 (FREE - Members walled off): Member GET /api/org/cockpit -> 403 ✓. Member GET /api/org/progress -> 403 ✓. All critical assertions verified. Feature (c) is production-ready."
   - task: "Connected Decision Session: brain /ask multi-turn session memory + clarity/next_action/hook/sharpening_question; commit-with-deadline, result capture, /active timer, /next-step; cockpit active_actions + results + overdue (NO member leak)"
     implemented: true
     working: true
@@ -383,12 +386,54 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Feature (a)+(b): Goal Setup + Goal->Progress tracker - GET/POST /api/org/progress (owner-only) + goal_progress in /api/org/cockpit; strategy current_arr/target_arr preserved + arr_history snapshots"
+    - "Feature (c): founder-only goal_impact on Decision Brain answers (/api/brain/ask + /api/brain/decisions/{id}/next-step); members NEVER receive it"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: >
+      ANTHROPIC KEY IS NOW LIVE (real money). Test feature (c) goal_impact + the LLM half of the
+      founder/member/decision/achievement journey. KEEP LLM BUDGET <= 3 brain asks total. Do NOT touch
+      payments (Zoho LIVE). Founder/admin: ceo@smartdecigen.com / FounderOS@2026 OWNS org "Acme Solar"
+      (North Star + ARR set). Create ONE fresh member via signup + owner invite + /api/org/join.
+      VERIFY:
+      (1) LLM CALL 1 - FOUNDER POST /api/brain/ask a decide question (e.g. a 9% margin residential deal)
+      -> 200, mode=decide, decision_id present. CRITICAL: response CONTAINS "goal_impact"
+      {score(0-100), band(high|medium|low), label, reason} (this is founder-only, feature c) AND
+      response does NOT contain "strategic_alignment". The goal_impact.reason must NOT quote the literal
+      North Star/target numbers (no "100 crore"/"100 Cr"/"Mar 2027").
+      (2) LLM CALL 2 - MEMBER POST /api/brain/ask a decide question -> 200, decision_id present.
+      CRITICAL: response does NOT contain "goal_impact" AND does NOT contain "strategic_alignment"
+      (members never see either).
+      (3) FREE - MEMBER GET /api/brain/decisions -> their history, NO row contains goal_impact,
+      strategic_alignment, or alignment_band.
+      (4) FREE (achievement via decisions) - MEMBER POST /api/brain/decisions/{id}/commit
+      {action:"...", due_in_hours:48} -> 200 status=open; POST .../status {status:"done", outcome:"worked",
+      result:"Closed a C&I deal at 19% margin"} -> 200 outcome.status=success. Then FOUNDER GET
+      /api/org/cockpit -> alignment.scored increased, execution.done>=1, results[] contains the member's
+      result, follow_through_pct present, AND goal_progress still present (features a/b intact).
+      (5) FREE - confirm members are walled: member GET /api/org/cockpit -> 403; member GET
+      /api/org/progress -> 403.
+      Report PASS/FAIL per item + total LLM calls used.
+  - agent: "testing"
+    message: >
+      TESTING COMPLETE - ALL 5 TESTS PASSED ✅ (2 LLM calls used, within budget of 3).
+      
+      RESULTS:
+      (1) ✅ PASS - LLM CALL 1 (Founder POST /api/brain/ask): Founder asked decide question about 9% margin residential deal -> 200, mode=decide, decision_id present. CRITICAL: Response CONTAINS 'goal_impact' key with all required fields {score:85 (int 0-100), band:'high', label:'Strongly moves you toward your goal', reason:'Declining low-margin residential deals protects margin discipline and frees capacity to pursue higher-ticket C&I opportunities that directly advance revenue and market position.'}. goal_impact.reason does NOT leak hidden strategy numbers (no '100 crore', '100 Cr', 'Mar 2027'). Response does NOT contain 'strategic_alignment' key (correctly stripped).
+      
+      (2) ✅ PASS - LLM CALL 2 (Member POST /api/brain/ask): Member asked decide question about 18% margin C&I deal -> 200, mode=decide, decision_id present. CRITICAL: Response does NOT contain 'goal_impact' key (correctly hidden from members). Response does NOT contain 'strategic_alignment' key (correctly stripped).
+      
+      (3) ✅ PASS - FREE (Member GET /api/brain/decisions): Retrieved 1 decision from member's history. CRITICAL: NO decision contains 'goal_impact', 'strategic_alignment', or 'alignment_band' keys (all founder-only fields correctly stripped from history).
+      
+      (4) ✅ PASS - FREE (Achievement via decisions): Member committed action 'Send the C&I proposal at 19% margin today' with due_in_hours:48 -> 200, status=open. Member set status to 'done' with outcome:'worked', result:'Closed a C&I deal at 19% margin' -> 200, outcome.status=success (worked correctly mapped to success). Founder GET /api/org/cockpit -> 200 with all required keys: alignment.scored=3 (increased, >= 2), execution.done=1 (>= 1), results[] contains member's result text 'Closed a C&I deal at 19% margin', follow_through_pct=100 (present), goal_progress key present (features a/b intact), pacing key present.
+      
+      (5) ✅ PASS - FREE (Members walled off): Member GET /api/org/cockpit -> 403. Member GET /api/org/progress -> 403.
+      
+      Total LLM calls: 2 (budget: 3). All critical assertions verified. Feature (c) is production-ready.
+
   - agent: "main"
     message: >
       NEW (features a+b: Goal Setup + Goal->Progress tracker). Please test the BACKEND only.

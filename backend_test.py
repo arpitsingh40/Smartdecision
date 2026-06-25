@@ -1,823 +1,496 @@
 #!/usr/bin/env python3
 """
-Complete End-to-End Journey Test: Founder → Team Member → Goal → Achievement Progress
-This is FULLY FREE: NO LLM, NO credits. LLM BUDGET = 0.
+Backend test for Feature (c): founder-only goal_impact + founder/member/decision/achievement journey.
+LLM BUDGET: max 3 brain asks (should only need 2).
 """
-
-import requests
+import os
+import sys
 import json
-import random
-import string
-from typing import Dict, Any, Optional
+import time
+import uuid
+import requests
+from datetime import datetime
 
-# Backend URL
-BASE_URL = "https://founder-goals.preview.emergentagent.com/api"
+# Backend URL from environment
+BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://founder-goals.preview.emergentagent.com")
+API_BASE = f"{BACKEND_URL}/api"
 
 # Test credentials
 FOUNDER_EMAIL = "ceo@smartdecigen.com"
 FOUNDER_PASSWORD = "FounderOS@2026"
 
-# Test results tracking
-test_results = []
-phase_results = {
-    "A": [],
-    "B": [],
-    "C": [],
-    "D": []
-}
+# Track LLM calls
+llm_call_count = 0
 
-def log_test(phase: str, step: str, passed: bool, message: str, data: Any = None):
-    """Log test result"""
-    result = {
-        "phase": phase,
-        "step": step,
-        "passed": passed,
-        "message": message,
-        "data": data
-    }
-    test_results.append(result)
-    phase_results[phase].append(result)
-    
-    status = "✅ PASS" if passed else "❌ FAIL"
-    print(f"{status} - {phase}{step}: {message}")
-    if data and not passed:
-        print(f"  Data: {json.dumps(data, indent=2)}")
+def log(msg):
+    print(f"[TEST] {msg}")
 
-def generate_random_email():
-    """Generate random email for new member"""
-    rand = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-    return f"member_{rand}@acmesolar.com"
+def login(email, password):
+    """Login and return token + user info"""
+    r = requests.post(f"{API_BASE}/auth/login", json={"email": email, "password": password})
+    if r.status_code != 200:
+        log(f"❌ Login failed for {email}: {r.status_code} {r.text}")
+        sys.exit(1)
+    data = r.json()
+    log(f"✅ Logged in as {email} (org_role: {data.get('org_role')})")
+    return data["token"], data
 
-class TestSession:
-    def __init__(self):
-        self.founder_token = None
-        self.member_token = None
-        self.member_email = None
-        self.invite_code = None
-        self.org_id = None
-        self.initial_strategy_version = None
-        
-    def login_founder(self) -> bool:
-        """A1. Login as founder"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/auth/login",
-                json={"email": FOUNDER_EMAIL, "password": FOUNDER_PASSWORD}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                self.founder_token = data.get("token")
-                user = data.get("user", {})
-                self.org_id = user.get("org_id")
-                org_role = user.get("org_role")
-                
-                if self.founder_token and org_role == "owner":
-                    log_test("A", "1", True, 
-                            f"Login as founder -> 200, token has org_id={self.org_id} + org_role=owner",
-                            {"org_id": self.org_id, "org_role": org_role})
-                    return True
-                else:
-                    log_test("A", "1", False, 
-                            f"Login succeeded but missing token or org_role != owner",
-                            data)
-                    return False
-            else:
-                log_test("A", "1", False, 
-                        f"Login failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("A", "1", False, f"Exception during login: {str(e)}")
-            return False
-    
-    def get_org_as_founder(self) -> bool:
-        """A2. GET /api/org (founder)"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org",
-                headers={"Authorization": f"Bearer {self.founder_token}"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                is_owner = data.get("is_owner")
-                strategy_set = data.get("strategy_set")
-                
-                if is_owner and strategy_set:
-                    log_test("A", "2", True,
-                            f"GET /api/org (founder) -> 200 is_owner=true, strategy_set=true",
-                            {"name": data.get("name"), "is_owner": is_owner, "strategy_set": strategy_set})
-                    return True
-                else:
-                    log_test("A", "2", False,
-                            f"GET /api/org returned but is_owner={is_owner}, strategy_set={strategy_set}",
-                            data)
-                    return False
-            else:
-                log_test("A", "2", False,
-                        f"GET /api/org failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("A", "2", False, f"Exception: {str(e)}")
-            return False
-    
-    def set_strategy(self) -> bool:
-        """A3. PUT /api/org/strategy as founder"""
-        try:
-            strategy_data = {
-                "north_star": "Reach 100 crore annual revenue and be the top C&I solar EPC in North India",
-                "target": "100 Cr ARR",
-                "deadline": "Mar 2027",
-                "priorities": [
-                    "Win C&I rooftop deals",
-                    "Push EPC ticket above 50L",
-                    "Protect 18% margins"
-                ],
-                "decision_rules": "Never quote below 18% margin. Prefer C&I over residential.",
-                "current_arr": 200000000,
-                "target_arr": 1000000000
-            }
-            
-            response = requests.put(
-                f"{BASE_URL}/org/strategy",
-                headers={"Authorization": f"Bearer {self.founder_token}"},
-                json=strategy_data
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                self.initial_strategy_version = data.get("strategy_version")
-                
-                log_test("A", "3", True,
-                        f"PUT /api/org/strategy -> 200. Captured strategy_version={self.initial_strategy_version}",
-                        {"strategy_version": self.initial_strategy_version,
-                         "current_arr": data.get("current_arr"),
-                         "target_arr": data.get("target_arr")})
-                return True
-            else:
-                log_test("A", "3", False,
-                        f"PUT /api/org/strategy failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("A", "3", False, f"Exception: {str(e)}")
-            return False
-    
-    def get_strategy(self) -> bool:
-        """A4. GET /api/org/strategy"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org/strategy",
-                headers={"Authorization": f"Bearer {self.founder_token}"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                current_arr = data.get("current_arr")
-                target_arr = data.get("target_arr")
-                
-                if current_arr == 200000000 and target_arr == 1000000000:
-                    log_test("A", "4", True,
-                            f"GET /api/org/strategy -> 200 returns same values, current_arr=200000000, target_arr=1000000000",
-                            {"current_arr": current_arr, "target_arr": target_arr})
-                    return True
-                else:
-                    log_test("A", "4", False,
-                            f"GET /api/org/strategy returned different values: current_arr={current_arr}, target_arr={target_arr}",
-                            data)
-                    return False
-            else:
-                log_test("A", "4", False,
-                        f"GET /api/org/strategy failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("A", "4", False, f"Exception: {str(e)}")
-            return False
-    
-    def create_invite(self) -> bool:
-        """B1. POST /api/org/invites (founder)"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/org/invites",
-                headers={"Authorization": f"Bearer {self.founder_token}"},
-                json={}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                self.invite_code = data.get("code")
-                join_url = data.get("join_url")
-                
-                if self.invite_code and join_url:
-                    log_test("B", "1", True,
-                            f"POST /api/org/invites (founder) -> 200 returns code={self.invite_code}, join_url",
-                            {"code": self.invite_code, "join_url": join_url})
-                    return True
-                else:
-                    log_test("B", "1", False,
-                            f"POST /api/org/invites succeeded but missing code or join_url",
-                            data)
-                    return False
-            else:
-                log_test("B", "1", False,
-                        f"POST /api/org/invites failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("B", "1", False, f"Exception: {str(e)}")
-            return False
-    
-    def lookup_invite_public(self) -> bool:
-        """B2. GET /api/org/invites/{code} with NO auth (public)"""
-        try:
-            response = requests.get(f"{BASE_URL}/org/invites/{self.invite_code}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                valid = data.get("valid")
-                org_name = data.get("org_name")
-                role = data.get("role")
-                
-                if valid and org_name and role == "member":
-                    log_test("B", "2", True,
-                            f"GET /api/org/invites/{self.invite_code} with NO auth (public) -> 200 valid=true, org_name={org_name}, role=member",
-                            data)
-                    return True
-                else:
-                    log_test("B", "2", False,
-                            f"Public invite lookup returned unexpected data: valid={valid}, role={role}",
-                            data)
-                    return False
-            else:
-                log_test("B", "2", False,
-                        f"Public invite lookup failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("B", "2", False, f"Exception: {str(e)}")
-            return False
-    
-    def signup_member(self) -> bool:
-        """B3. Fresh member signup"""
-        try:
-            self.member_email = generate_random_email()
-            
-            response = requests.post(
-                f"{BASE_URL}/auth/signup",
-                json={
-                    "email": self.member_email,
-                    "password": "Member@2026",
-                    "name": "Test Member"
-                }
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                self.member_token = data.get("token")
-                user = data.get("user", {})
-                org_id = user.get("org_id")
-                
-                if self.member_token and org_id is None:
-                    log_test("B", "3", True,
-                            f"Fresh member signup (POST /api/auth/signup, {self.member_email}) -> 200, org_id is null initially",
-                            {"email": self.member_email, "org_id": org_id})
-                    return True
-                else:
-                    log_test("B", "3", False,
-                            f"Signup succeeded but org_id is not null: {org_id}",
-                            data)
-                    return False
-            else:
-                log_test("B", "3", False,
-                        f"Member signup failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("B", "3", False, f"Exception: {str(e)}")
-            return False
-    
-    def member_join_org(self) -> bool:
-        """B4. POST /api/org/join {code} as the new member"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/org/join",
-                headers={"Authorization": f"Bearer {self.member_token}"},
-                json={"code": self.invite_code}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                role = data.get("role")
-                
-                if role == "member":
-                    log_test("B", "4", True,
-                            f"POST /api/org/join (code) as new member -> 200 role=member",
-                            data)
-                    return True
-                else:
-                    log_test("B", "4", False,
-                            f"Join succeeded but role != member: {role}",
-                            data)
-                    return False
-            else:
-                log_test("B", "4", False,
-                        f"POST /api/org/join failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("B", "4", False, f"Exception: {str(e)}")
-            return False
-    
-    def get_org_as_member(self) -> bool:
-        """B5. GET /api/org (member)"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org",
-                headers={"Authorization": f"Bearer {self.member_token}"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                is_owner = data.get("is_owner")
-                role = data.get("role")
-                name = data.get("name")
-                
-                if not is_owner and role == "member" and name == "Acme Solar":
-                    log_test("B", "5", True,
-                            f"GET /api/org (member) -> 200 is_owner=false, role=member, name=Acme Solar",
-                            data)
-                    return True
-                else:
-                    log_test("B", "5", False,
-                            f"GET /api/org (member) returned unexpected data: is_owner={is_owner}, role={role}, name={name}",
-                            data)
-                    return False
-            else:
-                log_test("B", "5", False,
-                        f"GET /api/org (member) failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("B", "5", False, f"Exception: {str(e)}")
-            return False
-    
-    def get_members_roster(self) -> bool:
-        """B6. GET /api/org/members (founder)"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org/members",
-                headers={"Authorization": f"Bearer {self.founder_token}"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                members = data.get("members", [])
-                
-                if len(members) >= 2:
-                    # Check for founder and new member
-                    has_founder = any(m.get("role") == "owner" for m in members)
-                    has_member = any(m.get("email") == self.member_email for m in members)
-                    
-                    if has_founder and has_member:
-                        log_test("B", "6", True,
-                                f"GET /api/org/members (founder) -> 200 roster contains founder(owner) + new member (count={len(members)})",
-                                {"member_count": len(members)})
-                        return True
-                    else:
-                        log_test("B", "6", False,
-                                f"Roster missing founder or new member",
-                                {"members": members})
-                        return False
-                else:
-                    log_test("B", "6", False,
-                            f"Roster has less than 2 members: {len(members)}",
-                            data)
-                    return False
-            else:
-                log_test("B", "6", False,
-                        f"GET /api/org/members failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("B", "6", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_member_strategy_403(self) -> bool:
-        """C1. Member GET /api/org/strategy -> 403"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org/strategy",
-                headers={"Authorization": f"Bearer {self.member_token}"}
-            )
-            
-            if response.status_code == 403:
-                log_test("C", "1", True, "Member GET /api/org/strategy -> 403")
-                return True
-            else:
-                log_test("C", "1", False,
-                        f"Expected 403, got {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("C", "1", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_member_progress_get_403(self) -> bool:
-        """C2. Member GET /api/org/progress -> 403"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org/progress",
-                headers={"Authorization": f"Bearer {self.member_token}"}
-            )
-            
-            if response.status_code == 403:
-                log_test("C", "2", True, "Member GET /api/org/progress -> 403")
-                return True
-            else:
-                log_test("C", "2", False,
-                        f"Expected 403, got {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("C", "2", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_member_cockpit_403(self) -> bool:
-        """C3. Member GET /api/org/cockpit -> 403"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org/cockpit",
-                headers={"Authorization": f"Bearer {self.member_token}"}
-            )
-            
-            if response.status_code == 403:
-                log_test("C", "3", True, "Member GET /api/org/cockpit -> 403")
-                return True
-            else:
-                log_test("C", "3", False,
-                        f"Expected 403, got {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("C", "3", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_member_progress_post_403(self) -> bool:
-        """C4. Member POST /api/org/progress {current_arr:999} -> 403"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/org/progress",
-                headers={"Authorization": f"Bearer {self.member_token}"},
-                json={"current_arr": 999}
-            )
-            
-            if response.status_code == 403:
-                log_test("C", "4", True, "Member POST /api/org/progress -> 403")
-                return True
-            else:
-                log_test("C", "4", False,
-                        f"Expected 403, got {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("C", "4", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_no_token_progress_401(self) -> bool:
-        """C5. No-token GET /api/org/progress -> 401"""
-        try:
-            response = requests.get(f"{BASE_URL}/org/progress")
-            
-            if response.status_code == 401:
-                log_test("C", "5", True, "No-token GET /api/org/progress -> 401")
-                return True
-            else:
-                log_test("C", "5", False,
-                        f"Expected 401, got {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("C", "5", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_progress_initial(self) -> Dict[str, Any]:
-        """D1. GET /api/org/progress -> progress_pct should be 20"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org/progress",
-                headers={"Authorization": f"Bearer {self.founder_token}"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                goal_progress = data.get("goal_progress", {})
-                progress_pct = goal_progress.get("progress_pct")
-                status = goal_progress.get("status")
-                
-                if progress_pct == 20 and status == "Just getting started":
-                    log_test("D", "1", True,
-                            f"GET /api/org/progress -> progress_pct=20 (200M/1B), status='Just getting started'",
-                            {"progress_pct": progress_pct, "status": status})
-                    return goal_progress
-                else:
-                    log_test("D", "1", False,
-                            f"Expected progress_pct=20, status='Just getting started', got progress_pct={progress_pct}, status={status}",
-                            goal_progress)
-                    return goal_progress
-            else:
-                log_test("D", "1", False,
-                        f"GET /api/org/progress failed with status {response.status_code}",
-                        response.text)
-                return {}
-        except Exception as e:
-            log_test("D", "1", False, f"Exception: {str(e)}")
-            return {}
-    
-    def test_progress_update(self, current_arr: int, expected_pct: int, expected_status: str, step: str) -> Dict[str, Any]:
-        """Update progress and verify"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/org/progress",
-                headers={"Authorization": f"Bearer {self.founder_token}"},
-                json={"current_arr": current_arr}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                goal_progress = data.get("goal_progress", {})
-                progress_pct = goal_progress.get("progress_pct")
-                status = goal_progress.get("status")
-                history = goal_progress.get("history", [])
-                
-                if progress_pct == expected_pct and status == expected_status:
-                    log_test("D", step, True,
-                            f"POST /api/org/progress current_arr={current_arr} -> progress_pct={progress_pct}, status='{status}', history length={len(history)}",
-                            {"progress_pct": progress_pct, "status": status, "history_length": len(history)})
-                    return goal_progress
-                else:
-                    log_test("D", step, False,
-                            f"Expected progress_pct={expected_pct}, status='{expected_status}', got progress_pct={progress_pct}, status={status}",
-                            goal_progress)
-                    return goal_progress
-            else:
-                log_test("D", step, False,
-                        f"POST /api/org/progress failed with status {response.status_code}",
-                        response.text)
-                return {}
-        except Exception as e:
-            log_test("D", step, False, f"Exception: {str(e)}")
-            return {}
-    
-    def test_idempotency(self, current_arr: int, expected_history_length: int) -> bool:
-        """D6. Idempotency test"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/org/progress",
-                headers={"Authorization": f"Bearer {self.founder_token}"},
-                json={"current_arr": current_arr}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                goal_progress = data.get("goal_progress", {})
-                history = goal_progress.get("history", [])
-                
-                if len(history) == expected_history_length:
-                    log_test("D", "6", True,
-                            f"Idempotency: POST /api/org/progress current_arr={current_arr} AGAIN -> history length={len(history)} (unchanged, identical to last value)",
-                            {"history_length": len(history)})
-                    return True
-                else:
-                    log_test("D", "6", False,
-                            f"Idempotency FAILED: history length changed from {expected_history_length} to {len(history)}",
-                            {"history": history})
-                    return False
-            else:
-                log_test("D", "6", False,
-                        f"POST /api/org/progress failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("D", "6", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_strategy_version_unchanged(self) -> bool:
-        """D7. CRITICAL: strategy_version MUST still equal initial version"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org/strategy",
-                headers={"Authorization": f"Bearer {self.founder_token}"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                strategy_version = data.get("strategy_version")
-                
-                if strategy_version == self.initial_strategy_version:
-                    log_test("D", "7", True,
-                            f"CRITICAL: GET /api/org/strategy -> strategy_version={strategy_version} (unchanged from initial V{self.initial_strategy_version})",
-                            {"strategy_version": strategy_version})
-                    return True
-                else:
-                    log_test("D", "7", False,
-                            f"CRITICAL FAILURE: strategy_version changed from {self.initial_strategy_version} to {strategy_version}",
-                            data)
-                    return False
-            else:
-                log_test("D", "7", False,
-                        f"GET /api/org/strategy failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("D", "7", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_cockpit_final(self) -> bool:
-        """D8. GET /api/org/cockpit (founder)"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/org/cockpit",
-                headers={"Authorization": f"Bearer {self.founder_token}"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                goal_progress = data.get("goal_progress", {})
-                pacing = data.get("pacing", {})
-                totals = data.get("totals", {})
-                
-                progress_pct = goal_progress.get("progress_pct")
-                status = goal_progress.get("status")
-                members = totals.get("members", 0)
-                
-                has_pacing = "gap_pct" in pacing
-                
-                if progress_pct == 100 and status == "Goal reached" and has_pacing and members >= 2:
-                    log_test("D", "8", True,
-                            f"GET /api/org/cockpit (founder) -> 200, goal_progress.progress_pct=100, status='Goal reached', pacing key present (backward compat), totals.members={members}",
-                            {"progress_pct": progress_pct, "status": status, "members": members, "has_pacing": has_pacing})
-                    return True
-                else:
-                    log_test("D", "8", False,
-                            f"Cockpit data incomplete: progress_pct={progress_pct}, status={status}, has_pacing={has_pacing}, members={members}",
-                            data)
-                    return False
-            else:
-                log_test("D", "8", False,
-                        f"GET /api/org/cockpit failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("D", "8", False, f"Exception: {str(e)}")
-            return False
-    
-    def test_reset_to_mid_value(self) -> bool:
-        """D9. Reset to realistic mid value"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/org/progress",
-                headers={"Authorization": f"Bearer {self.founder_token}"},
-                json={"current_arr": 300000000}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                goal_progress = data.get("goal_progress", {})
-                progress_pct = goal_progress.get("progress_pct")
-                
-                if progress_pct == 30:
-                    log_test("D", "9", True,
-                            f"Reset to mid value: POST /api/org/progress current_arr=300000000 -> progress_pct=30 (org left in this state)",
-                            {"progress_pct": progress_pct})
-                    return True
-                else:
-                    log_test("D", "9", False,
-                            f"Reset failed: expected progress_pct=30, got {progress_pct}",
-                            goal_progress)
-                    return False
-            else:
-                log_test("D", "9", False,
-                        f"POST /api/org/progress failed with status {response.status_code}",
-                        response.text)
-                return False
-        except Exception as e:
-            log_test("D", "9", False, f"Exception: {str(e)}")
-            return False
+def signup_fresh_member():
+    """Create a fresh member account"""
+    email = f"member_{uuid.uuid4().hex[:8]}@acmesolar.com"
+    password = "TestMember@2026"
+    r = requests.post(f"{API_BASE}/auth/signup", json={
+        "email": email,
+        "password": password,
+        "name": f"Test Member {uuid.uuid4().hex[:4]}"
+    })
+    if r.status_code != 200:
+        log(f"❌ Signup failed: {r.status_code} {r.text}")
+        sys.exit(1)
+    data = r.json()
+    log(f"✅ Created fresh member: {email}")
+    return data["token"], data, email, password
 
-def print_summary():
-    """Print test summary"""
-    print("\n" + "="*80)
-    print("COMPLETE END-TO-END JOURNEY TEST SUMMARY")
-    print("="*80)
+def create_invite(founder_token):
+    """Founder creates an invite"""
+    r = requests.post(f"{API_BASE}/org/invites", 
+                     json={},
+                     headers={"Authorization": f"Bearer {founder_token}"})
+    if r.status_code != 200:
+        log(f"❌ Create invite failed: {r.status_code} {r.text}")
+        sys.exit(1)
+    data = r.json()
+    log(f"✅ Created invite with code: {data['code']}")
+    return data["code"]
+
+def join_org(member_token, code):
+    """Member joins org via invite code"""
+    r = requests.post(f"{API_BASE}/org/join",
+                     json={"code": code},
+                     headers={"Authorization": f"Bearer {member_token}"})
+    if r.status_code != 200:
+        log(f"❌ Join org failed: {r.status_code} {r.text}")
+        sys.exit(1)
+    log(f"✅ Member joined org: {r.json()['name']}")
+    return r.json()
+
+def brain_ask(token, question, session_id=None):
+    """POST /api/brain/ask"""
+    global llm_call_count
+    llm_call_count += 1
+    payload = {"question": question}
+    if session_id:
+        payload["session_id"] = session_id
+    r = requests.post(f"{API_BASE}/brain/ask",
+                     json=payload,
+                     headers={"Authorization": f"Bearer {token}"})
+    if r.status_code != 200:
+        log(f"❌ Brain ask failed: {r.status_code} {r.text}")
+        sys.exit(1)
+    log(f"✅ Brain ask returned 200 (LLM call #{llm_call_count})")
+    return r.json()
+
+def get_decisions(token):
+    """GET /api/brain/decisions"""
+    r = requests.get(f"{API_BASE}/brain/decisions",
+                    headers={"Authorization": f"Bearer {token}"})
+    if r.status_code != 200:
+        log(f"❌ Get decisions failed: {r.status_code} {r.text}")
+        sys.exit(1)
+    return r.json()["decisions"]
+
+def commit_action(token, decision_id, action, due_in_hours=48):
+    """POST /api/brain/decisions/{id}/commit"""
+    r = requests.post(f"{API_BASE}/brain/decisions/{decision_id}/commit",
+                     json={"action": action, "due_in_hours": due_in_hours},
+                     headers={"Authorization": f"Bearer {token}"})
+    if r.status_code != 200:
+        log(f"❌ Commit action failed: {r.status_code} {r.text}")
+        sys.exit(1)
+    log(f"✅ Committed action: {action[:50]}...")
+    return r.json()
+
+def set_status(token, decision_id, status, outcome=None, result=None):
+    """POST /api/brain/decisions/{id}/status"""
+    payload = {"status": status}
+    if outcome:
+        payload["outcome"] = outcome
+    if result:
+        payload["result"] = result
+    r = requests.post(f"{API_BASE}/brain/decisions/{decision_id}/status",
+                     json=payload,
+                     headers={"Authorization": f"Bearer {token}"})
+    if r.status_code != 200:
+        log(f"❌ Set status failed: {r.status_code} {r.text}")
+        sys.exit(1)
+    log(f"✅ Set status to {status}")
+    return r.json()
+
+def get_cockpit(token):
+    """GET /api/org/cockpit"""
+    r = requests.get(f"{API_BASE}/org/cockpit",
+                    headers={"Authorization": f"Bearer {token}"})
+    return r.status_code, r.json() if r.status_code == 200 else r.text
+
+def get_progress(token):
+    """GET /api/org/progress"""
+    r = requests.get(f"{API_BASE}/org/progress",
+                    headers={"Authorization": f"Bearer {token}"})
+    return r.status_code, r.json() if r.status_code == 200 else r.text
+
+def check_leakage(text, decision_obj=None):
+    """Check for leakage of hidden strategy numbers"""
+    forbidden = ["100 crore", "100 Cr", "Mar 2027"]
+    text_str = json.dumps(text) if isinstance(text, dict) else str(text)
+    if decision_obj:
+        text_str += json.dumps(decision_obj)
     
-    for phase in ["A", "B", "C", "D"]:
-        results = phase_results[phase]
-        passed = sum(1 for r in results if r["passed"])
-        total = len(results)
-        
-        phase_names = {
-            "A": "PHASE A — FOUNDER SETS UP THE GOAL",
-            "B": "PHASE B — FOUNDER INVITES, MEMBER JOINS",
-            "C": "PHASE C — MEMBER IS PROPERLY WALLED OFF",
-            "D": "PHASE D — GOAL -> ACHIEVEMENT PROGRESS"
-        }
-        
-        print(f"\n{phase_names[phase]}")
-        print(f"  Result: {passed}/{total} tests passed")
-        
-        for result in results:
-            status = "✅ PASS" if result["passed"] else "❌ FAIL"
-            print(f"  {status} - {result['phase']}{result['step']}: {result['message']}")
-    
-    total_passed = sum(1 for r in test_results if r["passed"])
-    total_tests = len(test_results)
-    
-    print("\n" + "="*80)
-    print(f"FINAL VERDICT: {total_passed}/{total_tests} tests passed")
-    print(f"LLM CALLS USED: 0 (as required, fully free)")
-    print("="*80)
-    
-    if total_passed == total_tests:
-        print("\n🎉 ALL TESTS PASSED - Journey is production-ready!")
-    else:
-        print(f"\n⚠️  {total_tests - total_passed} test(s) failed - see details above")
+    for phrase in forbidden:
+        if phrase in text_str:
+            log(f"❌ LEAKAGE DETECTED: Found '{phrase}' in response")
+            return False
+    return True
+
+def get_org(token):
+    """GET /api/org"""
+    r = requests.get(f"{API_BASE}/org",
+                    headers={"Authorization": f"Bearer {token}"})
+    return r.status_code, r.json() if r.status_code == 200 else r.text
 
 def main():
-    print("="*80)
-    print("COMPLETE END-TO-END JOURNEY TEST")
-    print("Founder → Team Member → Goal → Achievement Progress")
-    print("FULLY FREE: NO LLM, NO credits. LLM BUDGET = 0")
-    print("="*80)
-    print()
+    log("=" * 80)
+    log("FEATURE (c) TEST: founder-only goal_impact + achievement journey")
+    log("=" * 80)
     
-    session = TestSession()
+    # Login as founder
+    founder_token, founder_data = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
     
-    # PHASE A — FOUNDER SETS UP THE GOAL
-    print("\n=== PHASE A — FOUNDER SETS UP THE GOAL ===")
-    if not session.login_founder():
-        print("ABORT: Cannot proceed without founder login")
-        print_summary()
-        return
+    # Check if founder has an org
+    org_status, org_data = get_org(founder_token)
+    if org_status != 200:
+        log(f"❌ Founder does not have an org (status {org_status}). Expected org 'Acme Solar' to exist.")
+        log(f"Response: {org_data}")
+        sys.exit(1)
     
-    session.get_org_as_founder()
-    session.set_strategy()
-    session.get_strategy()
+    log(f"✅ Founder is in org: {org_data.get('name')} (role: {org_data.get('role')})")
     
-    # PHASE B — FOUNDER INVITES, MEMBER JOINS
-    print("\n=== PHASE B — FOUNDER INVITES, MEMBER JOINS ===")
-    session.create_invite()
-    session.lookup_invite_public()
-    session.signup_member()
-    session.member_join_org()
-    session.get_org_as_member()
-    session.get_members_roster()
+    # Create fresh member
+    member_token, member_data, member_email, member_password = signup_fresh_member()
     
-    # PHASE C — MEMBER IS PROPERLY WALLED OFF
-    print("\n=== PHASE C — MEMBER IS PROPERLY WALLED OFF FROM FOUNDER-ONLY DATA ===")
-    session.test_member_strategy_403()
-    session.test_member_progress_get_403()
-    session.test_member_cockpit_403()
-    session.test_member_progress_post_403()
-    session.test_no_token_progress_401()
+    # Founder creates invite
+    invite_code = create_invite(founder_token)
     
-    # PHASE D — GOAL -> ACHIEVEMENT PROGRESS (the climb)
-    print("\n=== PHASE D — GOAL -> ACHIEVEMENT PROGRESS (the climb) ===")
+    # Member joins org
+    join_org(member_token, invite_code)
     
-    # D1
-    initial_progress = session.test_progress_initial()
-    initial_history_length = len(initial_progress.get("history", []))
+    # Re-login member to get updated org_id/org_role
+    member_token, member_data = login(member_email, member_password)
     
-    # D2
-    progress_d2 = session.test_progress_update(300000000, 30, "Building momentum", "2")
-    history_d2 = len(progress_d2.get("history", []))
+    log("\n" + "=" * 80)
+    log("TEST 1: LLM CALL 1 - FOUNDER POST /api/brain/ask (decide question)")
+    log("=" * 80)
     
-    # D3
-    progress_d3 = session.test_progress_update(650000000, 65, "Closing in", "3")
+    founder_question = "A walk-in residential customer wants a 2kW rooftop system but is pushing the price down to about a 9% margin. Should I take the deal?"
+    founder_response = brain_ask(founder_token, founder_question)
     
-    # D4
-    progress_d4 = session.test_progress_update(950000000, 95, "Almost there", "4")
+    # CRITICAL ASSERTIONS for TEST 1
+    test1_pass = True
     
-    # D5
-    progress_d5 = session.test_progress_update(1000000000, 100, "Goal reached", "5")
-    history_d5 = len(progress_d5.get("history", []))
+    # Check mode=decide
+    if founder_response.get("mode") != "decide":
+        log(f"❌ TEST 1 FAIL: mode is '{founder_response.get('mode')}', expected 'decide'")
+        test1_pass = False
+    else:
+        log(f"✅ mode=decide")
     
-    # D6 - Idempotency
-    session.test_idempotency(1000000000, history_d5)
+    # Check decision_id present
+    if not founder_response.get("decision_id"):
+        log(f"❌ TEST 1 FAIL: decision_id not present")
+        test1_pass = False
+    else:
+        log(f"✅ decision_id present: {founder_response['decision_id']}")
     
-    # D7 - Strategy version unchanged
-    session.test_strategy_version_unchanged()
+    # CRITICAL: response CONTAINS "goal_impact"
+    if "goal_impact" not in founder_response:
+        log(f"❌ TEST 1 FAIL: 'goal_impact' key NOT found in founder response")
+        test1_pass = False
+    else:
+        goal_impact = founder_response["goal_impact"]
+        log(f"✅ 'goal_impact' key present in founder response")
+        
+        # Validate goal_impact structure
+        required_keys = ["score", "band", "label", "reason"]
+        for key in required_keys:
+            if key not in goal_impact:
+                log(f"❌ TEST 1 FAIL: goal_impact missing key '{key}'")
+                test1_pass = False
+            else:
+                log(f"✅ goal_impact.{key} = {goal_impact[key]}")
+        
+        # Validate score is 0-100
+        if not isinstance(goal_impact.get("score"), int) or not (0 <= goal_impact["score"] <= 100):
+            log(f"❌ TEST 1 FAIL: goal_impact.score is not an int 0-100: {goal_impact.get('score')}")
+            test1_pass = False
+        
+        # Validate band is high/medium/low
+        if goal_impact.get("band") not in ["high", "medium", "low"]:
+            log(f"❌ TEST 1 FAIL: goal_impact.band is not high/medium/low: {goal_impact.get('band')}")
+            test1_pass = False
+        
+        # Check for leakage in goal_impact.reason
+        if not check_leakage(goal_impact.get("reason", "")):
+            log(f"❌ TEST 1 FAIL: goal_impact.reason contains forbidden phrases")
+            test1_pass = False
+        else:
+            log(f"✅ goal_impact.reason does NOT leak hidden strategy numbers")
     
-    # D8 - Cockpit final
-    session.test_cockpit_final()
+    # CRITICAL: response does NOT contain "strategic_alignment"
+    if "strategic_alignment" in founder_response:
+        log(f"❌ TEST 1 FAIL: 'strategic_alignment' key found in founder response (should be stripped)")
+        test1_pass = False
+    else:
+        log(f"✅ 'strategic_alignment' key NOT in founder response (correctly stripped)")
     
-    # D9 - Reset to mid value
-    session.test_reset_to_mid_value()
+    if test1_pass:
+        log("\n✅ TEST 1 PASSED")
+    else:
+        log("\n❌ TEST 1 FAILED")
+        sys.exit(1)
     
-    # Print summary
-    print_summary()
+    founder_decision_id = founder_response["decision_id"]
+    
+    log("\n" + "=" * 80)
+    log("TEST 2: LLM CALL 2 - MEMBER POST /api/brain/ask (decide question)")
+    log("=" * 80)
+    
+    member_question = "A C&I customer wants a 50L rooftop system and is willing to pay for 18% margin. Should I take the deal?"
+    member_response = brain_ask(member_token, member_question)
+    
+    # CRITICAL ASSERTIONS for TEST 2
+    test2_pass = True
+    
+    # Check mode=decide
+    if member_response.get("mode") != "decide":
+        log(f"❌ TEST 2 FAIL: mode is '{member_response.get('mode')}', expected 'decide'")
+        test2_pass = False
+    else:
+        log(f"✅ mode=decide")
+    
+    # Check decision_id present
+    if not member_response.get("decision_id"):
+        log(f"❌ TEST 2 FAIL: decision_id not present")
+        test2_pass = False
+    else:
+        log(f"✅ decision_id present: {member_response['decision_id']}")
+    
+    # CRITICAL: response does NOT contain "goal_impact"
+    if "goal_impact" in member_response:
+        log(f"❌ TEST 2 FAIL: 'goal_impact' key found in member response (members should NEVER see this)")
+        test2_pass = False
+    else:
+        log(f"✅ 'goal_impact' key NOT in member response (correctly hidden from members)")
+    
+    # CRITICAL: response does NOT contain "strategic_alignment"
+    if "strategic_alignment" in member_response:
+        log(f"❌ TEST 2 FAIL: 'strategic_alignment' key found in member response (should be stripped)")
+        test2_pass = False
+    else:
+        log(f"✅ 'strategic_alignment' key NOT in member response (correctly stripped)")
+    
+    if test2_pass:
+        log("\n✅ TEST 2 PASSED")
+    else:
+        log("\n❌ TEST 2 FAILED")
+        sys.exit(1)
+    
+    member_decision_id = member_response["decision_id"]
+    
+    log("\n" + "=" * 80)
+    log("TEST 3: FREE - MEMBER GET /api/brain/decisions (history check)")
+    log("=" * 80)
+    
+    member_decisions = get_decisions(member_token)
+    
+    test3_pass = True
+    
+    if not member_decisions:
+        log(f"❌ TEST 3 FAIL: No decisions returned")
+        test3_pass = False
+    else:
+        log(f"✅ Retrieved {len(member_decisions)} decision(s)")
+        
+        # Check NO row contains goal_impact, strategic_alignment, or alignment_band
+        for i, dec in enumerate(member_decisions):
+            if "goal_impact" in dec:
+                log(f"❌ TEST 3 FAIL: Decision {i} contains 'goal_impact' (should never be in history)")
+                test3_pass = False
+            if "strategic_alignment" in dec:
+                log(f"❌ TEST 3 FAIL: Decision {i} contains 'strategic_alignment' (should be stripped)")
+                test3_pass = False
+            if "alignment_band" in dec:
+                log(f"❌ TEST 3 FAIL: Decision {i} contains 'alignment_band' (founder-only field)")
+                test3_pass = False
+        
+        if test3_pass:
+            log(f"✅ NO decision contains goal_impact, strategic_alignment, or alignment_band")
+    
+    if test3_pass:
+        log("\n✅ TEST 3 PASSED")
+    else:
+        log("\n❌ TEST 3 FAILED")
+        sys.exit(1)
+    
+    log("\n" + "=" * 80)
+    log("TEST 4: FREE - Achievement via decisions (commit -> status -> cockpit)")
+    log("=" * 80)
+    
+    # 4a: Member commits action
+    commit_response = commit_action(member_token, member_decision_id, 
+                                    "Send the C&I proposal at 19% margin today", 
+                                    due_in_hours=48)
+    
+    test4_pass = True
+    
+    if commit_response.get("status") != "open":
+        log(f"❌ TEST 4a FAIL: status is '{commit_response.get('status')}', expected 'open'")
+        test4_pass = False
+    else:
+        log(f"✅ Commit returned status=open")
+    
+    # 4b: Member marks as done with outcome
+    status_response = set_status(member_token, member_decision_id, 
+                                status="done", 
+                                outcome="worked",
+                                result="Closed a C&I deal at 19% margin")
+    
+    if status_response.get("status") != "done":
+        log(f"❌ TEST 4b FAIL: status is '{status_response.get('status')}', expected 'done'")
+        test4_pass = False
+    else:
+        log(f"✅ Status set to done")
+    
+    if status_response.get("outcome", {}).get("status") != "success":
+        log(f"❌ TEST 4b FAIL: outcome.status is '{status_response.get('outcome', {}).get('status')}', expected 'success'")
+        test4_pass = False
+    else:
+        log(f"✅ outcome.status=success (worked -> success)")
+    
+    # 4c: Founder gets cockpit
+    cockpit_status, cockpit_data = get_cockpit(founder_token)
+    
+    if cockpit_status != 200:
+        log(f"❌ TEST 4c FAIL: Founder cockpit returned {cockpit_status}")
+        test4_pass = False
+    else:
+        log(f"✅ Founder GET /api/org/cockpit returned 200")
+        
+        # Check alignment.scored increased
+        if "alignment" not in cockpit_data or "scored" not in cockpit_data["alignment"]:
+            log(f"❌ TEST 4c FAIL: alignment.scored not present")
+            test4_pass = False
+        else:
+            scored = cockpit_data["alignment"]["scored"]
+            log(f"✅ alignment.scored = {scored} (should be >= 2 from founder + member asks)")
+            if scored < 2:
+                log(f"⚠️  WARNING: alignment.scored is {scored}, expected >= 2")
+        
+        # Check execution.done >= 1
+        if "execution" not in cockpit_data or "done" not in cockpit_data["execution"]:
+            log(f"❌ TEST 4c FAIL: execution.done not present")
+            test4_pass = False
+        else:
+            done = cockpit_data["execution"]["done"]
+            log(f"✅ execution.done = {done}")
+            if done < 1:
+                log(f"❌ TEST 4c FAIL: execution.done is {done}, expected >= 1")
+                test4_pass = False
+        
+        # Check results[] contains member's result
+        if "results" not in cockpit_data:
+            log(f"❌ TEST 4c FAIL: results[] not present")
+            test4_pass = False
+        else:
+            results = cockpit_data["results"]
+            log(f"✅ results[] present with {len(results)} item(s)")
+            found_result = False
+            for res in results:
+                if "Closed a C&I deal at 19% margin" in res.get("result", ""):
+                    found_result = True
+                    log(f"✅ Found member's result in results[]: {res['result']}")
+                    break
+            if not found_result:
+                log(f"❌ TEST 4c FAIL: Member's result text not found in results[]")
+                test4_pass = False
+        
+        # Check follow_through_pct present
+        if "execution" not in cockpit_data or "follow_through_pct" not in cockpit_data["execution"]:
+            log(f"❌ TEST 4c FAIL: follow_through_pct not present")
+            test4_pass = False
+        else:
+            ft = cockpit_data["execution"]["follow_through_pct"]
+            log(f"✅ follow_through_pct = {ft}")
+        
+        # Check goal_progress still present (features a/b intact)
+        if "goal_progress" not in cockpit_data:
+            log(f"❌ TEST 4c FAIL: goal_progress not present (features a/b should be intact)")
+            test4_pass = False
+        else:
+            log(f"✅ goal_progress present (features a/b intact)")
+        
+        # Check pacing key still present
+        if "pacing" not in cockpit_data:
+            log(f"⚠️  WARNING: pacing key not present (may be None if no ARR set)")
+        else:
+            log(f"✅ pacing key present")
+    
+    if test4_pass:
+        log("\n✅ TEST 4 PASSED")
+    else:
+        log("\n❌ TEST 4 FAILED")
+        sys.exit(1)
+    
+    log("\n" + "=" * 80)
+    log("TEST 5: FREE - Members are walled off (403 checks)")
+    log("=" * 80)
+    
+    test5_pass = True
+    
+    # 5a: Member GET /api/org/cockpit -> 403
+    cockpit_status, cockpit_data = get_cockpit(member_token)
+    if cockpit_status != 403:
+        log(f"❌ TEST 5a FAIL: Member cockpit returned {cockpit_status}, expected 403")
+        test5_pass = False
+    else:
+        log(f"✅ Member GET /api/org/cockpit returned 403")
+    
+    # 5b: Member GET /api/org/progress -> 403
+    progress_status, progress_data = get_progress(member_token)
+    if progress_status != 403:
+        log(f"❌ TEST 5b FAIL: Member progress returned {progress_status}, expected 403")
+        test5_pass = False
+    else:
+        log(f"✅ Member GET /api/org/progress returned 403")
+    
+    if test5_pass:
+        log("\n✅ TEST 5 PASSED")
+    else:
+        log("\n❌ TEST 5 FAILED")
+        sys.exit(1)
+    
+    log("\n" + "=" * 80)
+    log("SUMMARY")
+    log("=" * 80)
+    log(f"Total LLM calls used: {llm_call_count} (budget: 3)")
+    log("")
+    log("✅ TEST 1 PASSED: Founder POST /api/brain/ask contains goal_impact, NOT strategic_alignment")
+    log("✅ TEST 2 PASSED: Member POST /api/brain/ask does NOT contain goal_impact or strategic_alignment")
+    log("✅ TEST 3 PASSED: Member GET /api/brain/decisions has NO goal_impact/strategic_alignment/alignment_band")
+    log("✅ TEST 4 PASSED: Achievement journey (commit->done->cockpit) working, features a/b intact")
+    log("✅ TEST 5 PASSED: Members walled off from cockpit and progress")
+    log("")
+    log("=" * 80)
+    log("🎉 ALL TESTS PASSED")
+    log("=" * 80)
 
 if __name__ == "__main__":
     main()

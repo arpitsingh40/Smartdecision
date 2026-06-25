@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, Compass, CheckSquare } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, Compass, CheckSquare, UserCog } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -43,6 +43,7 @@ export const TopBar = () => {
     { to: '/', label: 'Workspace', icon: Compass, testid: 'nav-workspace' },
     { to: '/decisions', label: 'My Decisions', icon: CheckSquare, testid: 'nav-decisions' },
     ...(user?.org_role === 'owner' ? [{ to: '/cockpit', label: 'Cockpit', icon: Gauge, testid: 'nav-cockpit' }] : []),
+    ...(user?.org_role === 'owner' ? [{ to: '/founder-profile', label: 'My Profile', icon: UserCog, testid: 'nav-founder-profile' }] : []),
     { to: '/team', label: 'Team', icon: Users, testid: 'nav-team' },
   ];
   const isActive = (to) => (to === '/' ? location.pathname === '/' : location.pathname.startsWith(to));

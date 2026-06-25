@@ -23,6 +23,20 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Founder Profile deep-onboarding (/api/founder/*) + inject FOUNDER_PROFILE (owner-only) & INDUSTRY_CONTEXT (org-wide) into every Brain answer"
+    implemented: true
+    working: true
+    file: "/app/backend/founder_profile.py, /app/backend/decision_brain.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW. Deep, connected founder onboarding that teaches the Brain WHO the founder is (personality/working style) + WHAT their industry is, then injects it. founder_profile.py router /api/founder (owner-only): GET /profile -> {has_profile, profile{10 fields}, interview{status,count,target,pending_question,transcript,can_finish}}. POST /interview/start (NO LLM, fixed opening question). POST /interview/answer {message} -> records answer; if count>=INTERVIEW_TURNS(6) auto-distill+store (1 LLM), else return next CONNECTED question (1 LLM). POST /interview/finish -> distill from current transcript, requires >=2 answers else 422 (1 LLM). PUT /profile {summary required + 9 optional fields} -> set/edit directly (NO LLM). DELETE /profile -> clear. Profile stored on org.founder_profile (owner-only); transcript on org.founder_interview. decision_brain.py: new _founder_profile_block(org) (injected ONLY for owner asks via is_owner gate) + _industry_block(org) (org-wide, built from founder_profile.industry_summary + org.industry + Phase-2 industry_research digest). brain_answer() gained founder_block+industry_block params injected into the prompt; SYSTEM gained FIT THE FOUNDER + KNOW THE INDUSTRY rules. SELF-VERIFIED via curl: PUT profile (introvert/conflict-averse/solar-EPC) then founder /ask a confrontation question WITHOUT mentioning personality -> brain returned a SCRIPTED WRITTEN email next_action (fits introvert) + industry-specific (C&I/margin) + goal_impact present. TEST (KEEP LLM <=6): gating (member 403 on GET/POST/PUT/DELETE /founder/*; no-org owner path), PUT profile happy + summary-required 422, interview start->answer x2->finish (distill returns profile w/ summary+industry_summary), and 1 founder /ask still 200 with goal_impact (injection does not break anything). NO member ever sees founder_profile."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL 4 TESTS PASSED (4 LLM calls used, within budget of 6). TEST 1 (FREE - GATING) ✅: Created fresh member (member_test_2505600e@acmesolar.com) via signup+invite+join. ALL member endpoints correctly return 403: GET /founder/profile ✓, POST /founder/interview/start ✓, POST /founder/interview/answer ✓, POST /founder/interview/finish ✓, PUT /founder/profile ✓, DELETE /founder/profile ✓. No-auth GET /founder/profile -> 401 ✓. TEST 2 (FREE - DIRECT PROFILE) ✅: PUT /founder/profile with {summary:'Technical introverted solar-EPC founder', personality:'introverted, conflict-averse', industry_summary:'C&I rooftop solar EPC in North India'} -> 200, has_profile=true, all values echoed correctly ✓. GET /founder/profile -> 200, has_profile=true, all values match ✓. PUT with empty summary -> 422 (validation working) ✓. TEST 3 (LLM ~4 calls - INTERVIEW FLOW) ✅: POST /interview/start -> 200, done=false, question='To give you advice that genuinely fits you...', count=0, target=6 (no LLM, fixed opening) ✓. LLM CALL #1: POST /interview/answer with 'We do C&I rooftop solar EPC in North India, early stage, hardest part is closing big deals because I hate cold sales.' -> 200, done=false, NEW connected question='What happens in your head when you're on a call with a potential...', count=1 (question is different from opening, connected to answer) ✓. LLM CALL #2: POST /interview/answer with 'I make decisions slowly with data, I avoid confrontation, my strength is technical design but I'm weak at negotiation.' -> 200, count=2 ✓. LLM CALL #3: POST /interview/finish -> 200, done=true, profile.summary='A technically-minded solar EPC founder in North India who le...' (non-empty, >10 chars), profile.industry_summary='Commercial and industrial rooftop solar EPC in North India. ...' (non-empty, >10 chars) ✓. GET /founder/profile -> has_profile=true ✓. NEGATIVE TEST: Fresh start + immediate finish (0 answers) -> 422 (needs >= 2 answers) ✓. TEST 4 (LLM 1 call - INJECTION) ✅: LLM CALL #4: Founder POST /brain/ask with 'A client is unhappy about a delay and wants to talk penalties, how should I handle it?' -> 200, mode=decide ✓. Response CONTAINS 'goal_impact' key with all required fields: {score:72 (int 0-100), band:'high', label:'Strongly moves you toward your goal', reason:'Protecting the client relationship and avoiding penalty bleed defends margin and keeps the door open for the next C&I deal with this account or their network.'} ✓. Response does NOT contain 'strategic_alignment' key (correctly stripped from founder response) ✓. CRITICAL ASSERTIONS VERIFIED: (1) All member gating working (403 on all /founder/* endpoints), (2) Direct profile PUT/GET working with validation, (3) Interview flow working (start->answer x2->finish with connected questions and distillation), (4) Injection did not break Decision Brain contract (goal_impact present for founder, strategic_alignment stripped). Total LLM calls: 4 (within budget of 6). Feature is production-ready."
   - task: "Feature (a)+(b): Goal Setup + Goal->Progress tracker - GET/POST /api/org/progress (owner-only) + goal_progress in /api/org/cockpit; strategy current_arr/target_arr preserved + arr_history snapshots"
     implemented: true
     working: true
@@ -386,12 +400,38 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Feature (c): founder-only goal_impact on Decision Brain answers (/api/brain/ask + /api/brain/decisions/{id}/next-step); members NEVER receive it"
+    - "Founder Profile deep-onboarding (/api/founder/*) + inject FOUNDER_PROFILE (owner-only) & INDUSTRY_CONTEXT (org-wide) into every Brain answer"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: >
+      NEW: Founder Profile deep-onboarding + personality/industry injection. ANTHROPIC IS LIVE (real
+      money). KEEP LLM BUDGET <= 6 brain/interview calls total. Do NOT touch payments (Zoho LIVE).
+      Founder/admin: ceo@smartdecigen.com / FounderOS@2026 OWNS org "Acme Solar". Create ONE fresh member
+      (signup + owner invite + /api/org/join) for the gating checks.
+      VERIFY:
+      (1) FREE - GATING: a MEMBER calling GET /api/founder/profile, POST /api/founder/interview/start,
+      POST /api/founder/interview/answer, POST /api/founder/interview/finish, PUT /api/founder/profile,
+      DELETE /api/founder/profile -> ALL 403. No token on GET /api/founder/profile -> 401.
+      (2) FREE - PUT /api/founder/profile (founder) with summary + a few fields -> 200, returns
+      {has_profile:true, profile{...}}. GET /api/founder/profile -> has_profile:true with those values.
+      PUT with summary="" (empty) -> 422.
+      (3) LLM (<=4) - INTERVIEW: POST /api/founder/interview/start (founder) -> 200 {done:false, question
+      (non-empty), count:0, target}. POST /api/founder/interview/answer {message:"We do C&I rooftop solar
+      EPC in North India, early stage, hardest part is closing big deals because I hate cold sales."} ->
+      200 {done:false, question (a NEW non-empty connected question), count:1}. POST .../answer
+      {message:"I make decisions slowly with data, I avoid confrontation, my strength is technical design."}
+      -> 200 {count:2}. POST /api/founder/interview/finish -> 200 {done:true, profile} where profile has a
+      non-empty "summary" and a non-empty "industry_summary". GET /api/founder/profile -> has_profile:true.
+      Also: POST /api/founder/interview/finish with <2 answers (start fresh, then finish immediately) -> 422.
+      (4) LLM (1) - INJECTION still healthy: FOUNDER POST /api/brain/ask a decide question -> 200,
+      mode=decide, response CONTAINS goal_impact, does NOT contain strategic_alignment (the new founder/
+      industry blocks must not break the existing contract). MEMBER POST /api/brain/ask (optional, only if
+      budget remains) -> 200, NO goal_impact.
+      Report PASS/FAIL per item + total LLM calls used.
   - agent: "main"
     message: >
       ANTHROPIC KEY IS NOW LIVE (real money). Test feature (c) goal_impact + the LLM half of the
@@ -1188,3 +1228,7 @@ agent_communication:
       Strategy version stability confirmed: strategy_version remained constant (V3) through all Phase D progress updates.
       
       READY FOR MAIN AGENT TO SUMMARIZE AND FINISH.
+
+agent_communication:
+  - agent: "testing"
+    message: "Founder Profile deep-onboarding testing COMPLETE. All 4 numbered items from review request PASSED (4 LLM calls used, within budget of 6). TEST 1 (FREE - GATING): All member endpoints correctly return 403, no-auth returns 401 ✓. TEST 2 (FREE - DIRECT PROFILE): PUT/GET working with validation ✓. TEST 3 (LLM ~4 calls - INTERVIEW FLOW): start->answer x2->finish working, connected questions generated, distillation produces non-empty summary+industry_summary, negative test (0 answers) correctly returns 422 ✓. TEST 4 (LLM 1 call - INJECTION): Founder /ask returns goal_impact with all required fields (score, band, label, reason), strategic_alignment correctly stripped ✓. Feature is production-ready. Main agent should summarize and finish."

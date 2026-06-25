@@ -112,6 +112,68 @@ def _strategy_block(org: dict | None, function: str = "general") -> str:
     return "\n".join(lines)
 
 
+def _founder_profile_block(org: dict | None) -> str:
+    """FOUNDER_PROFILE steering, injected ONLY for the owner's own asks so the brain advises
+    them like an advisor who genuinely knows how they operate. Never sent to members."""
+    if not org:
+        return ""
+    fp = org.get("founder_profile") or {}
+    if not isinstance(fp, dict) or not fp.get("summary"):
+        return ""
+    lines = ["FOUNDER_PROFILE (who you are advising right now; fit them naturally, never quote this back):",
+             f"- In short: {fp.get('summary','').strip()}"]
+    pairs = [
+        ("Personality", fp.get("personality")),
+        ("How they work", fp.get("working_style")),
+        ("Communication style", fp.get("communication_style")),
+        ("Decision style", fp.get("decision_style")),
+        ("Risk appetite", fp.get("risk_appetite")),
+        ("Strengths to lean on", fp.get("strengths")),
+        ("Blind spots to cover", fp.get("blind_spots")),
+        ("What drives them", fp.get("motivations")),
+    ]
+    for label, val in pairs:
+        if isinstance(val, str) and val.strip():
+            lines.append(f"- {label}: {val.strip()}")
+    lines.append("INSTRUCTION: silently shape tone, framing, and the next_action to fit this person. "
+                 "If they avoid conflict or are introverted, make the move gentler and give them words. "
+                 "Never label them or read the profile back to them.")
+    return "\n".join(lines)
+
+
+def _industry_block(org: dict | None) -> str:
+    """INDUSTRY_CONTEXT, injected for everyone in the org so decisions are grounded in the company's
+    real market, not generic business advice. Combines the founder's industry summary, any structured
+    industry fields, and (Phase 2) a refreshable web-research digest."""
+    if not org:
+        return ""
+    fp = org.get("founder_profile") or {}
+    ind = org.get("industry") or {}
+    summary = (fp.get("industry_summary") if isinstance(fp, dict) else "") or ""
+    parts = []
+    if isinstance(ind, dict):
+        bits = [ind.get("industry"), ind.get("segment"), ind.get("geography"), ind.get("model")]
+        bits = [b.strip() for b in bits if isinstance(b, str) and b.strip()]
+        if bits:
+            parts.append("- Market: " + " | ".join(bits))
+        if isinstance(ind.get("notes"), str) and ind["notes"].strip():
+            parts.append(f"- Notes: {ind['notes'].strip()}")
+    if summary.strip():
+        parts.append(f"- Context: {summary.strip()}")
+    research = org.get("industry_research") or {}
+    if isinstance(research, dict) and (research.get("digest") or "").strip():
+        parts.append("INDUSTRY_RESEARCH (recent, sourced - ground claims in this, do not invent numbers):")
+        parts.append(research["digest"].strip())
+        cites = research.get("citations") or []
+        if isinstance(cites, list) and cites:
+            srcs = "; ".join(str(c.get("title") or c.get("url") or "")[:80] for c in cites if isinstance(c, dict))[:600]
+            if srcs:
+                parts.append(f"Sources: {srcs}")
+    if not parts:
+        return ""
+    return "INDUSTRY_CONTEXT (real domain knowledge about this company's market; be specific to it):\n" + "\n".join(parts)
+
+
 def ensure_brain_startup():
     """Idempotent indexes for the decision ledger. Called from server startup."""
     decisions_col.create_index("id", unique=True)
@@ -275,6 +337,10 @@ COMMIT THEN SHARPEN: when the decision genuinely hinges on ONE missing fact, sti
 
 CONNECTED MEMORY: when SESSION_HISTORY is present, this is an ongoing conversation. Build on it, go one level deeper than last turn, never repeat what you already said, never re-ask what they already told you. It should feel like the same person who has been with them the whole way.
 
+FIT THE FOUNDER: if a FOUNDER_PROFILE block is present, this is the person you are advising and you know them well. Shape your tone, framing, and the next_action to fit their personality, communication style, decision style, and risk appetite. If they are conflict-averse or introverted, make the move gentler and give them words/a script; if they are decisive and blunt, be crisp and direct. Lean on their strengths, quietly cover their blind spots. NEVER quote the profile back at them or label them ("as an introvert..."); just fit them so naturally it feels like you get them.
+
+KNOW THE INDUSTRY: if an INDUSTRY_CONTEXT block is present, treat it as real, current domain knowledge about this company's specific market. Ground your read, decision, and next_action in those concrete realities (the real players, dynamics, constraints, regulations, benchmarks) instead of generic business advice dressed in industry words. Be specific to THIS industry. If the context cites research, you may reference what the industry research shows, but stay concrete and never fabricate a number that is not supported.
+
 HARD RULES:
 - Ground every factual claim in a RETRIEVED_PASSAGE. Cite each source you used as its document name and chapter.
 - If the mode is ANSWER and the answer is NOT in the passages, set found_in_docs=false and say plainly you could not find it in the company's documents. NEVER invent a policy, number, date, name, or fact.
@@ -306,7 +372,7 @@ def _clean(s):
     return s
 
 
-def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = ""):
+def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = "", founder_block: str = "", industry_block: str = ""):
     """ONE LLM call. Returns (out_dict, model, usage)."""
     if passages:
         psg = "\n\n".join(f"[{p['doc']} -> {p['chapter']}] (score {p['score']})\n{p['text']}" for p in passages)
@@ -317,9 +383,11 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
     role_line = f"USER_FUNCTION: {norm_function(function)} - their decisions should serve {FUNCTION_RUBRIC.get(norm_function(function), FUNCTION_RUBRIC['general'])}.\n"
     rules_block = f"COMPANY_RULES (set by the admin, treat as policy you must respect):\n{instructions.strip()}\n\n" if (instructions or "").strip() else ""
     strat_section = f"{strategy_block}\n\n" if (strategy_block or "").strip() else ""
+    founder_section = f"{founder_block}\n\n" if (founder_block or "").strip() else ""
+    industry_section = f"{industry_block}\n\n" if (industry_block or "").strip() else ""
     learn_section = learning_block if (learning_block or "").strip() else ""
     hist_section = session_history if (session_history or "").strip() else ""
-    prompt = f"{docs_line}{role_line}\n{rules_block}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
+    prompt = f"{docs_line}{role_line}\n{rules_block}{founder_section}{industry_section}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
 
     system_blocks = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
     last_err = None
@@ -535,6 +603,8 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
     function = norm_function(user.get("function"))
     strategy_block = _strategy_block(org, function)
     learning_block = _org_learning_block(org, function)
+    founder_block = _founder_profile_block(org) if is_owner else ""   # owner-only personality steering
+    industry_block = _industry_block(org)                              # org-wide domain grounding
     reserve = BRAIN_RESERVE
     u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
                                       {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
@@ -544,7 +614,8 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
         passages, doc_map, doc_names = kb_retrieve(kb_ns, question)
         history = _session_history(user["id"], session_id)
         out, model, usage = brain_answer(question, passages, doc_names, instructions,
-                                         strategy_block, history, function, learning_block)
+                                         strategy_block, history, function, learning_block,
+                                         founder_block, industry_block)
     except Exception as e:
         try:
             users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund

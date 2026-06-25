@@ -25,6 +25,7 @@ from feedback import router as feedback_router
 from questionnaire import router as questionnaire_router
 from decision_brain import router as brain_router, ensure_brain_startup
 from organizations import router as org_router, ensure_org_startup
+from founder_profile import router as founder_router
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -519,6 +520,7 @@ app.include_router(feedback_router)
 app.include_router(questionnaire_router)
 app.include_router(brain_router)
 app.include_router(org_router)
+app.include_router(founder_router)
 
 @app.on_event("startup")
 def _startup():

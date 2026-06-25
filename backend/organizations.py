@@ -77,6 +77,12 @@ class StrategyIn(BaseModel):
     target_arr: float | None = Field(default=None, ge=0)
 
 
+class ProgressIn(BaseModel):
+    """Founder-only quick update of where the company is now (drives the Goal -> Progress tracker).
+    Does NOT change the strategy or bump strategy_version - it only logs forward motion."""
+    current_arr: float = Field(ge=0)
+
+
 # ----------------------------------------------------------------- helpers
 def _active_membership(user: dict) -> dict | None:
     return members_col.find_one({"user_id": user["id"], "status": "active"})
@@ -332,7 +338,96 @@ def set_strategy(body: StrategyIn, user: dict = Depends(current_user)):
         "strategy_updated_at": now_utc(),
     }})
     org = orgs_col.find_one({"id": m["org_id"]})
+    if body.current_arr is not None:
+        _append_arr_snapshot(m["org_id"], body.current_arr)
     return _strategy_view(org)
+
+
+# ----------------------------------------------------------------- goal -> progress tracker (founder-only)
+PROGRESS_HISTORY_CAP = 36
+
+
+def _append_arr_snapshot(org_id: str, arr) -> None:
+    """Log a point on the founder's progress curve (idempotent against an identical last value)."""
+    try:
+        arr = float(arr)
+    except (TypeError, ValueError):
+        return
+    org = orgs_col.find_one({"id": org_id}, {"_id": 0, "arr_history": 1})
+    hist = list((org or {}).get("arr_history", []) or [])
+    if hist and isinstance(hist[-1], dict) and hist[-1].get("arr") == arr:
+        return  # no movement, don't clutter the curve
+    hist.append({"arr": arr, "at": now_utc().isoformat()})
+    orgs_col.update_one({"id": org_id}, {"$set": {"arr_history": hist[-PROGRESS_HISTORY_CAP:]}})
+
+
+def _progress_status(pct):
+    if pct is None:
+        return "Not started yet"
+    if pct >= 100:
+        return "Goal reached"
+    if pct >= 90:
+        return "Almost there"
+    if pct >= 60:
+        return "Closing in"
+    if pct >= 25:
+        return "Building momentum"
+    if pct > 0:
+        return "Just getting started"
+    return "Not started yet"
+
+
+def _goal_progress(org: dict | None) -> dict | None:
+    """Transparent arithmetic Goal -> Progress view. Founder-only. Not an AI forecast.
+    Returns None when there is no numeric target to measure against."""
+    if not org:
+        return None
+    ca, ta = org.get("current_arr"), org.get("target_arr")
+    if not ta or ta <= 0:
+        return None
+    ca = ca or 0
+    progress_pct = round(100 * ca / ta)
+    gap_pct = round(100 * (ta - ca) / ca) if ca and ca > 0 else None
+    raw_hist = list(org.get("arr_history", []) or [])
+    history = [{"arr": h.get("arr"), "at": h.get("at")} for h in raw_hist if isinstance(h, dict)]
+    return {
+        "north_star": (org.get("north_star") or "").strip(),
+        "target": (org.get("target") or "").strip(),
+        "deadline": (org.get("deadline") or "").strip(),
+        "current_arr": ca,
+        "target_arr": ta,
+        "remaining": max(0, ta - ca),
+        "progress_pct": progress_pct,
+        "gap_pct": gap_pct,
+        "status": _progress_status(progress_pct),
+        "history": history[-12:],
+        "note": "Arithmetic only (current ÷ target). Not a forecast.",
+    }
+
+
+@router.get("/progress")
+def get_progress(user: dict = Depends(current_user)):
+    """Owner-only. The Goal -> Progress snapshot for the founder dashboard."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    return {"goal_progress": _goal_progress(org)}
+
+
+@router.post("/progress")
+def set_progress(body: ProgressIn, user: dict = Depends(current_user)):
+    """Owner-only. Quick 'where are we now' update. Logs a point on the progress curve and
+    recomputes the gap. Does NOT touch the strategy or strategy_version."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    orgs_col.update_one({"id": m["org_id"]}, {"$set": {"current_arr": body.current_arr,
+                                                       "progress_updated_at": now_utc()}})
+    _append_arr_snapshot(m["org_id"], body.current_arr)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    return {"goal_progress": _goal_progress(org)}
 
 
 # ----------------------------------------------------------------- founder cockpit (private clarity)
@@ -542,6 +637,7 @@ def cockpit(user: dict = Depends(current_user)):
         "team_alignment": team_alignment,
         "alignment_trend": align_trend,
         "pacing": pacing,
+        "goal_progress": _goal_progress(org),
         "contradictions": contradictions,
         "per_member": per_member,
         "drift": drift,

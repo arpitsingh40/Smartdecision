@@ -385,6 +385,31 @@ def _sanitize_alignment(a):
     return {"score": score, "reason": (str(reason)[:300] if reason else "")}
 
 
+# Feature (c): turn the founder-only alignment into a plain-English "goal impact" the FOUNDER sees
+# on their own decision. Members never receive this (gated on is_owner + a North Star being set).
+_GOAL_IMPACT_LABEL = {
+    "high": "Strongly moves you toward your goal",
+    "medium": "Partly moves you toward your goal",
+    "low": "Barely moves the goal — worth reconsidering",
+}
+
+
+def _goal_impact(alignment, org, is_owner):
+    """Founder-only annotation: how much this decision advances the private North Star.
+    Returns None for members, solo users, or when no North Star is set."""
+    if not (is_owner and org and (org.get("north_star") or "").strip()):
+        return None
+    if not isinstance(alignment, dict) or not isinstance(alignment.get("score"), int):
+        return None
+    band = _band(alignment)
+    return {
+        "score": alignment["score"],
+        "band": band,
+        "label": _GOAL_IMPACT_LABEL.get(band, ""),
+        "reason": alignment.get("reason", ""),
+    }
+
+
 class SettingsIn(BaseModel):
     instructions: str = Field(default="", max_length=4000)
 
@@ -506,7 +531,7 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
     if not question:
         raise HTTPException(422, "Empty question")
     session_id = session_id or str(uuid.uuid4())
-    kb_ns, _is_admin, org, instructions = _resolve_context(user)
+    kb_ns, is_owner, org, instructions = _resolve_context(user)
     function = norm_function(user.get("function"))
     strategy_block = _strategy_block(org, function)
     learning_block = _org_learning_block(org, function)
@@ -539,6 +564,7 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
 
     # ---- Decision Ledger: persist; alignment is FOUNDER-ONLY (stripped from member response) ----
     alignment = _sanitize_alignment(out.pop("strategic_alignment", None))
+    goal_impact = _goal_impact(alignment, org, is_owner)  # founder-only; None for members/solo
     decision_id = str(uuid.uuid4())
     try:
         decisions_col.insert_one({
@@ -580,7 +606,8 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
     return {**out, "decision_id": decision_id, "session_id": session_id, "model": model,
             "credits": u.get("credits", 0), "cost": actual,
             "tokens": usage["input_tokens"] + usage["output_tokens"],
-            "sources_found": len(passages), "docs_in_kb": len(doc_names)}
+            "sources_found": len(passages), "docs_in_kb": len(doc_names),
+            **({"goal_impact": goal_impact} if goal_impact else {})}
 
 
 @router.post("/ask")

@@ -3,9 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { TopBar } from '../components/TopBar';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import {
-  Target, Loader2, TrendingUp, CheckCircle2, Users, Activity, AlertTriangle, Lock, Gauge, Clock, Award,
+  Target, Loader2, TrendingUp, CheckCircle2, Users, Activity, AlertTriangle, Lock, Gauge, Clock, Award, Flag, Pencil,
 } from 'lucide-react';
+
+const fmtNum = (n) => {
+  if (n == null) return '—';
+  try { return Number(n).toLocaleString('en-IN'); } catch { return String(n); }
+};
+const statusColor = (pct) => (pct == null ? 'text-muted-foreground' : pct >= 100 ? 'text-emerald-600' : pct >= 60 ? 'text-[hsl(var(--ring))]' : pct >= 25 ? 'text-amber-600' : 'text-muted-foreground');
 
 const fmtLeft = (iso) => {
   if (!iso) return '';
@@ -33,6 +40,9 @@ export default function CockpitPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [data, setData] = useState(null);
+  const [arrInput, setArrInput] = useState('');
+  const [savingArr, setSavingArr] = useState(false);
+  const [editingArr, setEditingArr] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,6 +55,18 @@ export default function CockpitPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const saveProgress = async () => {
+    const n = Number(String(arrInput).replace(/[, ]/g, ''));
+    if (!Number.isFinite(n) || n < 0) { return; }
+    setSavingArr(true);
+    try {
+      const r = await api.post('/org/progress', { current_arr: n });
+      setData((d) => ({ ...d, goal_progress: r.data.goal_progress }));
+      setEditingArr(false);
+      setArrInput('');
+    } catch (_e) { /* owner-gated; ignore */ } finally { setSavingArr(false); }
+  };
 
   if (loading) {
     return (
@@ -72,6 +94,7 @@ export default function CockpitPage() {
   }
 
   const ns = data.north_star || {};
+  const gp = data.goal_progress;
   const a = data.alignment || {};
   const ex = data.execution || {};
   const t = data.totals || {};
@@ -98,8 +121,84 @@ export default function CockpitPage() {
             </>
           ) : (
             <p className="text-sm text-muted-foreground mt-1">
-              No North Star set yet. <button className="underline" onClick={() => navigate('/team')}>Set it on your Team page</button> so every decision is steered toward it.
+              No North Star set yet. <button className="underline" onClick={() => navigate('/goal-setup')}>Set up your goal</button> so every decision is steered toward it.
             </p>
+          )}
+        </section>
+
+        {/* Goal -> Progress tracker */}
+        <section data-testid="cockpit-goal-progress" className="rounded-2xl border bg-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2"><Flag size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Goal → Progress</h3></div>
+            {gp && !editingArr && (
+              <button data-testid="cockpit-progress-edit" onClick={() => { setEditingArr(true); setArrInput(String(gp.current_arr ?? '')); }}
+                className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                <Pencil size={12} /> Update
+              </button>
+            )}
+          </div>
+
+          {!gp ? (
+            <div className="text-sm text-muted-foreground">
+              Set a target number to track progress.{' '}
+              <button data-testid="cockpit-progress-setup" className="underline" onClick={() => navigate('/goal-setup')}>
+                Set up your goal
+              </button>{' '}so this fills with a live progress bar.
+            </div>
+          ) : (
+            <>
+              {/* big progress number + status */}
+              <div className="flex items-end justify-between gap-3 flex-wrap">
+                <div>
+                  <div data-testid="cockpit-progress-pct" className={`font-display text-4xl leading-none ${statusColor(gp.progress_pct)}`}>
+                    {gp.progress_pct}%
+                  </div>
+                  <div data-testid="cockpit-progress-status" className="text-xs text-muted-foreground mt-1.5">
+                    {gp.status}{gp.deadline ? ` · target by ${gp.deadline}` : ''}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-muted-foreground">Now → Target</div>
+                  <div className="text-sm tabular-nums font-medium">{fmtNum(gp.current_arr)} <span className="text-muted-foreground">/ {fmtNum(gp.target_arr)}</span></div>
+                </div>
+              </div>
+
+              {/* progress bar */}
+              <div className="mt-4 h-3 rounded-full bg-muted overflow-hidden">
+                <div className={`h-full transition-all duration-500 ${gp.progress_pct >= 100 ? 'bg-emerald-500' : 'bg-[hsl(var(--ring))]'}`}
+                  style={{ width: `${Math.min(100, Math.max(2, gp.progress_pct))}%` }} />
+              </div>
+              <div className="flex items-center justify-between mt-2 text-[11px] text-muted-foreground">
+                <span>{fmtNum(gp.remaining)} to go</span>
+                <span>{gp.note}</span>
+              </div>
+
+              {/* inline update */}
+              {editingArr && (
+                <div data-testid="cockpit-progress-editor" className="mt-4 rounded-xl border bg-background p-3 flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">Where are you now?</span>
+                  <Input data-testid="cockpit-progress-input" inputMode="numeric" value={arrInput}
+                    onChange={(e) => setArrInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveProgress(); }}
+                    placeholder={String(gp.target_arr)} className="rounded-lg h-9 w-40" />
+                  <Button data-testid="cockpit-progress-save" size="sm" onClick={saveProgress} disabled={savingArr} className="rounded-lg">
+                    {savingArr ? <Loader2 className="animate-spin" size={14} /> : 'Save'}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setEditingArr(false)} className="rounded-lg text-muted-foreground">Cancel</Button>
+                </div>
+              )}
+
+              {/* mini history */}
+              {Array.isArray(gp.history) && gp.history.length > 1 && (
+                <div className="mt-4 flex items-end gap-1.5 h-12" data-testid="cockpit-progress-history" title="Progress over time">
+                  {gp.history.map((h, i) => {
+                    const pct = gp.target_arr ? Math.min(100, Math.max(4, Math.round((100 * (h.arr || 0)) / gp.target_arr))) : 4;
+                    const isLast = i === gp.history.length - 1;
+                    return <div key={i} className={`flex-1 rounded-t ${isLast ? 'bg-[hsl(var(--ring))]' : 'bg-muted-foreground/30'}`} style={{ height: `${pct}%` }} />;
+                  })}
+                </div>
+              )}
+            </>
           )}
         </section>
 

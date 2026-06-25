@@ -1,546 +1,544 @@
 #!/usr/bin/env python3
 """
-Backend test for Connected Decision Session (Execution OS Sprint 1)
-Testing /app/backend/decision_brain.py and /app/backend/organizations.py
-
-CRITICAL: ANTHROPIC IS LIVE - HARD CAP: at most 3 LLM calls total
-LLM endpoints: POST /api/brain/ask, POST /api/brain/decisions/{id}/next-step
-All other endpoints are FREE
+Backend test for Goal Setup + Goal->Progress tracker (features a+b).
+Tests GET/POST /api/org/progress and goal_progress in /api/org/cockpit.
+NO LLM calls, fully free testing.
 """
 import requests
-import uuid
-import json
 import time
 
 # Backend URL from frontend/.env
-BASE_URL = "https://founder-goals.preview.emergentagent.com/api"
+BASE_URL = "https://e0d30486-7fce-4935-8c1e-6768bee14aa5.preview.emergentagent.com/api"
 
-# Credentials
+# Test credentials
 FOUNDER_EMAIL = "ceo@smartdecigen.com"
 FOUNDER_PASSWORD = "FounderOS@2026"
 
-# Test state
-founder_token = None
-member_token = None
-org_id = None
-session_id = None
-decision_id_1 = None
-decision_id_2 = None
-member_email = None
-member_password = "Member1234!"
+# Track LLM calls (should be 0)
+llm_calls_used = 0
 
-def log(msg):
-    print(f"\n{'='*80}")
-    print(f"  {msg}")
-    print(f"{'='*80}")
+def login(email, password):
+    """Login and return token."""
+    resp = requests.post(f"{BASE_URL}/auth/login", json={"email": email, "password": password})
+    if resp.status_code != 200:
+        print(f"❌ Login failed for {email}: {resp.status_code} {resp.text}")
+        return None
+    data = resp.json()
+    return data.get("token")
 
-def assert_field(response, field, expected=None, should_exist=True, should_not_exist=False):
-    """Assert field presence/absence and optionally value"""
-    data = response.json() if hasattr(response, 'json') else response
+def signup_and_join(org_code):
+    """Create a fresh member account and join org."""
+    import random
+    email = f"member_{random.randint(10000, 99999)}@test.com"
+    password = "Member1234!"
     
-    if should_not_exist:
-        if field in data:
-            raise AssertionError(f"❌ Field '{field}' should NOT exist but found: {data.get(field)}")
-        print(f"  ✓ Field '{field}' correctly NOT present")
-        return
-    
-    if should_exist:
-        if field not in data:
-            raise AssertionError(f"❌ Field '{field}' missing from response: {json.dumps(data, indent=2)}")
-        print(f"  ✓ Field '{field}' present: {data[field]}")
-    
-    if expected is not None:
-        actual = data.get(field)
-        if actual != expected:
-            raise AssertionError(f"❌ Field '{field}' expected {expected}, got {actual}")
-        print(f"  ✓ Field '{field}' = {expected}")
-    
-    return data.get(field)
-
-def assert_non_empty_string(response, field):
-    """Assert field is a non-empty string"""
-    data = response.json() if hasattr(response, 'json') else response
-    value = data.get(field)
-    if not isinstance(value, str) or not value.strip():
-        raise AssertionError(f"❌ Field '{field}' should be non-empty string, got: {value}")
-    print(f"  ✓ Field '{field}' is non-empty string: '{value[:100]}...'")
-    return value
-
-def assert_string_or_null(response, field):
-    """Assert field is either a string or null"""
-    data = response.json() if hasattr(response, 'json') else response
-    value = data.get(field)
-    if value is not None and not isinstance(value, str):
-        raise AssertionError(f"❌ Field '{field}' should be string or null, got: {type(value).__name__}")
-    print(f"  ✓ Field '{field}' is string or null: {value}")
-    return value
-
-def setup_org_and_member():
-    """Setup: Login as founder, create org, set strategy, create member"""
-    global founder_token, member_token, org_id, member_email
-    
-    log("SETUP: Login as founder")
-    r = requests.post(f"{BASE_URL}/auth/login", json={
-        "email": FOUNDER_EMAIL,
-        "password": FOUNDER_PASSWORD
-    })
-    assert r.status_code == 200, f"Founder login failed: {r.status_code} {r.text}"
-    founder_token = r.json()["token"]
-    print(f"  ✓ Founder logged in, token: {founder_token[:20]}...")
-    
-    # Check if org already exists
-    log("SETUP: Check if org exists")
-    r = requests.get(f"{BASE_URL}/org", headers={"Authorization": f"Bearer {founder_token}"})
-    if r.status_code == 200:
-        org_id = r.json()["id"]
-        print(f"  ✓ Org already exists: {r.json()['name']} (id: {org_id})")
-        
-        # Check if strategy is set
-        r = requests.get(f"{BASE_URL}/org/strategy", headers={"Authorization": f"Bearer {founder_token}"})
-        if r.status_code == 200 and r.json().get("north_star"):
-            print(f"  ✓ Strategy already set: {r.json()['north_star'][:50]}...")
-        else:
-            log("SETUP: Set strategy")
-            r = requests.put(f"{BASE_URL}/org/strategy", headers={"Authorization": f"Bearer {founder_token}"}, json={
-                "north_star": "Reach 100 crore annual revenue in solar EPC",
-                "target": "100 Cr ARR",
-                "deadline": "Mar 2027",
-                "priorities": [
-                    "Win commercial & industrial rooftop deals",
-                    "Push EPC ticket sizes above 50L",
-                    "Protect 18% margins"
-                ],
-                "decision_rules": "Never quote below 18% margin. Prefer C&I over residential. Decline deals that squeeze margins below 18%."
-            })
-            assert r.status_code == 200, f"Set strategy failed: {r.status_code} {r.text}"
-            print(f"  ✓ Strategy set")
-    else:
-        log("SETUP: Create org")
-        r = requests.post(f"{BASE_URL}/org", headers={"Authorization": f"Bearer {founder_token}"}, json={
-            "name": "Acme Solar"
-        })
-        assert r.status_code == 200, f"Create org failed: {r.status_code} {r.text}"
-        org_id = r.json()["id"]
-        print(f"  ✓ Org created: Acme Solar (id: {org_id})")
-        
-        log("SETUP: Set strategy")
-        r = requests.put(f"{BASE_URL}/org/strategy", headers={"Authorization": f"Bearer {founder_token}"}, json={
-            "north_star": "Reach 100 crore annual revenue in solar EPC",
-            "target": "100 Cr ARR",
-            "deadline": "Mar 2027",
-            "priorities": [
-                "Win commercial & industrial rooftop deals",
-                "Push EPC ticket sizes above 50L",
-                "Protect 18% margins"
-            ],
-            "decision_rules": "Never quote below 18% margin. Prefer C&I over residential. Decline deals that squeeze margins below 18%."
-        })
-        assert r.status_code == 200, f"Set strategy failed: {r.status_code} {r.text}"
-        print(f"  ✓ Strategy set")
-    
-    # Create member
-    log("SETUP: Create member and join org")
-    member_email = f"member_{uuid.uuid4().hex[:8]}@acmesolar.com"
-    
-    # Create invite
-    r = requests.post(f"{BASE_URL}/org/invites", headers={"Authorization": f"Bearer {founder_token}"}, json={})
-    assert r.status_code == 200, f"Create invite failed: {r.status_code} {r.text}"
-    invite_code = r.json()["code"]
-    print(f"  ✓ Invite created: {invite_code}")
-    
-    # Signup member
-    r = requests.post(f"{BASE_URL}/auth/signup", json={
+    # Signup
+    resp = requests.post(f"{BASE_URL}/auth/signup", json={
         "name": "Test Member",
-        "email": member_email,
-        "password": member_password
+        "email": email,
+        "password": password
     })
-    assert r.status_code == 200, f"Member signup failed: {r.status_code} {r.text}"
-    member_token = r.json()["token"]
-    print(f"  ✓ Member signed up: {member_email}")
+    if resp.status_code != 200:
+        print(f"❌ Signup failed: {resp.status_code} {resp.text}")
+        return None, None
+    
+    data = resp.json()
+    token = data.get("token")
     
     # Join org
-    r = requests.post(f"{BASE_URL}/org/join", headers={"Authorization": f"Bearer {member_token}"}, json={
-        "code": invite_code
-    })
-    assert r.status_code == 200, f"Join org failed: {r.status_code} {r.text}"
-    print(f"  ✓ Member joined org")
+    resp = requests.post(f"{BASE_URL}/org/join", 
+                        json={"code": org_code},
+                        headers={"Authorization": f"Bearer {token}"})
+    if resp.status_code != 200:
+        print(f"❌ Join org failed: {resp.status_code} {resp.text}")
+        return None, None
+    
+    return email, token
 
-def test_1_llm_call_1():
-    """LLM CALL 1 - POST /api/brain/ask with session_id"""
-    global session_id, decision_id_1
+def test_1_get_progress_owner():
+    """TEST 1: GET /api/org/progress (owner) -> 200 with goal_progress payload."""
+    print("\n" + "="*80)
+    print("TEST 1: GET /api/org/progress (owner)")
+    print("="*80)
     
-    log("TEST 1: LLM CALL 1 - POST /api/brain/ask (first turn)")
+    token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
+    if not token:
+        return False
     
-    session_id = str(uuid.uuid4())
-    print(f"  Generated session_id: {session_id}")
+    resp = requests.get(f"{BASE_URL}/org/progress", 
+                       headers={"Authorization": f"Bearer {token}"})
     
-    r = requests.post(f"{BASE_URL}/brain/ask", headers={"Authorization": f"Bearer {member_token}"}, json={
-        "question": "A walk-in customer wants a steep discount that drops our margin to about 9%. Should I take it?",
-        "session_id": session_id
-    })
+    print(f"Status: {resp.status_code}")
     
-    assert r.status_code == 200, f"Ask failed: {r.status_code} {r.text}"
-    print(f"  ✓ Status: 200")
+    if resp.status_code != 200:
+        print(f"❌ FAIL: Expected 200, got {resp.status_code}")
+        print(f"Response: {resp.text}")
+        return False
     
-    data = r.json()
+    data = resp.json()
+    print(f"Response: {data}")
     
-    # Assert required fields
-    decision_id_1 = assert_field(data, "decision_id", should_exist=True)
-    assert_field(data, "session_id", expected=session_id)
+    # Check goal_progress key exists
+    if "goal_progress" not in data:
+        print("❌ FAIL: Missing 'goal_progress' key")
+        return False
     
-    # Assert next_action is non-empty string
-    next_action = assert_non_empty_string(data, "next_action")
+    gp = data["goal_progress"]
+    if gp is None:
+        print("❌ FAIL: goal_progress is None (org may not have target_arr set)")
+        return False
     
-    # Assert hook is non-empty string
-    hook = assert_non_empty_string(data, "hook")
+    # Check required fields
+    required_fields = ["north_star", "target", "deadline", "current_arr", "target_arr", 
+                      "remaining", "progress_pct", "gap_pct", "status", "history", "note"]
+    for field in required_fields:
+        if field not in gp:
+            print(f"❌ FAIL: Missing field '{field}' in goal_progress")
+            return False
     
-    # Assert situation_read is present (may be empty string)
-    assert_field(data, "situation_read", should_exist=True)
+    # Check progress_pct calculation
+    current_arr = gp["current_arr"]
+    target_arr = gp["target_arr"]
+    progress_pct = gp["progress_pct"]
+    expected_pct = round(100 * current_arr / target_arr)
     
-    # Assert sharpening_question is string or null
-    assert_string_or_null(data, "sharpening_question")
+    print(f"current_arr: {current_arr}")
+    print(f"target_arr: {target_arr}")
+    print(f"progress_pct: {progress_pct}")
+    print(f"expected_pct: {expected_pct}")
+    print(f"status: {gp['status']}")
     
-    # CRITICAL: response MUST NOT contain "strategic_alignment"
-    assert_field(data, "strategic_alignment", should_not_exist=True)
+    if progress_pct != expected_pct:
+        print(f"❌ FAIL: progress_pct mismatch. Expected {expected_pct}, got {progress_pct}")
+        return False
     
-    print(f"\n  📊 Response summary:")
-    print(f"     - decision_id: {decision_id_1}")
-    print(f"     - session_id: {session_id}")
-    print(f"     - next_action: {next_action[:80]}...")
-    print(f"     - hook: {hook[:80]}...")
-    print(f"     - mode: {data.get('mode')}")
-    print(f"     - cost: {data.get('cost')} credits")
+    # Check status label for 25% progress
+    if current_arr == 250000000 and target_arr == 1000000000:
+        if gp["status"] != "Building momentum":
+            print(f"❌ FAIL: Expected status 'Building momentum' for 25%, got '{gp['status']}'")
+            return False
     
-    return data
+    print("✅ PASS: GET /api/org/progress returns correct goal_progress payload")
+    return True
 
-def test_2_llm_call_2():
-    """LLM CALL 2 - POST /api/brain/ask with SAME session_id (multi-turn)"""
-    global decision_id_2
+def test_2_post_progress_update():
+    """TEST 2: POST /api/org/progress with new current_arr -> updates progress, history grows."""
+    print("\n" + "="*80)
+    print("TEST 2: POST /api/org/progress (update current_arr)")
+    print("="*80)
     
-    log("TEST 2: LLM CALL 2 - POST /api/brain/ask (second turn, SAME session)")
+    token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
+    if not token:
+        return False
     
-    print(f"  Using SAME session_id: {session_id}")
+    # Get initial state
+    resp = requests.get(f"{BASE_URL}/org/progress", 
+                       headers={"Authorization": f"Bearer {token}"})
+    if resp.status_code != 200:
+        print(f"❌ FAIL: Could not get initial state")
+        return False
     
-    r = requests.post(f"{BASE_URL}/brain/ask", headers={"Authorization": f"Bearer {member_token}"}, json={
-        "question": "Okay, what if instead I offer them a referral deal to keep the margin healthy?",
-        "session_id": session_id
-    })
+    initial_data = resp.json()
+    initial_gp = initial_data["goal_progress"]
+    initial_history_len = len(initial_gp["history"])
+    print(f"Initial history length: {initial_history_len}")
+    print(f"Initial current_arr: {initial_gp['current_arr']}")
+    print(f"Initial progress_pct: {initial_gp['progress_pct']}")
     
-    assert r.status_code == 200, f"Ask failed: {r.status_code} {r.text}"
-    print(f"  ✓ Status: 200")
+    # Update with a NEW distinct value
+    new_current_arr = 400000000  # 40% of 1B
+    resp = requests.post(f"{BASE_URL}/org/progress",
+                        json={"current_arr": new_current_arr},
+                        headers={"Authorization": f"Bearer {token}"})
     
-    data = r.json()
+    print(f"Status: {resp.status_code}")
     
-    # Assert required fields
-    decision_id_2 = assert_field(data, "decision_id", should_exist=True)
-    assert_field(data, "session_id", expected=session_id)
+    if resp.status_code != 200:
+        print(f"❌ FAIL: Expected 200, got {resp.status_code}")
+        print(f"Response: {resp.text}")
+        return False
     
-    # Assert next_action is non-empty string
-    next_action = assert_non_empty_string(data, "next_action")
+    data = resp.json()
+    gp = data["goal_progress"]
     
-    # Assert hook is non-empty string
-    hook = assert_non_empty_string(data, "hook")
+    print(f"Updated current_arr: {gp['current_arr']}")
+    print(f"Updated progress_pct: {gp['progress_pct']}")
+    print(f"Updated status: {gp['status']}")
+    print(f"Updated history length: {len(gp['history'])}")
     
-    # CRITICAL: response MUST NOT contain "strategic_alignment"
-    assert_field(data, "strategic_alignment", should_not_exist=True)
+    # Check current_arr updated
+    if gp["current_arr"] != new_current_arr:
+        print(f"❌ FAIL: current_arr not updated. Expected {new_current_arr}, got {gp['current_arr']}")
+        return False
     
-    print(f"\n  📊 Response summary:")
-    print(f"     - decision_id: {decision_id_2}")
-    print(f"     - session_id: {session_id}")
-    print(f"     - next_action: {next_action[:80]}...")
-    print(f"     - hook: {hook[:80]}...")
-    print(f"     - mode: {data.get('mode')}")
-    print(f"     - cost: {data.get('cost')} credits")
+    # Check progress_pct recomputed (40% of 1B = 40%)
+    expected_pct = round(100 * new_current_arr / gp["target_arr"])
+    if gp["progress_pct"] != expected_pct:
+        print(f"❌ FAIL: progress_pct not recomputed. Expected {expected_pct}, got {gp['progress_pct']}")
+        return False
     
-    # Verify both decisions share same session_id
-    log("TEST 2: Verify both decisions share same session_id")
-    r = requests.get(f"{BASE_URL}/brain/decisions", headers={"Authorization": f"Bearer {member_token}"})
-    assert r.status_code == 200, f"Get decisions failed: {r.status_code} {r.text}"
+    # Check history grew by exactly 1
+    new_history_len = len(gp["history"])
+    if new_history_len != initial_history_len + 1:
+        print(f"❌ FAIL: history length should grow by 1. Expected {initial_history_len + 1}, got {new_history_len}")
+        return False
     
-    decisions = r.json()["decisions"]
-    d1 = next((d for d in decisions if d["id"] == decision_id_1), None)
-    d2 = next((d for d in decisions if d["id"] == decision_id_2), None)
+    # Check status updated (40% should be "Building momentum")
+    if gp["status"] != "Building momentum":
+        print(f"❌ FAIL: Expected status 'Building momentum' for 40%, got '{gp['status']}'")
+        return False
     
-    assert d1 is not None, f"Decision 1 not found in history"
-    assert d2 is not None, f"Decision 2 not found in history"
+    print("✅ PASS: POST /api/org/progress updates current_arr, progress_pct, history, and status")
     
-    assert d1["session_id"] == session_id, f"Decision 1 session_id mismatch"
-    assert d2["session_id"] == session_id, f"Decision 2 session_id mismatch"
+    # TEST 2b: Post SAME value again -> history should NOT grow (idempotent)
+    print("\n--- TEST 2b: Idempotent check (same value) ---")
+    resp = requests.post(f"{BASE_URL}/org/progress",
+                        json={"current_arr": new_current_arr},
+                        headers={"Authorization": f"Bearer {token}"})
     
-    print(f"  ✓ Both decisions share session_id: {session_id}")
+    if resp.status_code != 200:
+        print(f"❌ FAIL: Expected 200, got {resp.status_code}")
+        return False
     
-    return data
+    data = resp.json()
+    gp = data["goal_progress"]
+    
+    print(f"History length after duplicate post: {len(gp['history'])}")
+    
+    if len(gp["history"]) != new_history_len:
+        print(f"❌ FAIL: history should NOT grow on duplicate value. Expected {new_history_len}, got {len(gp['history'])}")
+        return False
+    
+    print("✅ PASS: Idempotent - posting same value does NOT grow history")
+    return True
 
-def test_3_commit():
-    """FREE - POST /api/brain/decisions/{id}/commit"""
-    log("TEST 3: FREE - POST /api/brain/decisions/{id}/commit")
+def test_3_validation():
+    """TEST 3: Validation - negative current_arr -> 422, missing current_arr -> 422."""
+    print("\n" + "="*80)
+    print("TEST 3: Validation tests")
+    print("="*80)
     
-    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_1}/commit", 
-                     headers={"Authorization": f"Bearer {member_token}"}, 
-                     json={
-                         "action": "Call the customer and offer the referral deal",
-                         "due_in_hours": 24
-                     })
+    token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
+    if not token:
+        return False
     
-    assert r.status_code == 200, f"Commit failed: {r.status_code} {r.text}"
-    print(f"  ✓ Status: 200")
+    # Test negative current_arr
+    print("\n--- TEST 3a: Negative current_arr ---")
+    resp = requests.post(f"{BASE_URL}/org/progress",
+                        json={"current_arr": -5},
+                        headers={"Authorization": f"Bearer {token}"})
     
-    data = r.json()
-    assert_field(data, "status", expected="open")
-    assert_field(data, "due_at", should_exist=True)
+    print(f"Status: {resp.status_code}")
     
-    print(f"  ✓ Committed action: {data['committed_action']}")
-    print(f"  ✓ Status: {data['status']}")
-    print(f"  ✓ Due at: {data['due_at']}")
+    if resp.status_code != 422:
+        print(f"❌ FAIL: Expected 422 for negative current_arr, got {resp.status_code}")
+        return False
     
-    # Test GET /api/brain/active
-    log("TEST 3: FREE - GET /api/brain/active")
-    r = requests.get(f"{BASE_URL}/brain/active", headers={"Authorization": f"Bearer {member_token}"})
-    assert r.status_code == 200, f"Get active failed: {r.status_code} {r.text}"
+    print("✅ PASS: Negative current_arr returns 422")
     
-    data = r.json()
-    assert_field(data, "open_commitments", should_exist=True)
-    assert data["open_commitments"] >= 1, f"Expected open_commitments >= 1, got {data['open_commitments']}"
-    print(f"  ✓ open_commitments: {data['open_commitments']}")
+    # Test missing current_arr
+    print("\n--- TEST 3b: Missing current_arr ---")
+    resp = requests.post(f"{BASE_URL}/org/progress",
+                        json={},
+                        headers={"Authorization": f"Bearer {token}"})
     
-    assert_field(data, "next", should_exist=True)
-    next_item = data["next"]
-    assert next_item["decision_id"] == decision_id_1, f"Expected next.decision_id == {decision_id_1}, got {next_item['decision_id']}"
-    assert_field(next_item, "due_at", should_exist=True)
-    assert_field(next_item, "overdue", expected=False)
+    print(f"Status: {resp.status_code}")
     
-    print(f"  ✓ next.decision_id: {next_item['decision_id']}")
-    print(f"  ✓ next.due_at: {next_item['due_at']}")
-    print(f"  ✓ next.overdue: {next_item['overdue']}")
+    if resp.status_code != 422:
+        print(f"❌ FAIL: Expected 422 for missing current_arr, got {resp.status_code}")
+        return False
+    
+    print("✅ PASS: Missing current_arr returns 422")
+    return True
 
-def test_4_status():
-    """FREE - POST /api/brain/decisions/{id}/status"""
-    log("TEST 4: FREE - POST /api/brain/decisions/{id}/status")
+def test_4_authorization():
+    """TEST 4: Authorization - member GET/POST -> 403, no token -> 401."""
+    print("\n" + "="*80)
+    print("TEST 4: Authorization tests")
+    print("="*80)
     
-    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_1}/status", 
-                     headers={"Authorization": f"Bearer {member_token}"}, 
-                     json={
-                         "status": "done",
-                         "result": "Customer accepted the referral deal, margin protected at 18%"
-                     })
+    # First, get an invite code from founder
+    founder_token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
+    if not founder_token:
+        return False
     
-    assert r.status_code == 200, f"Status update failed: {r.status_code} {r.text}"
-    print(f"  ✓ Status: 200")
+    resp = requests.post(f"{BASE_URL}/org/invites",
+                        json={},
+                        headers={"Authorization": f"Bearer {founder_token}"})
+    if resp.status_code != 200:
+        print(f"❌ FAIL: Could not create invite: {resp.status_code}")
+        return False
     
-    data = r.json()
-    assert_field(data, "status", expected="done")
-    assert_field(data, "result", expected="Customer accepted the referral deal, margin protected at 18%")
+    invite_code = resp.json()["code"]
+    print(f"Created invite code: {invite_code}")
     
-    print(f"  ✓ Status: {data['status']}")
-    print(f"  ✓ Result: {data['result']}")
+    # Create and join as member
+    member_email, member_token = signup_and_join(invite_code)
+    if not member_token:
+        return False
     
-    # Test GET /api/brain/active again
-    log("TEST 4: FREE - GET /api/brain/active (after done)")
-    r = requests.get(f"{BASE_URL}/brain/active", headers={"Authorization": f"Bearer {member_token}"})
-    assert r.status_code == 200, f"Get active failed: {r.status_code} {r.text}"
+    print(f"Created member: {member_email}")
     
-    data = r.json()
-    assert_field(data, "done_total", should_exist=True)
-    assert data["done_total"] >= 1, f"Expected done_total >= 1, got {data['done_total']}"
-    print(f"  ✓ done_total: {data['done_total']}")
+    # Test member GET /api/org/progress -> 403
+    print("\n--- TEST 4a: Member GET /api/org/progress ---")
+    resp = requests.get(f"{BASE_URL}/org/progress",
+                       headers={"Authorization": f"Bearer {member_token}"})
     
-    # The decision should no longer be the "next" one
-    if data.get("next"):
-        assert data["next"]["decision_id"] != decision_id_1, f"Decision {decision_id_1} should not be next after marking done"
-        print(f"  ✓ Decision {decision_id_1} no longer the next (correctly decremented)")
-    else:
-        print(f"  ✓ No next commitment (open_commitments decremented to 0)")
+    print(f"Status: {resp.status_code}")
+    
+    if resp.status_code != 403:
+        print(f"❌ FAIL: Expected 403 for member GET, got {resp.status_code}")
+        return False
+    
+    print("✅ PASS: Member GET /api/org/progress returns 403")
+    
+    # Test member POST /api/org/progress -> 403
+    print("\n--- TEST 4b: Member POST /api/org/progress ---")
+    resp = requests.post(f"{BASE_URL}/org/progress",
+                        json={"current_arr": 500000000},
+                        headers={"Authorization": f"Bearer {member_token}"})
+    
+    print(f"Status: {resp.status_code}")
+    
+    if resp.status_code != 403:
+        print(f"❌ FAIL: Expected 403 for member POST, got {resp.status_code}")
+        return False
+    
+    print("✅ PASS: Member POST /api/org/progress returns 403")
+    
+    # Test no token GET -> 401
+    print("\n--- TEST 4c: No token GET /api/org/progress ---")
+    resp = requests.get(f"{BASE_URL}/org/progress")
+    
+    print(f"Status: {resp.status_code}")
+    
+    if resp.status_code != 401:
+        print(f"❌ FAIL: Expected 401 for no token GET, got {resp.status_code}")
+        return False
+    
+    print("✅ PASS: No token GET /api/org/progress returns 401")
+    
+    # Test no token POST -> 401
+    print("\n--- TEST 4d: No token POST /api/org/progress ---")
+    resp = requests.post(f"{BASE_URL}/org/progress",
+                        json={"current_arr": 500000000})
+    
+    print(f"Status: {resp.status_code}")
+    
+    if resp.status_code != 401:
+        print(f"❌ FAIL: Expected 401 for no token POST, got {resp.status_code}")
+        return False
+    
+    print("✅ PASS: No token POST /api/org/progress returns 401")
+    return True
 
-def test_5_llm_call_3():
-    """LLM CALL 3 - POST /api/brain/decisions/{id}/next-step"""
-    log("TEST 5: LLM CALL 3 - POST /api/brain/decisions/{id}/next-step")
+def test_5_cockpit_goal_progress():
+    """TEST 5: GET /api/org/cockpit includes both goal_progress AND pacing keys."""
+    print("\n" + "="*80)
+    print("TEST 5: GET /api/org/cockpit (goal_progress + pacing)")
+    print("="*80)
     
-    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_1}/next-step", 
-                     headers={"Authorization": f"Bearer {member_token}"})
+    token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
+    if not token:
+        return False
     
-    assert r.status_code == 200, f"Next-step failed: {r.status_code} {r.text}"
-    print(f"  ✓ Status: 200")
+    resp = requests.get(f"{BASE_URL}/org/cockpit",
+                       headers={"Authorization": f"Bearer {token}"})
     
-    data = r.json()
+    print(f"Status: {resp.status_code}")
     
-    # Assert returns a NEW decision with DIFFERENT decision_id
-    new_decision_id = assert_field(data, "decision_id", should_exist=True)
-    assert new_decision_id != decision_id_1, f"Expected NEW decision_id, got same: {new_decision_id}"
-    print(f"  ✓ NEW decision_id: {new_decision_id} (different from {decision_id_1})")
+    if resp.status_code != 200:
+        print(f"❌ FAIL: Expected 200, got {resp.status_code}")
+        print(f"Response: {resp.text}")
+        return False
     
-    # Assert SAME session_id
-    assert_field(data, "session_id", expected=session_id)
-    print(f"  ✓ SAME session_id: {session_id}")
+    data = resp.json()
     
-    # Assert non-empty next_action and hook
-    next_action = assert_non_empty_string(data, "next_action")
-    hook = assert_non_empty_string(data, "hook")
+    # Check goal_progress key exists
+    if "goal_progress" not in data:
+        print("❌ FAIL: Missing 'goal_progress' key in cockpit")
+        return False
     
-    # CRITICAL: NO "strategic_alignment" key
-    assert_field(data, "strategic_alignment", should_not_exist=True)
+    gp = data["goal_progress"]
+    if gp is None:
+        print("❌ FAIL: goal_progress is None")
+        return False
     
-    print(f"\n  📊 Response summary:")
-    print(f"     - decision_id: {new_decision_id}")
-    print(f"     - session_id: {session_id}")
-    print(f"     - next_action: {next_action[:80]}...")
-    print(f"     - hook: {hook[:80]}...")
-    print(f"     - mode: {data.get('mode')}")
-    print(f"     - cost: {data.get('cost')} credits")
-
-def test_6_cockpit():
-    """FREE - GET /api/org/cockpit (owner-only)"""
-    log("TEST 6: FREE - GET /api/org/cockpit (owner)")
+    print(f"goal_progress present: {list(gp.keys())}")
     
-    r = requests.get(f"{BASE_URL}/org/cockpit", headers={"Authorization": f"Bearer {founder_token}"})
-    assert r.status_code == 200, f"Cockpit failed: {r.status_code} {r.text}"
-    print(f"  ✓ Status: 200")
+    # Check pacing key exists (backward compatibility)
+    if "pacing" not in data:
+        print("❌ FAIL: Missing 'pacing' key in cockpit (backward compatibility)")
+        return False
     
-    data = r.json()
+    pacing = data["pacing"]
+    if pacing is None:
+        print("❌ FAIL: pacing is None")
+        return False
     
-    # Assert required keys
-    assert_field(data, "north_star", should_exist=True)
-    assert_field(data, "totals", should_exist=True)
-    assert_field(data, "alignment", should_exist=True)
-    assert_field(data, "execution", should_exist=True)
-    assert_field(data, "per_member", should_exist=True)
-    assert_field(data, "drift", should_exist=True)
-    assert_field(data, "active_actions", should_exist=True)
-    assert_field(data, "results", should_exist=True)
+    print(f"pacing present: {list(pacing.keys())}")
     
-    # Check active_actions structure
-    active_actions = data["active_actions"]
-    assert isinstance(active_actions, list), f"active_actions should be array"
-    print(f"  ✓ active_actions is array with {len(active_actions)} items")
+    # Check pacing.gap_pct exists
+    if "gap_pct" not in pacing:
+        print("❌ FAIL: Missing 'gap_pct' in pacing")
+        return False
     
-    # Check results structure
-    results = data["results"]
-    assert isinstance(results, list), f"results should be array"
-    print(f"  ✓ results is array with {len(results)} items")
+    print(f"pacing.gap_pct: {pacing['gap_pct']}")
     
-    # Check execution.overdue
-    execution = data["execution"]
-    assert_field(execution, "overdue", should_exist=True)
-    assert isinstance(execution["overdue"], int), f"execution.overdue should be number"
-    print(f"  ✓ execution.overdue: {execution['overdue']}")
-    
-    # Check that results contain the done decision with result text
-    if results:
-        result_item = results[0]
-        assert_field(result_item, "result", should_exist=True)
-        print(f"  ✓ results[0].result: {result_item['result'][:50]}...")
+    print("✅ PASS: GET /api/org/cockpit includes both goal_progress and pacing keys")
     
     # Test member GET /api/org/cockpit -> 403
-    log("TEST 6: FREE - GET /api/org/cockpit (member -> 403)")
-    r = requests.get(f"{BASE_URL}/org/cockpit", headers={"Authorization": f"Bearer {member_token}"})
-    assert r.status_code == 403, f"Expected 403 for member, got {r.status_code}"
-    print(f"  ✓ Member correctly blocked with 403")
+    print("\n--- TEST 5b: Member GET /api/org/cockpit ---")
     
-    # Test member-facing payloads do NOT contain strategic_alignment
-    log("TEST 6: FREE - Verify NO strategic_alignment in member-facing payloads")
+    # Get member token (reuse from test 4 or create new)
+    founder_token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
+    resp = requests.post(f"{BASE_URL}/org/invites",
+                        json={},
+                        headers={"Authorization": f"Bearer {founder_token}"})
+    if resp.status_code == 200:
+        invite_code = resp.json()["code"]
+        member_email, member_token = signup_and_join(invite_code)
+        if member_token:
+            resp = requests.get(f"{BASE_URL}/org/cockpit",
+                               headers={"Authorization": f"Bearer {member_token}"})
+            
+            print(f"Status: {resp.status_code}")
+            
+            if resp.status_code != 403:
+                print(f"❌ FAIL: Expected 403 for member GET cockpit, got {resp.status_code}")
+                return False
+            
+            print("✅ PASS: Member GET /api/org/cockpit returns 403")
     
-    # Check GET /api/brain/decisions
-    r = requests.get(f"{BASE_URL}/brain/decisions", headers={"Authorization": f"Bearer {member_token}"})
-    assert r.status_code == 200, f"Get decisions failed: {r.status_code} {r.text}"
-    decisions = r.json()["decisions"]
-    for d in decisions:
-        if "strategic_alignment" in d:
-            raise AssertionError(f"❌ strategic_alignment found in decision {d['id']}")
-    print(f"  ✓ GET /api/brain/decisions: NO strategic_alignment in {len(decisions)} decisions")
-    
-    # Check GET /api/brain/active
-    r = requests.get(f"{BASE_URL}/brain/active", headers={"Authorization": f"Bearer {member_token}"})
-    assert r.status_code == 200, f"Get active failed: {r.status_code} {r.text}"
-    active_data = r.json()
-    if "strategic_alignment" in active_data:
-        raise AssertionError(f"❌ strategic_alignment found in /active response")
-    print(f"  ✓ GET /api/brain/active: NO strategic_alignment")
+    return True
 
-def test_7_validation():
-    """FREE - Validation tests"""
-    log("TEST 7: FREE - Validation tests")
+def test_6_strategy_version_stability():
+    """TEST 6: CRITICAL - strategy_version must NOT change after POST /api/org/progress."""
+    print("\n" + "="*80)
+    print("TEST 6: Strategy version stability")
+    print("="*80)
     
-    # Test commit with due_in_hours=0 -> 422
-    print("\n  Test: commit with due_in_hours=0 -> 422")
-    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_2}/commit", 
-                     headers={"Authorization": f"Bearer {member_token}"}, 
-                     json={
-                         "action": "Test action",
-                         "due_in_hours": 0
-                     })
-    assert r.status_code == 422, f"Expected 422 for due_in_hours=0, got {r.status_code}"
-    print(f"  ✓ due_in_hours=0 correctly rejected with 422")
+    token = login(FOUNDER_EMAIL, FOUNDER_PASSWORD)
+    if not token:
+        return False
     
-    # Test commit with due_in_hours=99999 -> 422
-    print("\n  Test: commit with due_in_hours=99999 -> 422")
-    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_2}/commit", 
-                     headers={"Authorization": f"Bearer {member_token}"}, 
-                     json={
-                         "action": "Test action",
-                         "due_in_hours": 99999
-                     })
-    assert r.status_code == 422, f"Expected 422 for due_in_hours=99999, got {r.status_code}"
-    print(f"  ✓ due_in_hours=99999 correctly rejected with 422")
+    # Get initial strategy_version
+    print("\n--- TEST 6a: Capture initial strategy_version ---")
+    resp = requests.get(f"{BASE_URL}/org/strategy",
+                       headers={"Authorization": f"Bearer {token}"})
     
-    # Test status with status="bogus" -> 422
-    print("\n  Test: status with status='bogus' -> 422")
-    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_2}/status", 
-                     headers={"Authorization": f"Bearer {member_token}"}, 
-                     json={
-                         "status": "bogus"
-                     })
-    assert r.status_code == 422, f"Expected 422 for status='bogus', got {r.status_code}"
-    print(f"  ✓ status='bogus' correctly rejected with 422")
+    if resp.status_code != 200:
+        print(f"❌ FAIL: Could not get strategy: {resp.status_code}")
+        return False
     
-    # Test next-step on unknown decision -> 404
-    print("\n  Test: next-step on unknown decision -> 404")
-    fake_id = str(uuid.uuid4())
-    r = requests.post(f"{BASE_URL}/brain/decisions/{fake_id}/next-step", 
-                     headers={"Authorization": f"Bearer {member_token}"})
-    assert r.status_code == 404, f"Expected 404 for unknown decision, got {r.status_code}"
-    print(f"  ✓ Unknown decision correctly rejected with 404")
+    initial_strategy = resp.json()
+    initial_version = initial_strategy.get("strategy_version", 0)
+    print(f"Initial strategy_version: {initial_version}")
     
-    # Test next-step on someone else's decision -> 404
-    print("\n  Test: next-step on someone else's decision -> 404")
-    # Use founder token to try to access member's decision
-    r = requests.post(f"{BASE_URL}/brain/decisions/{decision_id_1}/next-step", 
-                     headers={"Authorization": f"Bearer {founder_token}"})
-    assert r.status_code == 404, f"Expected 404 for other user's decision, got {r.status_code}"
-    print(f"  ✓ Other user's decision correctly rejected with 404")
+    # POST /api/org/progress with changed current_arr
+    print("\n--- TEST 6b: POST /api/org/progress (should NOT bump version) ---")
+    import random
+    new_arr = 300000000 + random.randint(1000, 9999)  # Ensure it's different
+    resp = requests.post(f"{BASE_URL}/org/progress",
+                        json={"current_arr": new_arr},
+                        headers={"Authorization": f"Bearer {token}"})
+    
+    if resp.status_code != 200:
+        print(f"❌ FAIL: POST /progress failed: {resp.status_code}")
+        return False
+    
+    print(f"Posted new current_arr: {new_arr}")
+    
+    # Get strategy_version again
+    resp = requests.get(f"{BASE_URL}/org/strategy",
+                       headers={"Authorization": f"Bearer {token}"})
+    
+    if resp.status_code != 200:
+        print(f"❌ FAIL: Could not get strategy after progress update: {resp.status_code}")
+        return False
+    
+    after_progress_strategy = resp.json()
+    after_progress_version = after_progress_strategy.get("strategy_version", 0)
+    print(f"Strategy_version after POST /progress: {after_progress_version}")
+    
+    if after_progress_version != initial_version:
+        print(f"❌ FAIL: strategy_version changed after POST /progress! Expected {initial_version}, got {after_progress_version}")
+        return False
+    
+    print("✅ PASS: strategy_version unchanged after POST /api/org/progress")
+    
+    # TEST 6c: PUT /api/org/strategy with changed priority should still bump version
+    print("\n--- TEST 6c: PUT /api/org/strategy (should bump version) ---")
+    
+    # Modify priorities
+    current_priorities = initial_strategy.get("priorities", [])
+    new_priorities = current_priorities + [f"New priority {random.randint(1000, 9999)}"]
+    
+    resp = requests.put(f"{BASE_URL}/org/strategy",
+                       json={
+                           "north_star": initial_strategy.get("north_star", ""),
+                           "target": initial_strategy.get("target", ""),
+                           "deadline": initial_strategy.get("deadline", ""),
+                           "priorities": new_priorities,
+                           "decision_rules": initial_strategy.get("decision_rules", ""),
+                           "current_arr": initial_strategy.get("current_arr"),
+                           "target_arr": initial_strategy.get("target_arr")
+                       },
+                       headers={"Authorization": f"Bearer {token}"})
+    
+    if resp.status_code != 200:
+        print(f"❌ FAIL: PUT /strategy failed: {resp.status_code}")
+        return False
+    
+    updated_strategy = resp.json()
+    updated_version = updated_strategy.get("strategy_version", 0)
+    print(f"Strategy_version after PUT /strategy with changed priority: {updated_version}")
+    
+    if updated_version <= after_progress_version:
+        print(f"❌ FAIL: strategy_version should increment after PUT /strategy. Expected > {after_progress_version}, got {updated_version}")
+        return False
+    
+    print("✅ PASS: strategy_version increments after PUT /api/org/strategy with changed priority")
+    return True
 
 def main():
-    try:
-        setup_org_and_member()
-        
-        # LLM CALLS (max 3)
-        test_1_llm_call_1()  # LLM CALL 1
-        test_2_llm_call_2()  # LLM CALL 2
-        
-        # FREE TESTS
-        test_3_commit()
-        test_4_status()
-        
-        # LLM CALL 3
-        test_5_llm_call_3()  # LLM CALL 3
-        
-        # FREE TESTS
-        test_6_cockpit()
-        test_7_validation()
-        
-        log("✅ ALL TESTS PASSED")
-        print("\n🎉 Connected Decision Session backend is working correctly!")
-        print(f"\n📊 LLM calls used: 3 (within budget)")
-        print(f"   - Call 1: POST /api/brain/ask (first turn)")
-        print(f"   - Call 2: POST /api/brain/ask (second turn, multi-turn memory)")
-        print(f"   - Call 3: POST /api/brain/decisions/{{id}}/next-step")
-        
-    except AssertionError as e:
-        log(f"❌ TEST FAILED")
-        print(f"\n{e}")
-        raise
-    except Exception as e:
-        log(f"❌ UNEXPECTED ERROR")
-        print(f"\n{e}")
-        raise
+    """Run all tests."""
+    print("\n" + "="*80)
+    print("GOAL SETUP + GOAL->PROGRESS BACKEND TEST SUITE")
+    print("Testing features (a)+(b) - NO LLM calls")
+    print("="*80)
+    
+    results = []
+    
+    # Run all tests
+    results.append(("TEST 1: GET /api/org/progress (owner)", test_1_get_progress_owner()))
+    results.append(("TEST 2: POST /api/org/progress (update + idempotent)", test_2_post_progress_update()))
+    results.append(("TEST 3: Validation (negative/missing current_arr)", test_3_validation()))
+    results.append(("TEST 4: Authorization (member 403, no token 401)", test_4_authorization()))
+    results.append(("TEST 5: GET /api/org/cockpit (goal_progress + pacing)", test_5_cockpit_goal_progress()))
+    results.append(("TEST 6: Strategy version stability", test_6_strategy_version_stability()))
+    
+    # Summary
+    print("\n" + "="*80)
+    print("TEST SUMMARY")
+    print("="*80)
+    
+    passed = sum(1 for _, result in results if result)
+    total = len(results)
+    
+    for test_name, result in results:
+        status = "✅ PASS" if result else "❌ FAIL"
+        print(f"{status}: {test_name}")
+    
+    print(f"\nTotal: {passed}/{total} tests passed")
+    print(f"LLM calls used: {llm_calls_used} (expected: 0)")
+    
+    if passed == total and llm_calls_used == 0:
+        print("\n🎉 ALL TESTS PASSED! Features (a)+(b) working correctly.")
+        return 0
+    else:
+        print("\n⚠️  SOME TESTS FAILED")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    exit(main())

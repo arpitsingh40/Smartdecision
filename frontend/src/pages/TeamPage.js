@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
 import {
-  Users, Building2, Link2, Copy, Trash2, Crown, UserPlus, Loader2, ShieldCheck, Target, Lock, Save,
+  Users, Building2, Link2, Copy, Trash2, Crown, UserPlus, Loader2, ShieldCheck, Target, Lock, Save, Rocket, ArrowRight,
 } from 'lucide-react';
 
 export default function TeamPage() {
@@ -24,7 +24,7 @@ export default function TeamPage() {
   const [joinCode, setJoinCode] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const [strategy, setStrategy] = useState({ north_star: '', target: '', deadline: '', priorities: '', decision_rules: '' });
+  const [strategy, setStrategy] = useState({ north_star: '', target: '', deadline: '', priorities: '', decision_rules: '', current_arr: null, target_arr: null });
   const [savingStrategy, setSavingStrategy] = useState(false);
 
   const loadOwnerData = useCallback(async () => {
@@ -38,6 +38,7 @@ export default function TeamPage() {
       setStrategy({
         north_star: s.data.north_star || '', target: s.data.target || '', deadline: s.data.deadline || '',
         priorities: (s.data.priorities || []).join('\n'), decision_rules: s.data.decision_rules || '',
+        current_arr: s.data.current_arr ?? null, target_arr: s.data.target_arr ?? null,
       });
     } catch (_e) { /* not owner */ }
   }, []);
@@ -139,6 +140,7 @@ export default function TeamPage() {
       const r = await api.put('/org/strategy', {
         north_star: strategy.north_star, target: strategy.target, deadline: strategy.deadline,
         priorities, decision_rules: strategy.decision_rules,
+        current_arr: strategy.current_arr, target_arr: strategy.target_arr,
       });
       setOrg((o) => (o ? { ...o, strategy_set: r.data.strategy_set } : o));
       toast.success('North Star saved. It now quietly guides every decision your team makes.');
@@ -237,6 +239,26 @@ export default function TeamPage() {
                 <Crown size={12} /> Owner
               </span>
             </div>
+
+            {/* Guided goal setup CTA */}
+            <button
+              data-testid="goal-setup-cta"
+              onClick={() => navigate('/goal-setup')}
+              className="w-full text-left rounded-2xl border border-[hsl(var(--ring))]/30 bg-[hsl(var(--accent))]/50 hover:bg-[hsl(var(--accent))]/70 transition-colors p-5 flex items-center gap-4 group"
+            >
+              <div className="w-11 h-11 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+                <Rocket size={20} strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-medium text-sm">{org.strategy_set ? 'Revisit your goal setup' : 'Set up your goal — guided'}</div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {org.strategy_set
+                    ? 'Walk through your North Star, the number, and your priorities step by step.'
+                    : 'A few friendly steps: your dream, the number to hit, where you are now, and your non-negotiables. Takes about two minutes.'}
+                </p>
+              </div>
+              <ArrowRight size={18} className="shrink-0 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+            </button>
 
             {/* North Star — the hidden moat (founder-only) */}
             <section className="rounded-2xl border bg-card p-6">

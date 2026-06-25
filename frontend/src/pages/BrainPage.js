@@ -11,7 +11,7 @@ import {
 import { toast } from 'sonner';
 import {
   Send, Upload, FileText, X, SlidersHorizontal, Loader2, BookOpen,
-  CheckCircle2, AlertCircle, Quote, Clock, ArrowRight, Target, Sparkles,
+  CheckCircle2, AlertCircle, Quote, Clock, ArrowRight, Target, Sparkles, Lock, Flag,
 } from 'lucide-react';
 
 const MODE_LABEL = { answer: 'Answer', decide: 'Decision', plan: 'Plan' };
@@ -345,6 +345,36 @@ export default function BrainPage() {
                     <p className="text-[15px] md:text-base leading-6 font-display tracking-[-0.01em]">{result.next_action}</p>
                     {result.hook && (
                       <p data-testid="brain-hook" className="text-sm text-muted-foreground mt-1.5">{result.hook}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* GOAL IMPACT — founder-only (members never receive this) */}
+                {result.goal_impact && (
+                  <div data-testid="brain-goal-impact"
+                    className={`rounded-xl border px-4 py-3 ${
+                      result.goal_impact.band === 'high' ? 'border-emerald-300 bg-emerald-50/60'
+                      : result.goal_impact.band === 'medium' ? 'border-amber-300 bg-amber-50/60'
+                      : 'border-red-300 bg-red-50/60'}`}>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground flex items-center gap-1.5">
+                        <Flag size={12} /> Goal impact
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border bg-background text-muted-foreground">
+                        <Lock size={10} /> Private to you
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span data-testid="brain-goal-impact-score" className={`font-display text-2xl leading-none ${
+                        result.goal_impact.band === 'high' ? 'text-emerald-600'
+                        : result.goal_impact.band === 'medium' ? 'text-amber-600' : 'text-red-600'}`}>
+                        {result.goal_impact.score}
+                      </span>
+                      <span className="text-xs text-muted-foreground">/100</span>
+                      <span className="text-sm font-medium ml-1">{result.goal_impact.label}</span>
+                    </div>
+                    {result.goal_impact.reason && (
+                      <p className="text-xs text-muted-foreground mt-1.5">{result.goal_impact.reason}</p>
                     )}
                   </div>
                 )}

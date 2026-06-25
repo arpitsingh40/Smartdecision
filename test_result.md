@@ -23,6 +23,31 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Feature (a)+(b): Goal Setup + Goal->Progress tracker - GET/POST /api/org/progress (owner-only) + goal_progress in /api/org/cockpit; strategy current_arr/target_arr preserved + arr_history snapshots"
+    implemented: true
+    working: true
+    file: "/app/backend/organizations.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (features a+b). NO LLM, NO credits - safe to test fully. organizations.py additions: (1) ProgressIn{current_arr: float>=0}. (2) _goal_progress(org) -> {north_star,target,deadline,current_arr,target_arr,remaining,progress_pct(=round 100*current/target),gap_pct,status,history(last12),note} or None when target_arr missing/<=0. status bands: >=100 'Goal reached', >=90 'Almost there', >=60 'Closing in', >=25 'Building momentum', >0 'Just getting started', else 'Not started yet'. (3) _append_arr_snapshot(org_id,arr) appends {arr,at} to org.arr_history (cap 36), skips if identical to last. (4) GET /api/org/progress (owner-only, 403 member, 404 no org) -> {goal_progress}. (5) POST /api/org/progress {current_arr} (owner-only) updates current_arr (does NOT bump strategy_version) + snapshot -> {goal_progress}. (6) PUT /api/org/strategy now also appends a snapshot when current_arr provided. (7) cockpit() return gains 'goal_progress' key (pacing key UNCHANGED for backward compat). SELF-VERIFIED via curl: founder created org 'Acme Solar', set strategy target_arr=1e9 current_arr=1.2e8 -> GET /progress progress_pct=12 status 'Just getting started' history[1]; POST /progress current_arr=2.5e8 -> progress_pct=25 status 'Building momentum' history[2]; cockpit.goal_progress matches + pacing.gap_pct still present. TEST: GET/POST /progress owner happy-path + numbers; member 403 on both; POST current_arr<0 -> 422; cockpit goal_progress shape; ensure strategy_version does NOT change after POST /progress."
+      - working: true
+        agent: "testing"
+        comment: "PASS - All 6 Goal Setup + Goal->Progress tests passed successfully (0 LLM calls used, fully free). TEST 1 (GET /api/org/progress owner): Returns 200 with goal_progress containing all required fields {north_star, target, deadline, current_arr, target_arr, remaining, progress_pct, gap_pct, status, history, note}. Verified progress_pct calculation: current_arr=250000000, target_arr=1000000000 -> progress_pct=25 (correct). Status='Building momentum' for 25% progress (correct band). TEST 2 (POST /api/org/progress update): Posted new current_arr=400000000 -> 200, current_arr updated correctly, progress_pct recomputed to 40 (correct), history grew by exactly 1 entry (from 2 to 3), status='Building momentum' (correct for 40%). TEST 2b (Idempotent): Posted SAME current_arr=400000000 again -> 200, history length unchanged at 3 (idempotent behavior working - does NOT add duplicate). TEST 3 (Validation): POST with current_arr=-5 -> 422 ✓. POST with missing current_arr (empty body) -> 422 ✓. TEST 4 (Authorization): Created fresh member via signup+invite+join. Member GET /api/org/progress -> 403 ✓. Member POST /api/org/progress -> 403 ✓. No token GET -> 401 ✓. No token POST -> 401 ✓. TEST 5 (Cockpit): Owner GET /api/org/cockpit -> 200 with BOTH keys present: goal_progress (11 fields) AND pacing (5 fields including gap_pct=150) - backward compatibility maintained ✓. Member GET /api/org/cockpit -> 403 ✓. TEST 6 (CRITICAL - Strategy version stability): Initial strategy_version=1. POST /api/org/progress with new current_arr=300004965 -> strategy_version remains 1 (unchanged) ✓. PUT /api/org/strategy with changed priority -> strategy_version increments to 2 ✓. FINAL goal_progress payload observed: {north_star:'Reach 100 crore annual revenue and be the top C&I solar EPC in North India', target:'100 Cr ARR', deadline:'Mar 2027', current_arr:400000000.0, target_arr:1000000000.0, remaining:600000000.0, progress_pct:40, gap_pct:150, status:'Building momentum', history:[3 entries], note:'Arithmetic only (current ÷ target). Not a forecast.'}. All assertions verified. Feature is production-ready."
+  - task: "Feature (c): founder-only goal_impact on Decision Brain answers (/api/brain/ask + /api/brain/decisions/{id}/next-step); members NEVER receive it"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/decision_brain.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (feature c). REQUIRES REAL ANTHROPIC KEY (currently PLACEHOLDER -> /ask 502+refund, so goal_impact cannot be triggered live yet). decision_brain.py _answer_and_log: renamed _is_admin->is_owner; new _goal_impact(alignment,org,is_owner) returns founder-only {score,band(high>=70/med>=40/low),label,reason} ONLY when is_owner AND org has a North Star AND alignment.score present; appended to /ask + /next-step response as 'goal_impact' (members are never owner -> never see it; solo users org=None -> none). strategic_alignment still popped/founder-only; GET /api/brain/decisions still strips strategic_alignment+alignment_band (goal_impact is response-only, never stored, never in history). NOTE TO TESTER: if ANTHROPIC key is still placeholder, do NOT spend LLM budget; this task stays needs_retesting until a real key is set."
   - task: "Connected Decision Session: brain /ask multi-turn session memory + clarity/next_action/hook/sharpening_question; commit-with-deadline, result capture, /active timer, /next-step; cockpit active_actions + results + overdue (NO member leak)"
     implemented: true
     working: true
@@ -355,12 +380,56 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Learning Loop (6 layers): decision outcome scoring (Layer 1) + Layer 0 stamps (function/revenue_proximity/strategy_version/alignment_band) + per-function alignment rubric (Layer 2) + org learning prior (Layer 5) + strategy versioning + cockpit effectiveness/calibration/team_alignment/contradictions/pacing (Layers 1-4) + autonomous plan draft/ratify (Layer 6)"
+    - "Feature (a)+(b): Goal Setup + Goal->Progress tracker - GET/POST /api/org/progress (owner-only) + goal_progress in /api/org/cockpit; strategy current_arr/target_arr preserved + arr_history snapshots"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: >
+      NEW (features a+b: Goal Setup + Goal->Progress tracker). Please test the BACKEND only.
+      THIS IS FULLY FREE: NO LLM, NO credits, do NOT touch payments. LLM BUDGET = 0 -> do NOT call
+      /api/brain/ask (the ANTHROPIC key is a PLACEHOLDER this session, so /ask returns 502; feature (c)
+      goal_impact cannot be triggered yet and is intentionally NOT in scope for this run).
+      Founder/admin: ceo@smartdecigen.com / FounderOS@2026. Founder already OWNS org "Acme Solar" with a
+      North Star + target_arr=1000000000 + current_arr=250000000 (progress_pct should be 25). Reuse it.
+      Create a fresh member via signup + invite + /api/org/join when a non-owner is needed.
+      VERIFY:
+      (1) GET /api/org/progress (owner) -> 200 {goal_progress:{north_star,target,deadline,current_arr,
+      target_arr,remaining,progress_pct,gap_pct,status,history,note}}. progress_pct == round(100*current/
+      target). status label matches band (current 25% -> "Building momentum").
+      (2) POST /api/org/progress {current_arr: <new number>} (owner) -> 200, current_arr updated,
+      progress_pct recomputed, history grows by 1 (a NEW distinct value), status label updates. Posting the
+      SAME value again should NOT add a duplicate history point.
+      (3) POST /api/org/progress {current_arr: -5} -> 422 (ge=0). Missing current_arr -> 422.
+      (4) MEMBER GET /api/org/progress -> 403; MEMBER POST /api/org/progress -> 403. No token -> 401.
+      (5) GET /api/org/cockpit (owner) -> 200 includes BOTH keys: goal_progress (same shape) AND pacing
+      (backward-compat, pacing.gap_pct present). Member GET /api/org/cockpit -> 403.
+      (6) CRITICAL: POST /api/org/progress must NOT change org strategy_version. Read strategy_version via
+      GET /api/org/strategy before and after a POST /progress -> identical. (PUT /api/org/strategy with a
+      changed priority still bumps version as before.)
+      Report PASS/FAIL per item + confirm 0 LLM calls used.
+  - agent: "testing"
+    message: >
+      TESTING COMPLETE - ALL 6 TESTS PASSED ✅ (0 LLM calls used, fully free as required).
+      
+      RESULTS:
+      (1) ✅ PASS - GET /api/org/progress (owner) returns 200 with complete goal_progress payload containing all required fields. progress_pct calculation verified correct (25% for 250M/1B). Status label 'Building momentum' correct for 25% band.
+      
+      (2) ✅ PASS - POST /api/org/progress with new current_arr=400000000 returns 200, current_arr updated, progress_pct recomputed to 40%, history grew by exactly 1 entry (2->3), status updated to 'Building momentum'. Idempotent behavior verified: posting SAME value again does NOT grow history (remains at 3 entries).
+      
+      (3) ✅ PASS - Validation working: POST with current_arr=-5 returns 422. POST with missing current_arr (empty body) returns 422.
+      
+      (4) ✅ PASS - Authorization working: Member GET /api/org/progress returns 403. Member POST /api/org/progress returns 403. No token GET returns 401. No token POST returns 401.
+      
+      (5) ✅ PASS - GET /api/org/cockpit (owner) returns 200 with BOTH keys present: goal_progress (11 fields) AND pacing (5 fields including gap_pct). Backward compatibility maintained. Member GET /api/org/cockpit returns 403.
+      
+      (6) ✅ PASS - CRITICAL strategy_version stability verified: Initial strategy_version=1. POST /api/org/progress with new current_arr does NOT change strategy_version (remains 1). PUT /api/org/strategy with changed priority correctly increments strategy_version (1->2).
+      
+      FINAL goal_progress payload: {north_star:'Reach 100 crore annual revenue and be the top C&I solar EPC in North India', target:'100 Cr ARR', deadline:'Mar 2027', current_arr:400000000.0, target_arr:1000000000.0, remaining:600000000.0, progress_pct:40, gap_pct:150, status:'Building momentum', history:[3 entries], note:'Arithmetic only (current ÷ target). Not a forecast.'}.
+      
+      Features (a)+(b) are production-ready. Please summarize and finish.
   - agent: "main"
     message: >
       NEW (6-layer learning loop) - please test the BACKEND only. ANTHROPIC IS LIVE (real money):

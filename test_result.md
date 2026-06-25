@@ -37,6 +37,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "PASS - All 6 Goal Setup + Goal->Progress tests passed successfully (0 LLM calls used, fully free). TEST 1 (GET /api/org/progress owner): Returns 200 with goal_progress containing all required fields {north_star, target, deadline, current_arr, target_arr, remaining, progress_pct, gap_pct, status, history, note}. Verified progress_pct calculation: current_arr=250000000, target_arr=1000000000 -> progress_pct=25 (correct). Status='Building momentum' for 25% progress (correct band). TEST 2 (POST /api/org/progress update): Posted new current_arr=400000000 -> 200, current_arr updated correctly, progress_pct recomputed to 40 (correct), history grew by exactly 1 entry (from 2 to 3), status='Building momentum' (correct for 40%). TEST 2b (Idempotent): Posted SAME current_arr=400000000 again -> 200, history length unchanged at 3 (idempotent behavior working - does NOT add duplicate). TEST 3 (Validation): POST with current_arr=-5 -> 422 ✓. POST with missing current_arr (empty body) -> 422 ✓. TEST 4 (Authorization): Created fresh member via signup+invite+join. Member GET /api/org/progress -> 403 ✓. Member POST /api/org/progress -> 403 ✓. No token GET -> 401 ✓. No token POST -> 401 ✓. TEST 5 (Cockpit): Owner GET /api/org/cockpit -> 200 with BOTH keys present: goal_progress (11 fields) AND pacing (5 fields including gap_pct=150) - backward compatibility maintained ✓. Member GET /api/org/cockpit -> 403 ✓. TEST 6 (CRITICAL - Strategy version stability): Initial strategy_version=1. POST /api/org/progress with new current_arr=300004965 -> strategy_version remains 1 (unchanged) ✓. PUT /api/org/strategy with changed priority -> strategy_version increments to 2 ✓. FINAL goal_progress payload observed: {north_star:'Reach 100 crore annual revenue and be the top C&I solar EPC in North India', target:'100 Cr ARR', deadline:'Mar 2027', current_arr:400000000.0, target_arr:1000000000.0, remaining:600000000.0, progress_pct:40, gap_pct:150, status:'Building momentum', history:[3 entries], note:'Arithmetic only (current ÷ target). Not a forecast.'}. All assertions verified. Feature is production-ready."
+      - working: true
+        agent: "testing"
+        comment: "PASS - COMPLETE END-TO-END JOURNEY TEST: All 24 tests passed (4 phases, 0 LLM calls, fully free). PHASE A (Founder sets up goal) 4/4 ✅: A1-Login as founder returns 200 with token, org_id, org_role=owner ✓. A2-GET /api/org returns is_owner=true, strategy_set=true ✓. A3-PUT /api/org/strategy with north_star='Reach 100 crore annual revenue and be the top C&I solar EPC in North India', target='100 Cr ARR', deadline='Mar 2027', priorities=['Win C&I rooftop deals','Push EPC ticket above 50L','Protect 18% margins'], decision_rules='Never quote below 18% margin. Prefer C&I over residential.', current_arr=200000000, target_arr=1000000000 returns 200, captured strategy_version=3 ✓. A4-GET /api/org/strategy returns same values (current_arr=200000000, target_arr=1000000000) ✓. PHASE B (Founder invites, member joins) 6/6 ✅: B1-POST /api/org/invites returns 200 with code and join_url ✓. B2-GET /api/org/invites/{code} public (no auth) returns 200 with valid=true, org_name='Acme Solar', role='member' ✓. B3-Fresh member signup (member_vqid8tel@acmesolar.com) returns 200, org_id=null initially ✓. B4-POST /api/org/join with code returns 200, role='member' ✓. B5-GET /api/org as member returns 200 with is_owner=false, role='member', name='Acme Solar' ✓. B6-GET /api/org/members as founder returns roster with 4 members (founder+owner + new member) ✓. PHASE C (Member walled off) 5/5 ✅: C1-Member GET /api/org/strategy returns 403 ✓. C2-Member GET /api/org/progress returns 403 ✓. C3-Member GET /api/org/cockpit returns 403 ✓. C4-Member POST /api/org/progress returns 403 ✓. C5-No-token GET /api/org/progress returns 401 ✓. PHASE D (Goal→Achievement progress climb) 9/9 ✅: D1-GET /api/org/progress returns progress_pct=20 (200M/1B), status='Just getting started' ✓. D2-POST current_arr=300000000 returns progress_pct=30, status='Building momentum', history length=7 ✓. D3-POST current_arr=650000000 returns progress_pct=65, status='Closing in', history length=8 ✓. D4-POST current_arr=950000000 returns progress_pct=95, status='Almost there', history length=9 ✓. D5-POST current_arr=1000000000 returns progress_pct=100, status='Goal reached', history length=10, remaining=0 ✓. D6-IDEMPOTENCY: POST current_arr=1000000000 AGAIN, history length stays 10 (does NOT grow, identical value skipped) ✓. D7-CRITICAL: GET /api/org/strategy returns strategy_version=3 (unchanged through all Phase D progress updates, strategy_version does NOT bump on POST /progress) ✓. D8-GET /api/org/cockpit returns 200 with goal_progress.progress_pct=100, status='Goal reached', pacing key present (backward compat), totals.members=4 ✓. D9-Reset to mid value: POST current_arr=300000000 returns progress_pct=30 (org left in demo state) ✓. Journey is production-ready."
   - task: "Feature (c): founder-only goal_impact on Decision Brain answers (/api/brain/ask + /api/brain/decisions/{id}/next-step); members NEVER receive it"
     implemented: true
     working: "NA"
@@ -1091,3 +1094,52 @@ agent_communication:
       (7) Validation: commit due_in_hours=0 -> 422; due_in_hours=99999 -> 422; status="bogus" -> 422; next-step on another user's decision -> 404.
       Report exact fields seen. Keep LLM calls <= 3.
 
+
+  - agent: "testing"
+    message: >
+      COMPLETE END-TO-END JOURNEY TEST PASSED ✅ - All 24 tests passed (4 phases, 0 LLM calls, fully free).
+      
+      === PHASE A — FOUNDER SETS UP THE GOAL (4/4 PASS) ===
+      ✅ A1: Login as founder -> 200, token has org_id + org_role=owner
+      ✅ A2: GET /api/org (founder) -> 200 is_owner=true, strategy_set=true
+      ✅ A3: PUT /api/org/strategy as founder with north_star="Reach 100 crore annual revenue and be the top C&I solar EPC in North India", target="100 Cr ARR", deadline="Mar 2027", priorities=["Win C&I rooftop deals","Push EPC ticket above 50L","Protect 18% margins"], decision_rules="Never quote below 18% margin. Prefer C&I over residential.", current_arr=200000000, target_arr=1000000000 -> 200. Captured strategy_version=3 (V0 in test spec).
+      ✅ A4: GET /api/org/strategy -> 200 returns same values, current_arr=200000000, target_arr=1000000000
+      
+      === PHASE B — FOUNDER INVITES, MEMBER JOINS (6/6 PASS) ===
+      ✅ B1: POST /api/org/invites (founder) -> 200 returns {code=iLguqS9DdqvA, join_url}
+      ✅ B2: GET /api/org/invites/{code} with NO auth (public) -> 200 {valid:true, org_name:"Acme Solar", role:"member"}
+      ✅ B3: Fresh member signup (POST /api/auth/signup, member_vqid8tel@acmesolar.com) -> 200, org_id is null initially
+      ✅ B4: POST /api/org/join {code} as new member -> 200 role=member
+      ✅ B5: GET /api/org (member) -> 200 is_owner=false, role=member, name="Acme Solar"
+      ✅ B6: GET /api/org/members (founder) -> 200 roster contains founder(owner) + new member (count=4, includes prior test members)
+      
+      === PHASE C — MEMBER IS PROPERLY WALLED OFF (5/5 PASS) ===
+      ✅ C1: Member GET /api/org/strategy -> 403
+      ✅ C2: Member GET /api/org/progress -> 403
+      ✅ C3: Member GET /api/org/cockpit -> 403
+      ✅ C4: Member POST /api/org/progress {current_arr:999} -> 403
+      ✅ C5: No-token GET /api/org/progress -> 401
+      
+      === PHASE D — GOAL -> ACHIEVEMENT PROGRESS (the climb) (9/9 PASS) ===
+      ✅ D1: GET /api/org/progress -> progress_pct=20 (200M/1B), status="Just getting started"
+      ✅ D2: POST /api/org/progress {current_arr:300000000} -> progress_pct=30, status="Building momentum", history length=7 (increased by 1)
+      ✅ D3: POST /api/org/progress {current_arr:650000000} -> progress_pct=65, status="Closing in", history length=8
+      ✅ D4: POST /api/org/progress {current_arr:950000000} -> progress_pct=95, status="Almost there", history length=9
+      ✅ D5: POST /api/org/progress {current_arr:1000000000} -> progress_pct=100, status="Goal reached", remaining=0, history length=10
+      ✅ D6: Idempotency: POST /api/org/progress {current_arr:1000000000} AGAIN -> history length=10 (unchanged, identical value NOT added)
+      ✅ D7: CRITICAL: GET /api/org/strategy -> strategy_version=3 (unchanged from V0=3, none of the D-phase progress updates bumped strategy_version)
+      ✅ D8: GET /api/org/cockpit (founder) -> 200 and goal_progress.progress_pct=100, status="Goal reached", AND pacing key present (backward compat), totals.members=4
+      ✅ D9: Reset to mid value: POST /api/org/progress {current_arr:300000000} -> progress_pct=30 (org left in demo state)
+      
+      FINAL VERDICT: 24/24 tests passed. LLM CALLS USED: 0 (as required, fully free). Journey is production-ready.
+      
+      Progress observations during climb:
+      - D1: 20% "Just getting started"
+      - D2: 30% "Building momentum"
+      - D3: 65% "Closing in"
+      - D4: 95% "Almost there"
+      - D5: 100% "Goal reached"
+      
+      Strategy version stability confirmed: strategy_version remained constant (V3) through all Phase D progress updates.
+      
+      READY FOR MAIN AGENT TO SUMMARIZE AND FINISH.

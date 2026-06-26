@@ -129,10 +129,10 @@ def _unlocks(user, journey):
     has_milestones = bool((journey or {}).get("milestones"))
     return {
         "milestones": has_milestones or rank >= _stage_rank("milestones"),
-        "decisions": has_decisions or rank >= _stage_rank("milestones"),
-        "knowledge": is_owner or in_org or rank >= _stage_rank("milestones"),
+        "decisions": has_decisions,
+        "knowledge": is_owner or in_org,
         "team": in_org or rank >= _stage_rank("team_setup"),
-        "cockpit": is_owner,
+        "cockpit": is_owner or rank >= _stage_rank("operating"),
     }
 
 
@@ -208,6 +208,123 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg):
     raise RuntimeError(f"All models failed: {last_err}")
 
 
+# ----------------------------------------------------------------- direction + milestones (Phase 2)
+DIRECTION_SYSTEM = """You turn a founder's situation into a tight INITIAL DIRECTION, never a long report.
+Be concrete, use their own numbers, and name the single highest-leverage move. Be honest about the odds.
+No fluff, no em-dashes (use commas), no markdown.
+
+Return STRICT JSON only, nothing else:
+{
+ "goal": "one sentence with a real number and a timeframe",
+ "blockers": ["short blocker", "..."],
+ "highest_leverage": "the one move that moves the needle most, one line",
+ "success_probability": 70,
+ "probability_rationale": "one honest line explaining that number",
+ "risks": ["short risk", "..."],
+ "missing_info": ["what would sharpen this most", "..."]
+}
+success_probability is an integer 0 to 100, a ROUGH estimate from only what you know, never a promise.
+blockers, risks and missing_info each have 2 to 5 short items."""
+
+REFINE_SYSTEM = """You are REVISING an existing INITIAL DIRECTION using the founder's feedback.
+Keep what they liked, change what they flagged, stay concrete and honest. No em-dashes, no markdown.
+Return the SAME JSON schema as before, fully updated:
+{"goal": "...", "blockers": ["..."], "highest_leverage": "...", "success_probability": 70,
+ "probability_rationale": "...", "risks": ["..."], "missing_info": ["..."]}"""
+
+MILESTONE_SYSTEM = """You convert an APPROVED direction into 4 to 10 MEASURABLE milestones that take the
+founder from today to the goal. EVERY milestone must be measurable, with a concrete metric and a deadline.
+Order them logically, foundation first. Be specific to their business. No fluff, no em-dashes, no markdown.
+
+Return STRICT JSON only:
+{
+ "milestones": [
+   {"title": "short action title",
+    "success_metric": "the measurable definition of done",
+    "target": "the number or target in a few words, e.g. 100%, 20 customers, 1 hire",
+    "deadline": "a relative deadline, e.g. 7 days, Day 30, Month 2"},
+   "..."
+ ]
+}
+Return between 4 and 10 milestones, each genuinely measurable."""
+
+
+def _llm_json(system_text, prompt, max_tokens=1600):
+    """ONE LLM call returning parsed JSON. Returns (out_dict, model_name, usage)."""
+    system_blocks = [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}]
+    last_err = None
+    for model_name in (PRIMARY_MODEL, FALLBACK_MODEL):
+        try:
+            r = client().messages.create(model=model_name, max_tokens=max_tokens, system=system_blocks,
+                                         messages=[{"role": "user", "content": prompt}])
+            txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+            out = json.loads(_extract_json(txt))
+            usage = {"input_tokens": int(getattr(r.usage, "input_tokens", 0) or 0),
+                     "output_tokens": int(getattr(r.usage, "output_tokens", 0) or 0)}
+            return out, model_name, usage
+        except Exception as e:
+            last_err = e
+    raise RuntimeError(f"All models failed: {last_err}")
+
+
+def _norm_str_list(v, cap=6):
+    if not isinstance(v, list):
+        return []
+    return [_clean(str(x)) for x in v if str(x).strip()][:cap]
+
+
+def _build_direction(raw):
+    try:
+        prob = int(round(float(raw.get("success_probability", 60))))
+    except Exception:
+        prob = 60
+    prob = max(0, min(100, prob))
+    return {
+        "goal": _clean(str(raw.get("goal", ""))) or "",
+        "blockers": _norm_str_list(raw.get("blockers")),
+        "highest_leverage": _clean(str(raw.get("highest_leverage", ""))) or "",
+        "success_probability": prob,
+        "probability_rationale": _clean(str(raw.get("probability_rationale", ""))) or "",
+        "risks": _norm_str_list(raw.get("risks")),
+        "missing_info": _norm_str_list(raw.get("missing_info")),
+    }
+
+
+MILESTONE_STATUSES = ("not_started", "in_progress", "done")
+
+
+def _build_milestones(raw):
+    arr = raw.get("milestones") if isinstance(raw, dict) else None
+    if not isinstance(arr, list):
+        arr = []
+    out = []
+    for m in arr[:10]:
+        if not isinstance(m, dict):
+            continue
+        title = _clean(str(m.get("title", ""))).strip()
+        if not title:
+            continue
+        out.append({
+            "id": str(uuid.uuid4()),
+            "order": len(out) + 1,
+            "title": title,
+            "success_metric": _clean(str(m.get("success_metric", ""))) or "",
+            "target": _clean(str(m.get("target", ""))) or "",
+            "deadline": _clean(str(m.get("deadline", ""))) or "",
+            "status": "not_started",
+        })
+    return out
+
+
+def _milestone_progress(milestones):
+    ms = milestones or []
+    total = len(ms)
+    if not total:
+        return 0
+    done = sum(1 for m in ms if m.get("status") == "done")
+    return round(100 * done / total)
+
+
 # ----------------------------------------------------------------- billing wrapper
 def _run_billed(user, produce):
     """produce() -> (payload, usage, model_name). Reserve -> run -> reconcile to actual tokens.
@@ -273,6 +390,13 @@ def _view(user, j):
         "confidence": conf,
         "confidence_band": _confidence_band(conf),
         "ready_for_direction": conf >= READY_THRESHOLD,
+        "direction": j.get("direction") or None,
+        "has_direction": bool(j.get("direction")),
+        "milestones": [{"id": m.get("id"), "order": m.get("order"), "title": m.get("title", ""),
+                        "success_metric": m.get("success_metric", ""), "target": m.get("target", ""),
+                        "deadline": m.get("deadline", ""), "status": m.get("status", "not_started")}
+                       for m in (j.get("milestones") or [])],
+        "progress_pct": _milestone_progress(j.get("milestones") or []),
         "unlocks": _unlocks(user, j),
         "credits": user.get("credits", 0),
     }
@@ -285,6 +409,14 @@ class StartIn(BaseModel):
 
 class MessageIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+
+
+class FeedbackIn(BaseModel):
+    feedback: str = Field(min_length=1, max_length=4000)
+
+
+class MilestoneStatusIn(BaseModel):
+    status: str
 
 
 # ----------------------------------------------------------------- endpoints
@@ -349,8 +481,110 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
 def reset(user: dict = Depends(current_user)):
     journeys_col.update_one({"user_id": user["id"]}, {"$set": {
         "stage": "clarity", "objective": "", "model": _empty_model(),
-        "messages": [], "updated_at": now_utc()}}, upsert=False)
+        "messages": [], "direction": None, "milestones": [], "updated_at": now_utc()}}, upsert=False)
     return _view(user, _get_or_create(user["id"]))
+
+
+# ----------------------------------------------------------------- Phase 2: direction + milestones
+@router.post("/direction")
+def make_direction(user: dict = Depends(current_user)):
+    """Distil the live model into a tight Initial Direction (goal, blockers, highest leverage,
+    rough success probability, risks, missing info). 1 LLM call. Moves stage -> refine."""
+    j = _get_or_create(user["id"])
+    if not j.get("messages"):
+        raise HTTPException(400, "Start the conversation first.")
+    model = j.get("model") or _empty_model()
+
+    def produce():
+        prompt = (f"FOUNDER MODEL (everything understood so far):\n{json.dumps(model, ensure_ascii=False)}\n\n"
+                  f"Their stated objective: {j.get('objective', '')}\n\nProduce the initial direction now.")
+        raw, model_name, usage = _llm_json(DIRECTION_SYSTEM, prompt)
+        return _build_direction(raw), usage, model_name
+
+    direction, credits_after, cost = _run_billed(user, produce)
+    journeys_col.update_one({"id": j["id"]}, {"$set": {
+        "direction": direction, "stage": "refine", "updated_at": now_utc()}})
+    j = journeys_col.find_one({"id": j["id"]})
+    user["credits"] = credits_after
+    out = _view(user, j)
+    out["cost"] = cost
+    return out
+
+
+@router.post("/direction/refine")
+def refine_direction_ep(body: FeedbackIn, user: dict = Depends(current_user)):
+    """Collaborative refinement: the founder says what is off, the direction is rewritten. 1 LLM call."""
+    j = _get_or_create(user["id"])
+    if not j.get("direction"):
+        raise HTTPException(400, "There is no direction to refine yet.")
+    model = j.get("model") or _empty_model()
+    current = j.get("direction")
+
+    def produce():
+        prompt = (f"CURRENT DIRECTION:\n{json.dumps(current, ensure_ascii=False)}\n\n"
+                  f"FOUNDER MODEL:\n{json.dumps(model, ensure_ascii=False)}\n\n"
+                  f"FOUNDER FEEDBACK: {body.feedback.strip()}\n\nReturn the revised direction.")
+        raw, model_name, usage = _llm_json(REFINE_SYSTEM, prompt)
+        return _build_direction(raw), usage, model_name
+
+    direction, credits_after, cost = _run_billed(user, produce)
+    journeys_col.update_one({"id": j["id"]}, {"$set": {
+        "direction": direction, "stage": "refine", "updated_at": now_utc()}})
+    j = journeys_col.find_one({"id": j["id"]})
+    user["credits"] = credits_after
+    out = _view(user, j)
+    out["cost"] = cost
+    return out
+
+
+@router.post("/direction/approve")
+def approve_direction(user: dict = Depends(current_user)):
+    """Founder approves the direction -> generate 4-10 measurable milestones. 1 LLM call.
+    Moves stage -> milestones (unlocks the milestones tracker)."""
+    j = _get_or_create(user["id"])
+    if not j.get("direction"):
+        raise HTTPException(400, "Shape a direction before approving it.")
+    direction = j.get("direction")
+    model = j.get("model") or _empty_model()
+
+    def produce():
+        prompt = (f"APPROVED DIRECTION:\n{json.dumps(direction, ensure_ascii=False)}\n\n"
+                  f"FOUNDER MODEL:\n{json.dumps(model, ensure_ascii=False)}\n\nCreate the milestones now.")
+        raw, model_name, usage = _llm_json(MILESTONE_SYSTEM, prompt, max_tokens=2200)
+        ms = _build_milestones(raw)
+        if not ms:
+            raise ValueError("no measurable milestones produced")
+        return ms, usage, model_name
+
+    milestones, credits_after, cost = _run_billed(user, produce)
+    journeys_col.update_one({"id": j["id"]}, {"$set": {
+        "milestones": milestones, "stage": "milestones", "updated_at": now_utc()}})
+    j = journeys_col.find_one({"id": j["id"]})
+    user["credits"] = credits_after
+    out = _view(user, j)
+    out["cost"] = cost
+    return out
+
+
+@router.post("/milestones/{milestone_id}/status")
+def set_milestone_status(milestone_id: str, body: MilestoneStatusIn, user: dict = Depends(current_user)):
+    """Update a single milestone's status (free). Drives progress_pct (goal -> progress tracker)."""
+    status = (body.status or "").strip()
+    if status not in MILESTONE_STATUSES:
+        raise HTTPException(422, f"status must be one of {', '.join(MILESTONE_STATUSES)}")
+    j = _get_or_create(user["id"])
+    ms = j.get("milestones") or []
+    found = False
+    for m in ms:
+        if m.get("id") == milestone_id:
+            m["status"] = status
+            found = True
+            break
+    if not found:
+        raise HTTPException(404, "Milestone not found")
+    journeys_col.update_one({"id": j["id"]}, {"$set": {"milestones": ms, "updated_at": now_utc()}})
+    j = journeys_col.find_one({"id": j["id"]})
+    return _view(user, j)
 
 
 def ensure_journey_startup():

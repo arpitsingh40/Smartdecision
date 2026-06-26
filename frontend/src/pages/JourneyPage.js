@@ -7,6 +7,7 @@ import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
 import {
   Send, Loader2, Sparkles, ArrowRight, Brain, ChevronDown, ChevronUp, CircleDot,
+  Target, Gauge, Flag, CheckCircle2, Circle, AlertTriangle, HelpCircle, Lightbulb, Clock,
 } from 'lucide-react';
 
 const PLACEHOLDERS = [
@@ -34,6 +35,22 @@ function isFilled(field, value) {
   return fieldValue(field, value).length > 0;
 }
 
+function DirList({ icon: Icon, label, items }) {
+  if (!items || !items.length) return null;
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1">
+        <Icon size={12} /> {label}
+      </div>
+      <ul className="space-y-1">
+        {items.map((it, i) => (
+          <li key={i} className="text-sm leading-snug text-foreground/90">{it}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function JourneyPage() {
   const { user, setCredits } = useAuth();
   const [journey, setJourney] = useState(null);
@@ -43,6 +60,10 @@ export default function JourneyPage() {
   const [busy, setBusy] = useState(false);
   const [phIdx, setPhIdx] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [shaping, setShaping] = useState(false);
+  const [refining, setRefining] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [refineText, setRefineText] = useState('');
   const endRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -67,7 +88,7 @@ export default function JourneyPage() {
 
   useEffect(() => {
     if (journey?.started) endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [journey?.messages?.length, busy]);
+  }, [journey?.messages?.length, journey?.has_direction, journey?.milestones?.length, journey?.stage, busy]);
 
   const handleError = (e) => {
     const status = e?.response?.status;
@@ -112,6 +133,45 @@ export default function JourneyPage() {
   const onKey = (e, fn) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); fn(); }
   };
+
+  const shapeDirection = useCallback(async () => {
+    setShaping(true);
+    try {
+      const r = await api.post('/journey/direction');
+      setJourney(r.data);
+      if (typeof r.data.credits === 'number') setCredits(r.data.credits);
+    } catch (e) { handleError(e); } finally { setShaping(false); }
+  }, [setCredits]);
+
+  const refineDirection = useCallback(async () => {
+    const fb = refineText.trim();
+    if (!fb || refining) return;
+    setRefining(true);
+    try {
+      const r = await api.post('/journey/direction/refine', { feedback: fb });
+      setJourney(r.data);
+      if (typeof r.data.credits === 'number') setCredits(r.data.credits);
+      setRefineText('');
+    } catch (e) { handleError(e); } finally { setRefining(false); }
+  }, [refineText, refining, setCredits]);
+
+  const approveDirection = useCallback(async () => {
+    setApproving(true);
+    try {
+      const r = await api.post('/journey/direction/approve');
+      setJourney(r.data);
+      if (typeof r.data.credits === 'number') setCredits(r.data.credits);
+      window.dispatchEvent(new Event('sdg-journey-changed'));
+    } catch (e) { handleError(e); } finally { setApproving(false); }
+  }, [setCredits]);
+
+  const cycleMilestone = useCallback(async (m) => {
+    const next = m.status === 'not_started' ? 'in_progress' : m.status === 'in_progress' ? 'done' : 'not_started';
+    try {
+      const r = await api.post(`/journey/milestones/${m.id}/status`, { status: next });
+      setJourney(r.data);
+    } catch (e) { handleError(e); }
+  }, []);
 
   if (loading) {
     return (
@@ -189,10 +249,21 @@ export default function JourneyPage() {
           <div className="h-full rounded-full bg-primary transition-all duration-700" style={{ width: `${conf}%` }} />
         </div>
         <div className="text-xs text-muted-foreground mt-1.5">{journey.confidence_band}</div>
-        {journey.ready_for_direction ? (
+        {journey.ready_for_direction && !journey.has_direction ? (
           <div className="mt-3 flex items-start gap-2 rounded-xl bg-secondary/70 px-3 py-2 text-xs text-foreground">
             <Sparkles size={13} className="mt-0.5 shrink-0" />
-            <span>I have enough to shape an initial direction with you. Keep going, or ask me to lay it out.</span>
+            <span>I have enough to shape an initial direction with you. Keep going, or shape it below.</span>
+          </div>
+        ) : null}
+        {journey.milestones && journey.milestones.length ? (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="text-muted-foreground uppercase tracking-wide flex items-center gap-1"><Flag size={11} /> Plan progress</span>
+              <span className="font-mono-plex">{journey.progress_pct}%</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div className="h-full rounded-full bg-emerald-500 transition-all duration-700" style={{ width: `${journey.progress_pct}%` }} />
+            </div>
           </div>
         ) : null}
       </div>
@@ -257,6 +328,113 @@ export default function JourneyPage() {
                 <Loader2 className="animate-spin" size={16} /> <span className="text-sm">Thinking…</span>
               </div>
             ) : null}
+
+            {/* Shape-direction CTA */}
+            {journey.ready_for_direction && !journey.has_direction ? (
+              <div className="rounded-2xl border border-primary/30 bg-secondary/50 p-4 flex items-center justify-between gap-3" data-testid="shape-direction-cta">
+                <div className="flex items-start gap-2 text-sm">
+                  <Sparkles size={16} className="mt-0.5 shrink-0 text-primary" />
+                  <span>I have enough to shape an initial direction with you.</span>
+                </div>
+                <Button data-testid="shape-direction-btn" onClick={shapeDirection} disabled={shaping} className="rounded-full shrink-0">
+                  {shaping ? <Loader2 className="animate-spin mr-2" size={15} /> : <Target size={15} className="mr-2" />}
+                  {shaping ? 'Shaping' : 'Shape it'}
+                </Button>
+              </div>
+            ) : null}
+
+            {/* Initial Direction card */}
+            {journey.direction ? (
+              <div className="rounded-2xl border border-border/70 bg-card p-5 space-y-4" data-testid="direction-card">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                    <Target size={13} /> Initial direction
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs rounded-full bg-secondary px-2.5 py-1" title="A rough estimate, not a promise" data-testid="direction-probability">
+                    <Gauge size={12} /> ~{journey.direction.success_probability}% odds
+                  </span>
+                </div>
+                <div>
+                  <div className="font-display text-lg leading-snug">{journey.direction.goal}</div>
+                  {journey.direction.probability_rationale ? (
+                    <div className="text-xs text-muted-foreground mt-1">{journey.direction.probability_rationale}</div>
+                  ) : null}
+                </div>
+                {journey.direction.highest_leverage ? (
+                  <div className="flex items-start gap-2 rounded-xl bg-secondary/60 px-3 py-2.5 text-sm">
+                    <Lightbulb size={15} className="mt-0.5 shrink-0 text-primary" />
+                    <div>
+                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground block">Highest leverage</span>
+                      {journey.direction.highest_leverage}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <DirList icon={Flag} label="Blockers" items={journey.direction.blockers} />
+                  <DirList icon={AlertTriangle} label="Risks" items={journey.direction.risks} />
+                  <DirList icon={HelpCircle} label="Missing info" items={journey.direction.missing_info} />
+                </div>
+                {journey.stage === 'refine' && !journey.milestones.length ? (
+                  <div className="pt-3 border-t border-border/60 space-y-2.5" data-testid="direction-refine">
+                    <div className="text-xs text-muted-foreground">Does this represent your business? Refine it, or approve to lock measurable milestones.</div>
+                    <Textarea
+                      data-testid="refine-input"
+                      value={refineText}
+                      onChange={(e) => setRefineText(e.target.value)}
+                      rows={2}
+                      placeholder="Tell me what's off, e.g. 'margins are tighter than that' or 'I can't hire yet'…"
+                      className="resize-none rounded-xl text-sm"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="outline" data-testid="refine-btn" onClick={refineDirection} disabled={!refineText.trim() || refining} className="rounded-full">
+                        {refining ? <Loader2 className="animate-spin mr-2" size={15} /> : null}{refining ? 'Refining' : 'Refine'}
+                      </Button>
+                      <Button data-testid="approve-btn" onClick={approveDirection} disabled={approving} className="rounded-full">
+                        {approving ? <Loader2 className="animate-spin mr-2" size={15} /> : <CheckCircle2 size={15} className="mr-2" />}
+                        {approving ? 'Building' : 'Approve & build milestones'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Milestones tracker */}
+            {journey.milestones && journey.milestones.length ? (
+              <div className="rounded-2xl border border-border/70 bg-card p-5 space-y-4" data-testid="milestones-card">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                    <Flag size={13} /> Milestones
+                  </span>
+                  <span className="font-mono-plex text-xs" data-testid="milestones-progress">{journey.progress_pct}% done</span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full bg-emerald-500 transition-all duration-700" style={{ width: `${journey.progress_pct}%` }} />
+                </div>
+                <ol className="space-y-2.5">
+                  {journey.milestones.map((m) => (
+                    <li key={m.id} data-testid="milestone-row" className="flex items-start gap-3 rounded-xl border border-border/60 px-3 py-2.5">
+                      <button onClick={() => cycleMilestone(m)} data-testid={`milestone-status-${m.order}`} className="mt-0.5 shrink-0" title="Click to update status">
+                        {m.status === 'done'
+                          ? <CheckCircle2 size={18} className="text-emerald-600" />
+                          : m.status === 'in_progress'
+                            ? <CircleDot size={18} className="text-amber-500" />
+                            : <Circle size={18} className="text-muted-foreground" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-medium ${m.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>{m.order}. {m.title}</div>
+                        {m.success_metric ? <div className="text-xs text-muted-foreground mt-0.5">{m.success_metric}</div> : null}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          {m.target ? <span className="text-[11px] rounded-full bg-secondary px-2 py-0.5">{m.target}</span> : null}
+                          {m.deadline ? <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><Clock size={11} />{m.deadline}</span> : null}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+
             <div ref={endRef} />
           </div>
 

@@ -23,7 +23,7 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
-  - task: "Founder Journey (chat-first front door): /api/journey GET + /start + /message + /reset — live understanding model, field-based confidence, progressive unlocks, reserve/reconcile/refund billing"
+  - task: "Founder Journey (chat-first front door): /api/journey GET + /start + /message + /reset + Phase2 /direction + /direction/refine + /direction/approve + /milestones/{id}/status"
     implemented: true
     working: true
     file: "/app/backend/journey.py, /app/backend/server.py, /app/backend/db.py"
@@ -34,9 +34,15 @@ backend:
       - working: "NA"
         agent: "main"
         comment: "NEW (Phase 1 of the chat-first redesign). Router /api/journey, one journey per user (journeys_col, unique index user_id). GET /api/journey -> {stage, objective, started, messages[], model{15 fields}, field_labels, field_order, confidence(0-100, field-completeness based, NOT LLM-claimed), confidence_band, ready_for_direction(conf>=70), unlocks{milestones,decisions,knowledge,team,cockpit}, credits}. unlocks: brand-new SOLO user => ALL false (chat-only); existing members/owners never locked out (team=in_org, cockpit=is_owner via members_col). POST /api/journey/start {objective 1..4000} -> 1 LLM call (engine.client(), claude-opus-4-8 -> claude-haiku-4-5 fallback), seeds conversation + model, returns view+cost. If already started, returns existing WITHOUT recharging. POST /api/journey/message {message 1..4000} -> 400 if not started; else 1 LLM call, merges model (never regresses filled fields), confidence grows, returns view+cost. POST /api/journey/reset -> clears to empty (free). Billing: reserve JOURNEY_RESERVE=16, reconcile to token_cost (ceil(tokens/1000)*CREDITS_PER_1K=2, min 1), refund remainder; FULL refund + 502 on LLM failure (never charged for a failed turn). SELF-VERIFIED via curl: fresh user start conf=40 reply value-first; message -> conf 67 model merged (blockers/fears/resources captured); fresh GET unlocks all false. SELF-VERIFIED via UI screenshots: landing 'What are you trying to accomplish?' + clean nav, chat + live understanding panel render, new user has NO advanced nav. NEEDS automated test. LLM BUDGET <= 3 calls (rest are free)."
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (Phase 2: Initial Direction -> refine -> measurable milestones). Added to journey.py: POST /api/journey/direction (1 LLM) distils the live model into {goal, blockers[], highest_leverage, success_probability(int 0-100, honest/rough), probability_rationale, risks[], missing_info[]}, stage->refine. POST /api/journey/direction/refine {feedback 1..4000} (1 LLM) rewrites the direction from founder feedback (400 if no direction). POST /api/journey/direction/approve (1 LLM) generates 4-10 MEASURABLE milestones [{id,order,title,success_metric,target,deadline,status:not_started}], stage->milestones, unlocks.milestones=true (400 if no direction; full-refund+502 if model returns 0 milestones). POST /api/journey/milestones/{id}/status {status in not_started|in_progress|done} (FREE) drives progress_pct=round(100*done/total) (422 bad status, 404 unknown id). _view now returns direction, has_direction, milestones[], progress_pct. reset clears direction+milestones. SELF-VERIFIED via curl + UI screenshot. NEEDS automated test. LLM BUDGET <= 5 calls."
       - working: true
         agent: "testing"
         comment: "PASS - ALL 10 TESTS PASSED (2 LLM calls used out of 3 budget, well within limits). FREE TESTS (5 tests, 0 LLM): TEST 1 ✅ No token GET /api/journey -> 401 (auth gating working). TEST 2 ✅ Fresh signup -> GET /api/journey -> 200 with {started:false, stage:'clarity', confidence:0, messages:[] empty, model has 15 keys, unlocks.milestones:false, unlocks.decisions:false, unlocks.knowledge:false, unlocks.team:false, unlocks.cockpit:false} (all structure checks passed, fresh user starts with 50 credits). TEST 3 ✅ POST /api/journey/message BEFORE start -> 400 (correctly blocks message before start). TEST 4a ✅ POST /api/journey/start with empty objective -> 422 (validation working). TEST 4b ✅ POST /api/journey/message with empty message -> 422 (validation working). TEST 5 ✅ Founder (owner ceo@smartdecigen.com) GET /api/journey -> 200 with unlocks.cockpit:true AND unlocks.team:true (existing owner NOT locked out, has full access). LLM TESTS (4 tests, 2 LLM calls): TEST 6 ✅ (LLM CALL #1) Fresh user POST /api/journey/start with objective 'Grow my Pune bakery from 4L to 12L monthly in a year.' -> 200, started:true, messages length 2 (one user, one assistant), assistant reply non-empty, model.objective non-empty, confidence:27 (>0), cost:2 (>=1), credits:48 (50-2, correctly decreased). TEST 7 ✅ (0 LLM) POST /api/journey/start AGAIN with different objective -> 200, credits:48 UNCHANGED (already-started path does NOT recharge or call LLM, idempotent behavior working). TEST 8 ✅ (LLM CALL #2) Same user POST /api/journey/message with 'My blocker is I do everything myself, no marketing, no SOP, and cash is tight so I am scared to hire.' -> 200, messages length 4 (2 from start + 2 from message), confidence:73 (>=27, model grew and never regressed), cost:4, credits:44 (48-4, correctly decreased again). TEST 9 ✅ (0 LLM) POST /api/journey/reset -> 200 with {started:false, confidence:0, messages:[] empty, model.objective empty} (reset working correctly). CRITICAL ASSERTIONS VERIFIED: (1) Auth gating working (401 without token), (2) Fresh user structure correct with all unlocks false, (3) Founder/owner unlocks cockpit+team (never locked out), (4) Validation working (empty objective/message -> 422), (5) Start journey calls LLM once (cost 2, confidence 27), (6) Already-started path does NOT recharge (credits unchanged), (7) Message turn calls LLM (cost 4, confidence grew 27->73), (8) Model merges and never regresses, (9) Reset clears to empty (free), (10) 502-refund path NOT triggered (all LLM turns succeeded on live Anthropic key). TOTAL LLM CALLS: 2/3 (budget respected). Feature is production-ready."
+      - working: true
+        agent: "testing"
+        comment: "PASS - PHASE 2 ALL TESTS PASSED (5 LLM calls used, exactly at budget limit). SETUP (2 LLM): Fresh signup (journey_phase2_1782437950@cloudkitchen.com, 50 credits) -> LLM CALL #1: POST /api/journey/start with objective 'Grow my Pune cloud kitchen from 6L to 25L monthly in 12 months, I run all ops myself, no marketing, no SOPs, cash is tight.' -> 200, cost=2, credits 50->48, stage='clarity', started=true, confidence=53 ✓. LLM CALL #2: POST /api/journey/message with 'I do about 700 orders a month at ~350 average order value, mostly on Swiggy and Zomato, and I'm scared to spend on ads.' -> 200, cost=4, credits 48->44, confidence=73 (model grew), messages length=4 ✓. DIRECTION (1 LLM): LLM CALL #3: POST /api/journey/direction -> 200, cost=4, credits 44->40 ✓. CRITICAL ASSERTIONS ✓: response.direction has all required keys: goal='Grow Pune cloud kitchen revenue from 6L to 25L per month in 12 months, a 4x jump...' (non-empty), blockers=[5 items, 2-5 range ✓], highest_leverage='Map your true unit economics first (commission, food cost, f...' (non-empty), success_probability=25 (int 0-100 ✓), probability_rationale='4x in 12 months as a solo operator with no SOPs, no marketin...' (non-empty), risks=[4 items, 2-5 range ✓], missing_info=[5 items, 2-5 range ✓]. stage='refine' ✓, has_direction=true ✓, cost>=1 ✓, credits dropped ✓. REFINE (1 LLM): LLM CALL #4: POST /api/journey/direction/refine with feedback='Margins are tighter than you think, closer to 12 percent, and I genuinely cannot hire for at least 3 months.' -> 200, cost=4, credits 40->36 ✓. Direction still has all required keys ✓, stage stays 'refine' ✓, credits dropped again ✓. APPROVE (1 LLM): LLM CALL #5: POST /api/journey/direction/approve -> 200, cost=6, credits 36->30 ✓. CRITICAL ASSERTIONS ✓: milestones=[10 items, 4-10 range ✓], EACH milestone has all required keys (id/order/title/success_metric/target/deadline/status), ALL status='not_started' ✓. stage='milestones' ✓, unlocks.milestones=true ✓, progress_pct=0 ✓, cost>=1 ✓. FREE TESTS (0 LLM): POST /api/journey/milestones/{first_milestone_id}/status with status='done' -> 200, progress_pct=10% (round(100/10)=10 ✓), milestone.status='done' ✓. POST /api/journey/milestones/{id}/status with status='in_progress' -> 200, progress_pct=0 (no done milestones ✓), milestone.status='in_progress' ✓. POST /api/journey/milestones/{id}/status with status='bogus' -> 422 ✓. POST /api/journey/milestones/does-not-exist/status with status='done' -> 404 ✓. SEPARATE fresh user (journey_fresh_1782438005@test.com, no journey started): POST /api/journey/direction -> 400 ✓, POST /api/journey/direction/refine with feedback='test' -> 400 ✓, POST /api/journey/direction/approve -> 400 ✓. POST /api/journey/direction/refine with feedback='' (empty) on main user -> 422 ✓. FINAL SUMMARY: Total LLM calls: 5/5 (exactly at budget), Credits used: 20 (50->30), NO 502 errors occurred (live Anthropic key working correctly). ALL Phase 2 endpoints working correctly. Feature is production-ready."
   - task: "Founder Profile deep-onboarding (/api/founder/*) + inject FOUNDER_PROFILE (owner-only) & INDUSTRY_CONTEXT (org-wide) into every Brain answer"
     implemented: true
     working: true
@@ -417,7 +423,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Founder Journey (chat-first front door): /api/journey GET + /start + /message + /reset"
+    - "Founder Journey Phase 2: /api/journey/direction + /direction/refine + /direction/approve + /milestones/{id}/status"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1251,31 +1257,40 @@ agent_communication:
     message: "Founder Profile deep-onboarding testing COMPLETE. All 4 numbered items from review request PASSED (4 LLM calls used, within budget of 6). TEST 1 (FREE - GATING): All member endpoints correctly return 403, no-auth returns 401 ✓. TEST 2 (FREE - DIRECT PROFILE): PUT/GET working with validation ✓. TEST 3 (LLM ~4 calls - INTERVIEW FLOW): start->answer x2->finish working, connected questions generated, distillation produces non-empty summary+industry_summary, negative test (0 answers) correctly returns 422 ✓. TEST 4 (LLM 1 call - INJECTION): Founder /ask returns goal_impact with all required fields (score, band, label, reason), strategic_alignment correctly stripped ✓. Feature is production-ready. Main agent should summarize and finish."
   - agent: "main"
     message: >
-      PHASE 1 of chat-first redesign — test the NEW Founder Journey backend only (/api/journey).
-      LIVE Anthropic. STRICT LLM BUDGET: <= 3 LLM-spending calls (start + a couple of messages).
-      Everything else is FREE. Use a FRESH signup user for the solo/new-user assertions; the founder
-      ceo@smartdecigen.com (owner of an org) for the not-locked-out assertion.
+      PHASE 2 of the chat-first journey — test the NEW direction + milestones endpoints. LIVE Anthropic.
+      STRICT LLM BUDGET: <= 5 LLM-spending calls (start + direction + refine + approve = 4; everything
+      else free). Use a FRESH signup user. Report exact numbers + TOTAL LLM calls.
+
+      SETUP (2 LLM): Fresh signup -> POST /api/journey/start {objective:"Grow my Pune cloud kitchen from
+      6L to 25L monthly in 12 months, I run all ops myself, no marketing, no SOPs, cash is tight."} ->
+      200. Then POST /api/journey/message {message:"I do about 700 orders a month at ~350 average order
+      value, mostly on Swiggy and Zomato, and I'm scared to spend on ads."} -> 200 (model grows).
+
+      DIRECTION (1 LLM): POST /api/journey/direction -> 200, response has direction{goal(non-empty),
+      blockers(2-5), highest_leverage(non-empty), success_probability(int 0..100), probability_rationale,
+      risks(2-5), missing_info(2-5)}, stage=="refine", has_direction==true, cost>=1, credits dropped.
+
+      REFINE (1 LLM): POST /api/journey/direction/refine {feedback:"Margins are tighter than you think,
+      closer to 12 percent, and I genuinely cannot hire for at least 3 months."} -> 200, direction updated
+      (still has all keys), stage stays "refine", credits dropped.
+
+      APPROVE (1 LLM): POST /api/journey/direction/approve -> 200, milestones is a list of 4..10 items,
+      EACH with id/order/title/success_metric/target/deadline/status=="not_started", stage=="milestones",
+      unlocks.milestones==true, progress_pct==0, cost>=1.
 
       FREE TESTS:
-      1. No token GET /api/journey -> 401.
-      2. Fresh signup -> GET /api/journey -> 200 {started:false, stage:"clarity", confidence:0,
-         messages:[], unlocks all FALSE (milestones/decisions/knowledge/team/cockpit), model has 15 keys}.
-      3. POST /api/journey/message {message:"hi"} BEFORE start -> 400.
-      4. POST /api/journey/start {objective:""} -> 422; POST /api/journey/message {message:""} -> 422.
-      5. Founder (owner) GET /api/journey -> unlocks.cockpit=true AND unlocks.team=true (existing
-         owner is NOT locked out of their capabilities).
+      - POST /api/journey/milestones/{first id}/status {status:"done"} -> 200, progress_pct > 0
+        (e.g. ~round(100/total)), that milestone status=="done".
+      - POST /api/journey/milestones/{first id}/status {status:"in_progress"} -> 200, progress back to 0.
+      - POST /api/journey/milestones/{id}/status {status:"bogus"} -> 422.
+      - POST /api/journey/milestones/nonexistent/status {status:"done"} -> 404.
+      - A SEPARATE fresh user: POST /api/journey/direction BEFORE start -> 400; POST
+        /api/journey/direction/refine BEFORE any direction -> 400; POST /api/journey/direction/approve
+        BEFORE any direction -> 400.
+      - POST /api/journey/direction/refine {feedback:""} -> 422.
 
-      LLM TESTS (count them, stay <= 3):
-      6. (1 LLM) Fresh user POST /api/journey/start {objective:"Grow my Pune bakery from 4L to 12L
-         monthly in a year."} -> 200, started becomes true, messages length 2 (user+assistant),
-         assistant reply non-empty, model.objective non-empty, confidence > 0, response has cost>=1,
-         credits decreased by cost (50 - cost).
-      7. (0 LLM) POST /api/journey/start AGAIN with any objective -> 200 and credits UNCHANGED from
-         step 6 (already-started path must NOT recharge).
-      8. (1 LLM) POST /api/journey/message {message:"My blocker is I do everything myself, no
-         marketing, no SOP, and cash is tight so I am scared to hire."} -> 200, messages length 4,
-         confidence >= the value from step 6 (model grew, never regressed), credits decreased again.
-      9. (0 LLM) POST /api/journey/reset -> 200 {started:false, confidence:0, model empty, messages:[]}.
+      Confirm no 502 (live key, turns succeed) and report the TOTAL LLM-spending calls used.
 
-      Report PASS/FAIL per step with the exact confidence numbers + credit balances observed, and the
-      TOTAL LLM calls used. Confirm the 502-refund path is NOT triggered (LLM is live, turns succeed).
+agent_communication:
+  - agent: "testing"
+    message: "Phase 2 Founder Journey testing COMPLETE. All 5 LLM-spending endpoints tested successfully (exactly 5/5 LLM calls used, at budget limit). All assertions passed: direction structure (goal, blockers, highest_leverage, success_probability, probability_rationale, risks, missing_info), refine updates direction correctly, approve generates 4-10 measurable milestones with correct structure, milestone status updates work (done/in_progress/not_started), progress_pct calculation correct, all validation working (422 for invalid status/empty feedback, 404 for non-existent milestone, 400 for operations before journey started). NO 502 errors, live Anthropic key working correctly. Credits tracked accurately (50->30, used 20 credits). Test user: journey_phase2_1782437950@cloudkitchen.com. Feature is production-ready."

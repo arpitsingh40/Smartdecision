@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { api } from '../lib/api';
 import { TopBar } from '../components/TopBar';
@@ -8,6 +9,7 @@ import { toast } from 'sonner';
 import {
   Send, Loader2, Sparkles, ArrowRight, Brain, ChevronDown, ChevronUp, CircleDot,
   Target, Gauge, Flag, CheckCircle2, Circle, AlertTriangle, HelpCircle, Lightbulb, Clock,
+  Users, UserPlus, Calendar, Shield, ListChecks,
 } from 'lucide-react';
 
 const PLACEHOLDERS = [
@@ -53,6 +55,7 @@ function DirList({ icon: Icon, label, items }) {
 
 export default function JourneyPage() {
   const { user, setCredits } = useAuth();
+  const navigate = useNavigate();
   const [journey, setJourney] = useState(null);
   const [loading, setLoading] = useState(true);
   const [objective, setObjective] = useState('');
@@ -64,6 +67,9 @@ export default function JourneyPage() {
   const [refining, setRefining] = useState(false);
   const [approving, setApproving] = useState(false);
   const [refineText, setRefineText] = useState('');
+  const [teamStarting, setTeamStarting] = useState(false);
+  const [teamSkipping, setTeamSkipping] = useState(false);
+  const [teamBuilding, setTeamBuilding] = useState(false);
   const endRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -88,7 +94,8 @@ export default function JourneyPage() {
 
   useEffect(() => {
     if (journey?.started) endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [journey?.messages?.length, journey?.has_direction, journey?.milestones?.length, journey?.stage, busy]);
+  }, [journey?.messages?.length, journey?.has_direction, journey?.milestones?.length, journey?.stage,
+      journey?.team?.started, journey?.team?.messages?.length, journey?.team?.plan, busy]);
 
   const handleError = (e) => {
     const status = e?.response?.status;
@@ -114,21 +121,26 @@ export default function JourneyPage() {
   const send = useCallback(async () => {
     const msg = message.trim();
     if (!msg || busy) return;
+    const teamMode = journey?.team?.started && !journey?.team?.plan;
     setBusy(true);
-    // optimistic: show the user message immediately
-    setJourney((j) => (j ? { ...j, messages: [...j.messages, { role: 'user', text: msg, at: null }] } : j));
+    // optimistic: show the user message immediately in the right stream
+    if (teamMode) {
+      setJourney((j) => (j ? { ...j, team: { ...j.team, messages: [...j.team.messages, { role: 'user', text: msg, at: null }] } } : j));
+    } else {
+      setJourney((j) => (j ? { ...j, messages: [...j.messages, { role: 'user', text: msg, at: null }] } : j));
+    }
     setMessage('');
     try {
-      const r = await api.post('/journey/message', { message: msg });
+      const r = await api.post(teamMode ? '/journey/team/message' : '/journey/message', { message: msg });
       setJourney(r.data);
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);
     } catch (e) {
       handleError(e);
-      // roll back the optimistic message on failure
-      setJourney((j) => (j ? { ...j, messages: j.messages.filter((m) => !(m.role === 'user' && m.text === msg && m.at === null)) } : j));
       setMessage(msg);
+      // resync clean state from server
+      api.get('/journey').then((r) => setJourney(r.data)).catch(() => {});
     } finally { setBusy(false); }
-  }, [message, busy, setCredits]);
+  }, [message, busy, journey, setCredits]);
 
   const onKey = (e, fn) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); fn(); }
@@ -172,6 +184,33 @@ export default function JourneyPage() {
       setJourney(r.data);
     } catch (e) { handleError(e); }
   }, []);
+
+  const startTeam = useCallback(async () => {
+    setTeamStarting(true);
+    try {
+      const r = await api.post('/journey/team/start');
+      setJourney(r.data);
+      window.dispatchEvent(new Event('sdg-journey-changed'));
+    } catch (e) { handleError(e); } finally { setTeamStarting(false); }
+  }, []);
+
+  const skipTeam = useCallback(async () => {
+    setTeamSkipping(true);
+    try {
+      const r = await api.post('/journey/team/skip');
+      setJourney(r.data);
+    } catch (e) { handleError(e); } finally { setTeamSkipping(false); }
+  }, []);
+
+  const buildTeam = useCallback(async () => {
+    setTeamBuilding(true);
+    try {
+      const r = await api.post('/journey/team/build');
+      setJourney(r.data);
+      if (typeof r.data.credits === 'number') setCredits(r.data.credits);
+      window.dispatchEvent(new Event('sdg-journey-changed'));
+    } catch (e) { handleError(e); } finally { setTeamBuilding(false); }
+  }, [setCredits]);
 
   if (loading) {
     return (
@@ -237,6 +276,10 @@ export default function JourneyPage() {
   const filled = order.filter((f) => isFilled(f, model[f]));
   const empties = order.filter((f) => !isFilled(f, model[f]));
   const conf = journey.confidence ?? 0;
+  const team = journey.team || {};
+  const teamMode = team.started && !team.plan;
+  const showTeamOffer = !!(journey.milestones && journey.milestones.length) && !team.started && !team.offer_dismissed && !team.plan;
+  const teamHasAnswer = (team.messages || []).some((m) => m.role === 'user');
 
   const Panel = (
     <div className="space-y-5">
@@ -320,7 +363,7 @@ export default function JourneyPage() {
                 </div>
               )
             ))}
-            {busy ? (
+            {busy && !teamMode ? (
               <div className="flex gap-3 items-center text-muted-foreground" data-testid="journey-thinking">
                 <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary/80 text-primary-foreground shrink-0">
                   <Brain size={15} strokeWidth={1.75} />
@@ -432,6 +475,91 @@ export default function JourneyPage() {
                     </li>
                   ))}
                 </ol>
+              </div>
+            ) : null}
+
+            {/* Team offer */}
+            {showTeamOffer ? (
+              <div className="rounded-2xl border border-primary/30 bg-secondary/40 p-5" data-testid="team-offer">
+                <div className="flex items-start gap-2 mb-3">
+                  <Users size={18} className="mt-0.5 text-primary shrink-0" />
+                  <div>
+                    <div className="font-display text-base">Would you like to involve your team?</div>
+                    <div className="text-sm text-muted-foreground mt-0.5">I can turn this plan into a daily, weekly and monthly operating rhythm for the people who will execute it.</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button data-testid="team-yes-btn" onClick={startTeam} disabled={teamStarting} className="rounded-full">
+                    {teamStarting ? <Loader2 className="animate-spin mr-2" size={15} /> : <UserPlus size={15} className="mr-2" />}
+                    {teamStarting ? 'Starting' : 'Yes, set up my team'}
+                  </Button>
+                  <Button data-testid="team-skip-btn" variant="outline" onClick={skipTeam} disabled={teamSkipping} className="rounded-full">
+                    {teamSkipping ? <Loader2 className="animate-spin mr-2" size={15} /> : null}No, keep going solo
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Team setup conversation */}
+            {team.started && !team.plan ? (
+              <div className="space-y-5" data-testid="team-setup">
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5"><Users size={13} /> Team setup</span>
+                  <span className="text-[11px] text-muted-foreground font-mono-plex">{team.confidence}%</span>
+                  <div className="flex-1 h-px bg-border/60" />
+                </div>
+                {team.messages.map((m, i) => (
+                  m.role === 'assistant' ? (
+                    <div key={i} className="flex gap-3 items-start" data-testid="team-msg-assistant">
+                      <span className="mt-0.5 inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary text-primary-foreground shrink-0"><Brain size={15} strokeWidth={1.75} /></span>
+                      <div className="rounded-2xl rounded-tl-sm bg-card border border-border/70 px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap max-w-[44rem]">{m.text}</div>
+                    </div>
+                  ) : (
+                    <div key={i} className="flex justify-end" data-testid="team-msg-user">
+                      <div className="rounded-2xl rounded-tr-sm bg-secondary px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap max-w-[40rem]">{m.text}</div>
+                    </div>
+                  )
+                ))}
+                {busy && teamMode ? (
+                  <div className="flex gap-3 items-center text-muted-foreground" data-testid="team-thinking">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary/80 text-primary-foreground shrink-0"><Brain size={15} strokeWidth={1.75} /></span>
+                    <Loader2 className="animate-spin" size={16} /> <span className="text-sm">Thinking…</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Team operating plan */}
+            {team.plan ? (
+              <div className="rounded-2xl border border-border/70 bg-card p-5 space-y-4" data-testid="team-plan-card">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5"><Users size={13} /> Team operating plan</span>
+                  <Button size="sm" variant="outline" className="rounded-full h-8" onClick={() => navigate('/team')} data-testid="open-team-btn">
+                    <UserPlus size={14} className="mr-1.5" /> Invite your team
+                  </Button>
+                </div>
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <DirList icon={Calendar} label="Daily" items={team.plan.daily} />
+                  <DirList icon={Calendar} label="Weekly" items={team.plan.weekly} />
+                  <DirList icon={Calendar} label="Monthly" items={team.plan.monthly} />
+                </div>
+                {team.plan.responsibilities && team.plan.responsibilities.length ? (
+                  <div className="pt-3 border-t border-border/60">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5"><ListChecks size={12} /> Responsibilities</div>
+                    <ul className="space-y-1.5">
+                      {team.plan.responsibilities.map((r, i) => (
+                        <li key={i} className="text-sm leading-snug">
+                          {r.who ? <span className="font-medium">{r.who}</span> : null}{r.who && r.what ? ': ' : ''}<span className="text-foreground/90">{r.what}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                <div className="grid sm:grid-cols-3 gap-4 pt-3 border-t border-border/60">
+                  <DirList icon={ArrowRight} label="Dependencies" items={team.plan.dependencies} />
+                  <DirList icon={Shield} label="Escalation" items={team.plan.escalation_rules} />
+                  <DirList icon={Gauge} label="Success metrics" items={team.plan.success_metrics} />
+                </div>
               </div>
             ) : null}
 

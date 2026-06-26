@@ -127,12 +127,13 @@ def _unlocks(user, journey):
     has_decisions = decisions_col.count_documents({"user_id": user["id"]}) > 0
     rank = _stage_rank((journey or {}).get("stage", "clarity"))
     has_milestones = bool((journey or {}).get("milestones"))
+    has_team_plan = bool(((journey or {}).get("team") or {}).get("plan"))
     return {
         "milestones": has_milestones or rank >= _stage_rank("milestones"),
         "decisions": has_decisions,
         "knowledge": is_owner or in_org,
-        "team": in_org or rank >= _stage_rank("team_setup"),
-        "cockpit": is_owner or rank >= _stage_rank("operating"),
+        "team": in_org or has_team_plan,
+        "cockpit": is_owner,
     }
 
 
@@ -325,6 +326,125 @@ def _milestone_progress(milestones):
     return round(100 * done / total)
 
 
+# ----------------------------------------------------------------- team setup (Phase 3)
+TEAM_STRING_FIELDS = ["team_size", "reporting_structure", "skill_levels", "communication_rhythm", "decision_authority"]
+TEAM_LIST_FIELDS = ["roles", "responsibilities", "recurring_issues", "dependencies", "bottlenecks", "kpis", "tools"]
+TEAM_FIELDS = TEAM_STRING_FIELDS + TEAM_LIST_FIELDS
+TEAM_FIELD_LABELS = {
+    "team_size": "Team size", "roles": "Roles", "reporting_structure": "Reporting",
+    "responsibilities": "Responsibilities", "skill_levels": "Skill levels",
+    "recurring_issues": "Recurring issues", "dependencies": "Dependencies",
+    "bottlenecks": "Bottlenecks", "kpis": "KPIs", "communication_rhythm": "Comms rhythm",
+    "tools": "Tools", "decision_authority": "Decision authority",
+}
+TEAM_FIELD_ORDER = ["team_size", "roles", "reporting_structure", "responsibilities", "skill_levels",
+                    "kpis", "communication_rhythm", "tools", "decision_authority",
+                    "dependencies", "bottlenecks", "recurring_issues"]
+TEAM_OPENING = ("Let's set your team up to actually hit this plan. To start: how many people are on your "
+                "team today, and what does each of them mainly do?")
+
+TEAM_SYSTEM = """You are helping a founder set up their TEAM to execute a plan you already shaped together.
+You build a clear model of the team, one question at a time, and stay sharp and practical.
+
+Each turn, all three in order:
+1. Acknowledge what they just told you in one specific line.
+2. GIVE BEFORE YOU ASK: one genuinely useful thing, a delegation principle, an org-design reframe, a real
+   benchmark (e.g. span of control, what to delegate first), or a warning about a common failure. Localize it.
+3. Ask EXACTLY ONE question about their team.
+
+What to learn (pursue what is missing, skip what you know): team_size, roles, reporting_structure,
+each person's current responsibilities, skill_levels, recurring_issues, cross-team dependencies,
+approval or decision bottlenecks, existing KPIs, communication rhythm or cadence, tools they use,
+and who holds decision-making authority.
+
+Tight: 2 to 4 sentences then ONE question. No em-dashes (use commas), no markdown.
+
+Return STRICT JSON only:
+{"reply":"...",
+ "model":{"team_size":"","roles":[],"reporting_structure":"","responsibilities":[],"skill_levels":"",
+ "recurring_issues":[],"dependencies":[],"bottlenecks":[],"kpis":[],"communication_rhythm":"","tools":[],
+ "decision_authority":""}}
+Carry forward everything already known, "" for unknown strings and [] for unknown lists."""
+
+TEAM_PLAN_SYSTEM = """You turn a founder's goal, milestones and team model into a concrete OPERATING PLAN
+for the team. Be specific and measurable, assign clear ownership, keep it lean. No em-dashes, no markdown.
+
+Return STRICT JSON only:
+{
+ "daily": ["short daily rhythm items"],
+ "weekly": ["short weekly cadence items"],
+ "monthly": ["short monthly cadence items"],
+ "responsibilities": [{"who":"role or name","what":"what they own, measurable"}],
+ "dependencies": ["a cross-team dependency to manage"],
+ "escalation_rules": ["when X happens, escalate to Y"],
+ "success_metrics": ["the few metrics that show the team is winning"]
+}
+Each list has 2 to 6 items. responsibilities has one entry per key role."""
+
+
+def _empty_team_model():
+    m = {f: "" for f in TEAM_STRING_FIELDS}
+    m.update({f: [] for f in TEAM_LIST_FIELDS})
+    return m
+
+
+def _team_confidence(model):
+    filled = sum(1 for f in TEAM_FIELDS if _field_filled(f, (model or {}).get(f)))
+    return round(100 * filled / len(TEAM_FIELDS))
+
+
+def _merge_team_model(old, new):
+    base = _empty_team_model()
+    base.update(old or {})
+    out = dict(base)
+    for f in TEAM_FIELDS:
+        nv = (new or {}).get(f)
+        if _field_filled(f, nv):
+            out[f] = nv
+    return out
+
+
+def team_turn(objective, milestones, team_model, transcript_msgs, latest_user_msg):
+    """ONE LLM call for a team-setup turn. Returns (reply, new_model, model_name, usage)."""
+    ms = "; ".join(m.get("title", "") for m in (milestones or [])[:10])
+    tm = json.dumps(team_model or _empty_team_model(), ensure_ascii=False)
+    convo = "\n".join(
+        f"{'FOUNDER' if m.get('role') == 'user' else 'YOU'}: {m.get('text', '')}"
+        for m in (transcript_msgs or [])[-12:]
+    )
+    prompt = (f"FOUNDER'S GOAL: {objective or '(not set)'}\nPLAN MILESTONES: {ms or '(none)'}\n\n"
+              f"TEAM MODEL SO FAR (extend it, keep what is here):\n{tm}\n\n"
+              f"CONVERSATION SO FAR:\n{convo or '(none yet, opening turn)'}\n\n"
+              f"LATEST FROM THE FOUNDER: {latest_user_msg}\n\n"
+              f"Respond now (acknowledge, one useful thing, ONE question) and return the updated team model.")
+    raw, model_name, usage = _llm_json(TEAM_SYSTEM, prompt, max_tokens=1600)
+    reply = _clean(raw.get("reply", ""))
+    if not reply:
+        raise ValueError("empty team reply")
+    new_model = raw.get("model") if isinstance(raw.get("model"), dict) else {}
+    return reply, new_model, model_name, usage
+
+
+def _build_team_plan(raw):
+    def lst(k, cap=6):
+        return _norm_str_list(raw.get(k), cap)
+    responsibilities = []
+    resp = raw.get("responsibilities")
+    if isinstance(resp, list):
+        for r in resp[:10]:
+            if isinstance(r, dict):
+                who = _clean(str(r.get("who", "")))
+                what = _clean(str(r.get("what", "")))
+                if who or what:
+                    responsibilities.append({"who": who, "what": what})
+    return {
+        "daily": lst("daily"), "weekly": lst("weekly"), "monthly": lst("monthly"),
+        "responsibilities": responsibilities,
+        "dependencies": lst("dependencies"), "escalation_rules": lst("escalation_rules"),
+        "success_metrics": lst("success_metrics"),
+    }
+
+
 # ----------------------------------------------------------------- billing wrapper
 def _run_billed(user, produce):
     """produce() -> (payload, usage, model_name). Reserve -> run -> reconcile to actual tokens.
@@ -397,8 +517,26 @@ def _view(user, j):
                         "deadline": m.get("deadline", ""), "status": m.get("status", "not_started")}
                        for m in (j.get("milestones") or [])],
         "progress_pct": _milestone_progress(j.get("milestones") or []),
+        "team": _team_view(j),
         "unlocks": _unlocks(user, j),
         "credits": user.get("credits", 0),
+    }
+
+
+def _team_view(j):
+    team = j.get("team") or {}
+    tmodel = _merge_team_model(_empty_team_model(), team.get("model") or {})
+    return {
+        "started": bool(team.get("messages")),
+        "messages": [{"role": m.get("role"), "text": m.get("text", ""), "at": _iso(m.get("at"))}
+                     for m in team.get("messages", [])],
+        "model": {f: tmodel.get(f, _empty_team_model()[f]) for f in TEAM_FIELDS},
+        "field_labels": TEAM_FIELD_LABELS,
+        "field_order": TEAM_FIELD_ORDER,
+        "confidence": _team_confidence(tmodel),
+        "ready_for_plan": _team_confidence(tmodel) >= 40,
+        "plan": team.get("plan") or None,
+        "offer_dismissed": bool(j.get("team_offer_dismissed")),
     }
 
 
@@ -481,7 +619,8 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
 def reset(user: dict = Depends(current_user)):
     journeys_col.update_one({"user_id": user["id"]}, {"$set": {
         "stage": "clarity", "objective": "", "model": _empty_model(),
-        "messages": [], "direction": None, "milestones": [], "updated_at": now_utc()}}, upsert=False)
+        "messages": [], "direction": None, "milestones": [],
+        "team": None, "team_offer_dismissed": False, "updated_at": now_utc()}}, upsert=False)
     return _view(user, _get_or_create(user["id"]))
 
 
@@ -585,6 +724,94 @@ def set_milestone_status(milestone_id: str, body: MilestoneStatusIn, user: dict 
     journeys_col.update_one({"id": j["id"]}, {"$set": {"milestones": ms, "updated_at": now_utc()}})
     j = journeys_col.find_one({"id": j["id"]})
     return _view(user, j)
+
+
+# ----------------------------------------------------------------- Phase 3: team setup
+@router.post("/team/start")
+def team_start(user: dict = Depends(current_user)):
+    """Begin the team-setup conversation (free, fixed opening). Requires approved milestones."""
+    j = _get_or_create(user["id"])
+    if not j.get("milestones"):
+        raise HTTPException(400, "Build your milestones first.")
+    team = j.get("team") or {}
+    if team.get("messages"):
+        return _view(user, j)  # already started, no-op
+    team = {"messages": [{"role": "assistant", "text": TEAM_OPENING, "at": now_utc()}],
+            "model": _empty_team_model(), "plan": None}
+    journeys_col.update_one({"id": j["id"]}, {"$set": {
+        "team": team, "stage": "team_setup", "team_offer_dismissed": False, "updated_at": now_utc()}})
+    return _view(user, journeys_col.find_one({"id": j["id"]}))
+
+
+@router.post("/team/skip")
+def team_skip(user: dict = Depends(current_user)):
+    """Founder chooses to keep going solo. Dismisses the team offer (free)."""
+    j = _get_or_create(user["id"])
+    journeys_col.update_one({"id": j["id"]}, {"$set": {
+        "team_offer_dismissed": True, "stage": "operating", "updated_at": now_utc()}})
+    return _view(user, journeys_col.find_one({"id": j["id"]}))
+
+
+@router.post("/team/message")
+def team_message(body: MessageIn, user: dict = Depends(current_user)):
+    """One team-setup turn (1 LLM). Grows the team model. 400 if team setup not started."""
+    j = _get_or_create(user["id"])
+    team = j.get("team") or {}
+    if not team.get("messages"):
+        raise HTTPException(400, "Start team setup first.")
+    msg = body.message.strip()
+    transcript = team.get("messages", [])
+    tmodel = team.get("model") or _empty_team_model()
+
+    def produce():
+        reply, new_model, model_name, usage = team_turn(
+            j.get("objective", ""), j.get("milestones") or [], tmodel, transcript, msg)
+        return (reply, new_model), usage, model_name
+
+    (reply, new_model), credits_after, cost = _run_billed(user, produce)
+    merged = _merge_team_model(tmodel, new_model)
+    new_msgs = transcript + [{"role": "user", "text": msg, "at": now_utc()},
+                             {"role": "assistant", "text": reply, "at": now_utc()}]
+    journeys_col.update_one({"id": j["id"]}, {"$set": {
+        "team.messages": new_msgs, "team.model": merged, "updated_at": now_utc()}})
+    j = journeys_col.find_one({"id": j["id"]})
+    user["credits"] = credits_after
+    out = _view(user, j)
+    out["cost"] = cost
+    return out
+
+
+@router.post("/team/build")
+def team_build(user: dict = Depends(current_user)):
+    """Generate the team operating plan (daily/weekly/monthly + responsibilities + dependencies +
+    escalation rules + success metrics). 1 LLM call. Moves stage -> operating, unlocks Team."""
+    j = _get_or_create(user["id"])
+    team = j.get("team") or {}
+    if not team.get("messages"):
+        raise HTTPException(400, "Start team setup first.")
+    if not any(m.get("role") == "user" for m in team.get("messages", [])):
+        raise HTTPException(400, "Tell me about your team first.")
+    tmodel = team.get("model") or _empty_team_model()
+
+    def produce():
+        prompt = (f"FOUNDER'S GOAL: {j.get('objective', '')}\n"
+                  f"DIRECTION: {json.dumps(j.get('direction') or {}, ensure_ascii=False)}\n"
+                  f"MILESTONES: {json.dumps([m.get('title') for m in (j.get('milestones') or [])], ensure_ascii=False)}\n"
+                  f"TEAM MODEL: {json.dumps(tmodel, ensure_ascii=False)}\n\nBuild the team operating plan now.")
+        raw, model_name, usage = _llm_json(TEAM_PLAN_SYSTEM, prompt, max_tokens=2400)
+        plan = _build_team_plan(raw)
+        if not (plan["daily"] or plan["weekly"] or plan["monthly"] or plan["responsibilities"]):
+            raise ValueError("empty team plan")
+        return plan, usage, model_name
+
+    plan, credits_after, cost = _run_billed(user, produce)
+    journeys_col.update_one({"id": j["id"]}, {"$set": {
+        "team.plan": plan, "stage": "operating", "updated_at": now_utc()}})
+    j = journeys_col.find_one({"id": j["id"]})
+    user["credits"] = credits_after
+    out = _view(user, j)
+    out["cost"] = cost
+    return out
 
 
 def ensure_journey_startup():

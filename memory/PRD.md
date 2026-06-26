@@ -239,3 +239,24 @@ $1 = 10 credits. Turn cost 5 credits (~$0.50/turn revenue vs ~$0.04 API cost). S
 - **Frontend `/app/frontend/src/pages/FounderProfilePage.js`** (route /founder-profile, owner-only; TopBar "My Profile" nav for owners): intro -> "Start the conversation" -> chat-style interview (transcript bubbles, progress count/target, Cmd/Ctrl+Enter to send, "Finish & build my profile" after 2 answers) -> distilled profile card (summary + 8 labelled traits + industry, "Private to you", Redo / Ask the brain now). testids: founder-profile-page, fp-start-btn, fp-question, fp-answer-input, fp-send-btn, fp-finish-btn, fp-profile-card, fp-summary, fp-redo-btn, fp-progress. Screenshot-verified profile card renders.
 - **Backend test 4/4 PASS (4 LLM calls)**: member 403 on all /founder/* + no-auth 401; PUT/GET profile + empty-summary 422; interview start->answer x2->finish (profile.summary + industry_summary non-empty) + finish-with-<2 -> 422; founder /ask still 200 with goal_impact and NO strategic_alignment (injection didn't break the contract).
 - **NEXT (Phase 2 — needs key)**: 2b auto web-research. Integration playbook fetched (Tavily cheap/fast OR Perplexity Sonar grounded+citations). DESIGN: a refreshable org.industry_research digest (founder clicks "Pull latest industry research" -> 1 research call -> stored digest+citations -> injected cheaply into every ask via _industry_block) rather than a per-ask web call (controls cost+latency). AWAITING founder's provider choice (Tavily vs Perplexity) + API key.
+
+
+---
+
+## CHANGELOG — Phase 1: Chat-first redesign (Founder Journey)  [2026-06]
+
+**Why:** "Don't show users software, show them progress." The product was workspace/dashboard-first; new users were dumped into 5+ feature tabs (Workspace, Decisions, Cockpit, Profile, Team). Redesigned into a calm, chat-first operating system where capabilities UNLOCK with demonstrated progress.
+
+**Stage 0 (login):** New users land on a single screen — "What are you trying to accomplish?" + one large textbox + a single "Start Conversation" button. No Workspace naming, no sidebar, no advanced nav.
+
+**Stage 1 (deep conversation):** A flowing chatroom backed by the same Anthropic engine. The AI acknowledges, GIVES value before asking (a real number/benchmark/reframe/lever), then asks exactly ONE question — building a live MODEL of the founder's situation.
+
+**Live Understanding panel:** 15-field model (objective, why_now, whats_at_stake, blockers, tried, knowledge_level, people, resources, constraints, fears, unknowns, leverage, urgency, impact, timeline) + an HONEST, field-completeness-based confidence meter (NOT LLM-claimed) + a "Still exploring" chip set. ready_for_direction at confidence>=70 (drives Phase 2).
+
+**Progressive unlocks:** GET /api/journey returns unlocks{milestones,decisions,knowledge,team,cockpit}. Brand-new solo user = all false (chat only). Existing members/owners are never locked out (team=in_org, cockpit=is_owner). TopBar renders only unlocked nav items.
+
+**Backend:** new /app/backend/journey.py — GET /api/journey, POST /start (idempotent, no recharge if already started), POST /message (400 before start, merges model, never regresses), POST /reset. Billing reuses reserve(16)->reconcile(token_cost, CREDITS_PER_1K=2, min 1)->refund; FULL refund + 502 on LLM failure. journeys_col (unique user_id). Tested: 10/10 passed, 2 LLM calls.
+
+**Frontend:** /app/frontend/src/pages/JourneyPage.js (new home at "/"), TopBar progressive nav + "Knowledge" (was Workspace/Brain at /brain), App.js routes "/"->JourneyPage and "/brain"->BrainPage.
+
+**Next phases:** P2 Initial Direction -> refine -> 4-10 measurable milestones; P3 in-chat artifact builders (SOP/ICP/persona) into a Knowledge area; P4 team-setup conversation; P5 invite/billing (company-paid chat-only members vs self-pay independents).

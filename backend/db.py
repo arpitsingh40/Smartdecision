@@ -26,3 +26,4 @@ members_col = db.org_members           # user <-> org membership with role (owne
 invites_col = db.org_invites           # invite codes / join links for a company workspace
 decisions_col = db.decisions           # every brain decision (history, execution status, founder-only alignment)
 plans_col = db.org_plans               # Layer 6: founder-ratified objective cascades (autonomous planning)
+journeys_col = db.journeys             # chat-first founder journey: live understanding model + stage + unlocks

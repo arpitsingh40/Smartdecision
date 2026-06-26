@@ -26,6 +26,7 @@ from questionnaire import router as questionnaire_router
 from decision_brain import router as brain_router, ensure_brain_startup
 from organizations import router as org_router, ensure_org_startup
 from founder_profile import router as founder_router
+from journey import router as journey_router, ensure_journey_startup
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -521,12 +522,14 @@ app.include_router(questionnaire_router)
 app.include_router(brain_router)
 app.include_router(org_router)
 app.include_router(founder_router)
+app.include_router(journey_router)
 
 @app.on_event("startup")
 def _startup():
     ensure_startup()  # idempotent: indexes + founder account + one-time stats backfill
     ensure_org_startup()  # idempotent: org-layer indexes
     ensure_brain_startup()  # idempotent: decision-ledger indexes
+    ensure_journey_startup()  # idempotent: founder-journey indexes
 
 app.add_middleware(
     CORSMiddleware,

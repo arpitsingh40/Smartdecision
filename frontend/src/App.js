@@ -2,6 +2,7 @@ import { useState, useEffect, createContext, useContext, useCallback } from 'rea
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from './components/ui/sonner';
 import AuthPage from './pages/AuthPage';
+import JourneyPage from './pages/JourneyPage';
 import NewGoalPage from './pages/NewGoalPage';
 import ThreadPage from './pages/ThreadPage';
 import BrainPage from './pages/BrainPage';
@@ -104,9 +105,9 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthPage />} />
-            <Route path="/" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/" element={token ? <JourneyPage /> : <Navigate to="/auth" replace />} />
             <Route path="/decisions" element={token ? <DecisionsPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/brain" element={<Navigate to="/" replace />} />
+            <Route path="/brain" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
             <Route path="/new" element={token ? <NewGoalPage /> : <Navigate to="/auth" replace />} />
             <Route path="/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
             <Route path="/team" element={token ? <TeamPage /> : <Navigate to="/auth" replace />} />

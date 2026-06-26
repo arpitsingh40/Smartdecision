@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, Compass, CheckSquare, UserCog } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -25,10 +25,19 @@ export const TopBar = () => {
   const location = useLocation();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [active, setActive] = useState(null);
+  const [unlocks, setUnlocks] = useState(null);
 
   const loadActive = useCallback(() => {
     if (!user) return;
     api.get('/brain/active').then((r) => setActive(r.data?.next || null)).catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    const loadUnlocks = () => api.get('/journey').then((r) => setUnlocks(r.data?.unlocks || null)).catch(() => {});
+    loadUnlocks();
+    window.addEventListener('sdg-journey-changed', loadUnlocks);
+    return () => window.removeEventListener('sdg-journey-changed', loadUnlocks);
   }, [user]);
 
   useEffect(() => {
@@ -39,12 +48,13 @@ export const TopBar = () => {
     return () => { clearInterval(id); window.removeEventListener('sdg-actions-changed', onChange); };
   }, [loadActive]);
 
+  const u = unlocks || {};
   const nav = [
-    { to: '/', label: 'Workspace', icon: Compass, testid: 'nav-workspace' },
-    { to: '/decisions', label: 'My Decisions', icon: CheckSquare, testid: 'nav-decisions' },
-    ...(user?.org_role === 'owner' ? [{ to: '/cockpit', label: 'Cockpit', icon: Gauge, testid: 'nav-cockpit' }] : []),
-    ...(user?.org_role === 'owner' ? [{ to: '/founder-profile', label: 'My Profile', icon: UserCog, testid: 'nav-founder-profile' }] : []),
-    { to: '/team', label: 'Team', icon: Users, testid: 'nav-team' },
+    ...(u.decisions ? [{ to: '/decisions', label: 'My Decisions', icon: CheckSquare, testid: 'nav-decisions' }] : []),
+    ...(u.knowledge ? [{ to: '/brain', label: 'Knowledge', icon: BookOpen, testid: 'nav-knowledge' }] : []),
+    ...(u.team ? [{ to: '/team', label: 'Team', icon: Users, testid: 'nav-team' }] : []),
+    ...(u.cockpit ? [{ to: '/cockpit', label: 'Cockpit', icon: Gauge, testid: 'nav-cockpit' }] : []),
+    ...(u.cockpit ? [{ to: '/founder-profile', label: 'My Profile', icon: UserCog, testid: 'nav-founder-profile' }] : []),
   ];
   const isActive = (to) => (to === '/' ? location.pathname === '/' : location.pathname.startsWith(to));
 
@@ -96,7 +106,7 @@ export const TopBar = () => {
                     <n.icon size={16} strokeWidth={1.75} className="mr-2" /> {n.label}
                   </DropdownMenuItem>
                 ))}
-                <DropdownMenuSeparator />
+                {nav.length ? <DropdownMenuSeparator /> : null}
               </div>
               <DropdownMenuItem data-testid="buy-credits-menu" onClick={() => navigate('/billing')} className="text-sm cursor-pointer">
                 <Plus size={16} strokeWidth={1.75} className="mr-2" /> Buy credits

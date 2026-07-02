@@ -23,6 +23,52 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Organ 1 Decision Record + outcome loop: brain_answer emits predicted_outcome{claim,confidence,review_after_days} + dont_follow_if (same single LLM call, max_tokens 2800); stored on decision doc with review_at/reviewed_at/impact_inr; set_status accepts impact_inr; NEW GET /api/brain/reviews/due, POST /api/brain/decisions/{id}/review (worked|partly|didnt + actual + impact_inr -> outcome source=review + calibration), GET /api/brain/ledger (totals/outcomes/impact/calibration/recent_reviews)"
+    implemented: true
+    working: true
+    file: "/app/backend/decision_brain.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW. SYSTEM gains PREDICT THE OUTCOME (measurable claim + honest confidence 0-100 + review_after_days 7/14/30, null for pure factual lookups) + WHEN NOT TO FOLLOW (dont_follow_if condition, null for lookups). _sanitize_prediction coerces (claim<=400, conf 0-100 default 50, days 1-90 default 14). Decision doc gains predicted_outcome/dont_follow_if/review_at(created+days)/reviewed_at(None)/impact_inr(None). StatusIn + ReviewIn gain impact_inr (+-1e9). calibration_for(match) = avg predicted confidence vs actual win rate (success=1/partial=0.5/failed=0), gap label incl 'early signal, n<5'. New indexes user_id+reviewed_at+review_at, outcome.status. SELF-VERIFIED LIVE via release-gate smoke (1 sonnet call): predicted_outcome conf=78 review 30d + dont_follow_if returned + sanitized."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL TESTS PASSED (1 LLM call used, within budget of 1). TEST A (LLM CALL 1 - New response contract): Fresh signup (50 credits) -> POST /api/brain/ask with D2C tea brand distributor question -> 200, mode=decide, cost=4 credits. CRITICAL ASSERTIONS ✓: predicted_outcome is object with claim='If you counter with the 10-store pilot at 25%/30-day terms, the distributor will either negotiate to...' (non-empty string), confidence=78 (int 0-100), review_after_days=7 (int 1-90) ✓. dont_follow_if='Your gross margin is above 70%, you have at least 6 months of cash runway even with ₹1L locked, and ...' (non-empty string) ✓. Existing contract intact: mode=decide, key_takeaway, next_action, hook (all non-empty), decision_id, session_id, cost>=1 ✓. reasoning object present with 9 uncertainty keys (NO hidden_desire in public view) ✓, NO strategic_alignment key anywhere ✓. MongoDB check: decision doc has predicted_outcome (same object), dont_follow_if, review_at (Date ~ created_at + 7 days), reviewed_at=null, impact_inr=null ✓. TEST B (FREE - Review loop with seeded data): Seeded decision 'rev-test-1' with predicted_outcome (conf=70, review_after_days=14), review_at (due yesterday). GET /api/brain/reviews/due -> 200, count=1, contains rev-test-1 with predicted_outcome + review_at + question ✓. POST /api/brain/decisions/rev-test-1/review {outcome:'worked', actual:'Sales rose 24 percent', impact_inr:50000} -> 200, outcome.status='success', outcome.source='review', impact_inr=50000, calibration object with n=1, avg_predicted_confidence=70, actual_win_rate=100, calibration_gap=-30, label='Underconfident by 30 pts (early signal, n=1)' ✓. GET /api/brain/reviews/due -> rev-test-1 GONE (reviewed_at set) ✓. GET /api/brain/ledger -> totals.reviewed=1, outcomes.success=1, impact.total_inr=50000, calibration.n=1, recent_reviews contains rev-test-1 with review_note='Sales rose 24 percent' ✓. Validation: POST review with outcome 'bogus' -> 422 ✓, review on unknown id -> 404 ✓, review on ANOTHER user's decision -> 404 (created second fresh user, no LLM) ✓. POST /api/brain/decisions/rev-test-1/status {status:'done', outcome:'partly', impact_inr:-2000} -> 200, impact_inr=-2000 accepted (negative allowed) ✓. Feature is production-ready."
+  - task: "Launch KPI instrumentation: POST /api/kpi/signal (problem_detection|decision_improvement, bool, idempotent per user+kind+decision) + GET /api/admin/launch-readiness (admin-only: 5 KPIs from real data + latest release-gate verdict, zero LLM)"
+    implemented: true
+    working: true
+    file: "/app/backend/kpi.py, /app/backend/db.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW kpi.py. /api/kpi/signal upserts kpi_events (unique user_id+kind+dedupe; dedupe=decision_id or day bucket; re-tap REPLACES). /api/admin/launch-readiness: kpi1/kpi2 yes-no-pct from signals, kpi3 execution (committed/done/dropped/completion_pct/follow_through_pct from decisions), kpi4 outcomes+positive_pct+impact_inr_total+calibration_for({}), kpi5 return rate ($expr last_active_at >= created_at+24h over users older than 7d, non-admin), release_gate latest summary. SELF-VERIFIED via curl: signal ok + invalid kind 422 + non-admin 403 + readiness JSON correct with live counts."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL TESTS PASSED (0 LLM calls, fully free). No token POST /api/kpi/signal -> 401 ✓. POST /api/kpi/signal as fresh user {kind:'problem_detection', value:true, decision_id:'rev-test-1'} -> 200 {ok:true} ✓. IDEMPOTENCY: same call with value:false -> 200, MongoDB kpi_events count EXACTLY 1 with value=false (replaced, not appended) ✓. POST {kind:'decision_improvement', value:true} (no decision_id, day-bucket dedupe) -> 200 ✓. Invalid kind -> 422 ✓. GET /api/admin/launch-readiness as non-admin -> 403 ✓, no token -> 401 ✓. GET /api/admin/launch-readiness as admin (ceo@) -> 200 with all required keys: kpi1_problem_detection{yes:0, no:1, n:1, pct:0}, kpi2_decision_improvement{yes:1, no:0, n:1, pct:100}, kpi3_execution{committed:0, done:0, completion_pct:None, follow_through_pct:None}, kpi4_outcome{outcomes{success:0, partial:0, failed:0}, n:0, positive_pct:None, impact_inr_total:0, impact_reports:0, calibration}, kpi5_return{eligible:0, returned:0, return_pct:None, active_7d:2}, release_gate (object with id/status/overall/started_at), generated_at ✓. All KPI structures correct with honest n counts. Feature is production-ready."
+  - task: "Release Gate harness (four gates): POST /api/admin/release-gate/run {limit 1-5} background run of golden founder scenarios through REAL brain_answer (no user billing) + haiku judge scoring truth/reasoning/actionability/impact 0-100 (pass>=70 all + better_decision); GET /api/admin/release-gate latest+history; 409 when running, stale>15min auto-fail"
+    implemented: true
+    working: true
+    file: "/app/backend/release_gate.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW release_gate.py. 5 golden scenarios (cloud-kitchen-discount, saas-second-sales-hire, d2c-festive-inventory, solar-lowmargin-project, agency-toxic-anchor-client) each with judge rubric must_consider. _judge = claude-haiku-4-5 strict judge -> gates{score,note,passed} + better_decision + summary; scenario passes only if ALL 4 gates >=70 AND better_decision. Run persisted progressively in release_gates col. SELF-VERIFIED LIVE (limit=1, 1 sonnet + 1 haiku): run done in 55s, honest FAIL verdict (truth 72 pass, reasoning 68 fail, actionability 82 pass, impact 61 fail) with sharp judge notes. DO NOT re-run the gate in testing (2 LLM calls per scenario) unless explicitly budgeted."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL TESTS PASSED (0 LLM calls, READ-ONLY as instructed). GET /api/admin/release-gate as admin -> 200 ✓. Previous smoke run exists: latest.status='done', overall.gate_avgs has all 4 gates (truth:72, reasoning:68, actionability:82, impact:61) as ints ✓. scenarios[0].name='cloud-kitchen-discount' with gates{score, note, passed} for all 4 gates ✓: truth (score=72, passed=True), reasoning (score=68, passed=False), actionability (score=82, passed=True), impact (score=61, passed=False). scenarios[0].better_decision=True (bool) ✓. history is a list with 1 run ✓. GET /api/admin/release-gate as non-admin -> 403 ✓. POST /api/admin/release-gate/run validation ONLY: {limit:0} -> 422 ✓, {limit:9} -> 422 ✓ (pydantic ge=1 le=5 working). DID NOT send valid body (each scenario costs 2 LLM calls, not budgeted). Feature is production-ready."
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW release_gate.py. 5 golden scenarios (cloud-kitchen-discount, saas-second-sales-hire, d2c-festive-inventory, solar-lowmargin-project, agency-toxic-anchor-client) each with judge rubric must_consider. _judge = claude-haiku-4-5 strict judge -> gates{score,note,passed} + better_decision + summary; scenario passes only if ALL 4 gates >=70 AND better_decision. Run persisted progressively in release_gates col. SELF-VERIFIED LIVE (limit=1, 1 sonnet + 1 haiku): run done in 55s, honest FAIL verdict (truth 72 pass, reasoning 68 fail, actionability 82 pass, impact 61 fail) with sharp judge notes. DO NOT re-run the gate in testing (2 LLM calls per scenario) unless explicitly budgeted."
   - task: "Sprint 2a: Decision Brain /ask ported to the reasoning engine (reasoning sweep in same LLM call: 10-dim uncertainty, assumptions, decision_type, reversible, sharpening_question = highest-EV unknown, sufficient) + public reasoning (hidden_desire stripped) in response; stored in decision doc; stripped from GET /decisions"
     implemented: true
     working: true
@@ -496,7 +542,9 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Founder Journey Phase 2: /api/journey/direction + /direction/refine + /direction/approve + /milestones/{id}/status"
+    - "Organ 1 Decision Record + outcome loop (reviews/due, review, ledger, impact_inr)"
+    - "Launch KPI instrumentation (/api/kpi/signal + /api/admin/launch-readiness)"
+    - "Release Gate harness (GET latest/history + validation; DO NOT re-run unless budgeted)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1694,3 +1742,8 @@ agent_communication:
       - Fresh context methodology working correctly (stale session issue resolved)
       - All data-testid selectors working as expected
       - No issues found, all features production-ready
+
+
+agent_communication:
+  - agent: "testing"
+    message: "BACKEND TESTING COMPLETE - THREE NEW FEATURES TESTED (July 2, 2026). EXACTLY 1 LLM call used (within budget). ALL 3 FEATURES PASSED: (1) Organ 1 Decision Record + outcome loop - predicted_outcome{claim, confidence, review_after_days} + dont_follow_if working correctly, review loop with calibration working, MongoDB persistence verified. (2) Launch KPI instrumentation - POST /api/kpi/signal idempotency working (replaces not appends), GET /api/admin/launch-readiness returns all 5 KPIs with correct structure. (3) Release Gate - READ-ONLY testing passed, previous smoke run verified with all 4 gates (truth:72, reasoning:68, actionability:82, impact:61), validation working (limit 0/9 -> 422). NO ISSUES FOUND. All backend features are production-ready."

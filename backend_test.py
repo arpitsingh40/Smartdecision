@@ -1,450 +1,954 @@
-"""Backend testing for Sprint 2a: Brain reasoning port + cross-founder benchmarks.
+#!/usr/bin/env python3
+"""Backend test for SmartDecigen - Three NEW features (Organ 1, KPI, Release Gate).
 
-Test plan:
-1. LLM#1 - BENCHMARK AGGREGATION: Fresh signup -> journey/start -> verify Mongo benchmarks aggregation
-2. LLM#2 - BRAIN REASONING PORT: Fresh signup -> brain/ask -> verify reasoning structure
-3. FREE - HISTORY CLEAN: GET brain/decisions -> verify no reasoning/strategic_alignment keys
-4. FREE - UNIT TESTS: Python unit tests for benchmarks.py functions
-
-Total LLM budget: <= 3 calls (2 planned + 1 spare)
+HARD LLM BUDGET: EXACTLY 1 LLM call total (one POST /api/brain/ask).
+Everything else must be FREE (Mongo seeding + free endpoints).
 """
-import sys
 import os
+import sys
 import json
+import time
+import uuid
+from datetime import datetime, timezone, timedelta
 import requests
-from datetime import datetime, timezone
-from pymongo import MongoClient
-
-# Add backend to path for unit tests
-sys.path.insert(0, '/app/backend')
 
 # Backend URL from frontend/.env
 BACKEND_URL = "https://founder-intel-4.preview.emergentagent.com/api"
 
-# MongoDB connection
-MONGO_URL = "mongodb://localhost:27017"
-DB_NAME = "test_database"
+# Test credentials
+ADMIN_EMAIL = "ceo@smartdecigen.com"
+ADMIN_PASSWORD = "FounderOS@2026"
 
-def get_mongo():
-    """Get MongoDB client and database."""
-    client = MongoClient(MONGO_URL)
-    return client, client[DB_NAME]
+# Colors for output
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+RESET = "\033[0m"
 
-def signup_user(email):
-    """Create a fresh user account."""
-    url = f"{BACKEND_URL}/auth/signup"
-    payload = {"email": email, "password": "TestPass123!", "name": "Test User"}
-    resp = requests.post(url, json=payload)
-    assert resp.status_code == 200, f"Signup failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    return data["token"], data["user"]["id"]
+def log(msg, color=RESET):
+    print(f"{color}{msg}{RESET}")
 
-def test_benchmark_aggregation():
-    """LLM#1 - BENCHMARK AGGREGATION ACROSS FOUNDERS.
-    
-    Fresh signup A -> POST /api/journey/start with cloud kitchen objective -> 200.
-    Then inspect Mongo: at least one cloud-kitchen metric doc should have count=2 
-    with TWO DISTINCT uid values (two founders aggregated, no double count).
-    """
-    print("\n" + "="*80)
-    print("TEST 1: LLM#1 - BENCHMARK AGGREGATION ACROSS FOUNDERS")
-    print("="*80)
-    
-    # Fresh signup
-    email = f"benchmark_test_{int(datetime.now().timestamp())}@cloudkitchen.com"
-    token, user_id = signup_user(email)
-    print(f"✓ Fresh signup: {email}")
-    
-    # POST /api/journey/start with cloud kitchen objective
-    url = f"{BACKEND_URL}/journey/start"
-    headers = {"Authorization": f"Bearer {token}"}
-    objective = "I run a cloud kitchen in Mumbai doing 900 orders a month at 320 rupees average order value and want to hit 15L monthly revenue in a year."
-    payload = {"objective": objective}
-    
-    print(f"→ POST /api/journey/start with cloud kitchen objective...")
-    resp = requests.post(url, json=payload, headers=headers)
-    assert resp.status_code == 200, f"Journey start failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    print(f"✓ 200 response, cost={data.get('cost')}, credits={data.get('credits')}")
-    
-    # Inspect MongoDB benchmarks collection
-    mongo_client, db = get_mongo()
-    benchmarks_col = db.benchmarks
-    
-    print("\n→ Inspecting MongoDB benchmarks collection...")
-    cloud_kitchen_docs = list(benchmarks_col.find({"industry": "cloud-kitchen"}))
-    
-    print(f"\nFound {len(cloud_kitchen_docs)} cloud-kitchen benchmark docs:")
-    for doc in cloud_kitchen_docs:
-        metric = doc.get("metric")
-        count = doc.get("count", 0)
-        samples = doc.get("samples", [])
-        uid_values = [s.get("uid") for s in samples]
-        distinct_uids = len(set(uid_values))
-        
-        print(f"  - metric: {metric}, count: {count}, distinct UIDs: {distinct_uids}")
-        
-        # Check for at least one metric with count >= 2 and TWO DISTINCT uids
-        if count >= 2 and distinct_uids >= 2:
-            print(f"    ✓ PASS: {metric} has count={count} with {distinct_uids} distinct UIDs (aggregation working)")
-            # Verify the UIDs are actually different
-            print(f"    UIDs: {uid_values[:5]}")  # Show first 5
-    
-    # Report all (industry, metric, count) rows
-    print("\n→ All benchmark rows (industry, metric, count):")
-    all_benchmarks = list(benchmarks_col.find({}, {"industry": 1, "metric": 1, "count": 1, "_id": 0}))
-    for b in all_benchmarks:
-        print(f"  ({b.get('industry')}, {b.get('metric')}, {b.get('count')})")
-    
-    # Verify at least one cloud-kitchen metric has count >= 2
-    has_aggregation = any(
-        doc.get("count", 0) >= 2 and len(set(s.get("uid") for s in doc.get("samples", []))) >= 2
-        for doc in cloud_kitchen_docs
-    )
-    
-    assert has_aggregation, "FAIL: No cloud-kitchen metric has count >= 2 with distinct UIDs"
-    print("\n✅ TEST 1 PASSED: Benchmark aggregation working (count >= 2, distinct UIDs)")
-    
-    mongo_client.close()
-    return token, user_id
+def log_success(msg):
+    log(f"✅ {msg}", GREEN)
 
-def test_brain_reasoning_port(token=None, user_id=None):
-    """LLM#2 - BRAIN REASONING PORT.
-    
-    Fresh signup B -> POST /api/brain/ask with cloud kitchen question -> 200.
-    Assert ALL:
-    - response HAS 'reasoning' object
-    - reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire)
-    - reasoning has NO 'hidden_desire' key at all
-    - biggest_uncertainty + question_target among the 9
-    - question_rationale non-empty
-    - sufficient is bool
-    - dim_order (9 items) + dim_labels present
-    - assumptions_detected is a list
-    - decision_type valid
-    - response does NOT contain 'strategic_alignment'
-    - existing contract intact: next_action, hook, key_takeaway, mode, sharpening_question, decision_id, session_id, cost >= 1
-    """
-    print("\n" + "="*80)
-    print("TEST 2: LLM#2 - BRAIN REASONING PORT")
-    print("="*80)
-    
-    # Fresh signup if not provided
-    if not token:
-        email = f"brain_test_{int(datetime.now().timestamp())}@cloudkitchen.com"
-        token, user_id = signup_user(email)
-        print(f"✓ Fresh signup: {email}")
-    else:
-        print(f"✓ Using existing user: {user_id}")
-    
-    # POST /api/brain/ask
-    url = f"{BACKEND_URL}/brain/ask"
-    headers = {"Authorization": f"Bearer {token}"}
-    question = "Should I spend 50000 rupees a month on Swiggy ads to grow my cloud kitchen orders, margins are thin?"
-    payload = {"question": question}
-    
-    print(f"→ POST /api/brain/ask with question...")
-    resp = requests.post(url, json=payload, headers=headers)
-    assert resp.status_code == 200, f"Brain ask failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    
-    print(f"✓ 200 response, cost={data.get('cost')}, mode={data.get('mode')}")
-    
-    # CRITICAL ASSERTIONS
-    print("\n→ Verifying reasoning structure...")
-    
-    # 1. Response HAS 'reasoning' object
-    assert "reasoning" in data, "FAIL: response does NOT contain 'reasoning' key"
-    reasoning = data["reasoning"]
-    assert isinstance(reasoning, dict), "FAIL: reasoning is not a dict"
-    print("  ✓ response HAS 'reasoning' object")
-    
-    # 2. reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire)
-    assert "uncertainty" in reasoning, "FAIL: reasoning does NOT contain 'uncertainty'"
-    uncertainty = reasoning["uncertainty"]
-    assert isinstance(uncertainty, dict), "FAIL: uncertainty is not a dict"
-    unc_keys = list(uncertainty.keys())
-    print(f"  → uncertainty keys ({len(unc_keys)}): {unc_keys}")
-    assert len(unc_keys) == 9, f"FAIL: uncertainty has {len(unc_keys)} keys, expected EXACTLY 9"
-    assert "hidden_desire" not in unc_keys, "FAIL: uncertainty contains 'hidden_desire' (should be stripped)"
-    print("  ✓ reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire)")
-    
-    # 3. reasoning has NO 'hidden_desire' key at all
-    assert "hidden_desire" not in reasoning, "FAIL: reasoning contains 'hidden_desire' key (should be stripped)"
-    print("  ✓ reasoning has NO 'hidden_desire' key at all")
-    
-    # 4. biggest_uncertainty + question_target among the 9
-    biggest = reasoning.get("biggest_uncertainty")
-    question_target = reasoning.get("question_target")
-    assert biggest in unc_keys, f"FAIL: biggest_uncertainty '{biggest}' not in uncertainty keys"
-    assert question_target in unc_keys, f"FAIL: question_target '{question_target}' not in uncertainty keys"
-    print(f"  ✓ biggest_uncertainty='{biggest}' + question_target='{question_target}' among the 9")
-    
-    # 5. question_rationale non-empty
-    question_rationale = reasoning.get("question_rationale", "")
-    assert isinstance(question_rationale, str) and len(question_rationale) > 0, "FAIL: question_rationale is empty"
-    print(f"  ✓ question_rationale non-empty (len={len(question_rationale)})")
-    
-    # 6. sufficient is bool
-    sufficient = reasoning.get("sufficient")
-    assert isinstance(sufficient, bool), f"FAIL: sufficient is not bool, got {type(sufficient)}"
-    print(f"  ✓ sufficient is bool ({sufficient})")
-    
-    # 7. dim_order (9 items) + dim_labels present
-    dim_order = reasoning.get("dim_order", [])
-    dim_labels = reasoning.get("dim_labels", {})
-    assert isinstance(dim_order, list) and len(dim_order) == 9, f"FAIL: dim_order has {len(dim_order)} items, expected 9"
-    assert isinstance(dim_labels, dict) and len(dim_labels) >= 9, f"FAIL: dim_labels has {len(dim_labels)} items, expected >= 9"
-    print(f"  ✓ dim_order has 9 items, dim_labels present")
-    
-    # 8. assumptions_detected is a list
-    assumptions = reasoning.get("assumptions_detected")
-    assert isinstance(assumptions, list), f"FAIL: assumptions_detected is not a list, got {type(assumptions)}"
-    print(f"  ✓ assumptions_detected is a list (len={len(assumptions)})")
-    
-    # 9. decision_type valid
-    decision_type = reasoning.get("decision_type")
-    valid_types = ["idea", "validation", "execution", "scaling", "crisis", "other"]
-    assert decision_type in valid_types, f"FAIL: decision_type '{decision_type}' not in {valid_types}"
-    print(f"  ✓ decision_type='{decision_type}' (valid)")
-    
-    # 10. response does NOT contain 'strategic_alignment'
-    assert "strategic_alignment" not in data, "FAIL: response contains 'strategic_alignment' (should be stripped)"
-    print("  ✓ response does NOT contain 'strategic_alignment'")
-    
-    # 11. existing contract intact
-    assert "next_action" in data and data["next_action"], "FAIL: next_action missing or empty"
-    assert "hook" in data and data["hook"], "FAIL: hook missing or empty"
-    assert "key_takeaway" in data and data["key_takeaway"], "FAIL: key_takeaway missing or empty"
-    assert "mode" in data and data["mode"] in ["answer", "decide", "plan"], f"FAIL: mode '{data.get('mode')}' invalid"
-    assert "sharpening_question" in data, "FAIL: sharpening_question missing"
-    assert "decision_id" in data and data["decision_id"], "FAIL: decision_id missing or empty"
-    assert "session_id" in data and data["session_id"], "FAIL: session_id missing or empty"
-    assert "cost" in data and data["cost"] >= 1, f"FAIL: cost {data.get('cost')} < 1"
-    print(f"  ✓ existing contract intact: next_action, hook, key_takeaway, mode={data['mode']}, decision_id, session_id, cost={data['cost']}")
-    
-    print("\n✅ TEST 2 PASSED: Brain reasoning port working correctly")
-    
-    return token, user_id, data["decision_id"]
+def log_error(msg):
+    log(f"❌ {msg}", RED)
 
-def test_history_clean(token, user_id, decision_id):
-    """FREE - HISTORY CLEAN.
-    
-    GET /api/brain/decisions for user -> rows do NOT contain keys 'reasoning' nor 'strategic_alignment'.
-    Then check Mongo decisions doc for that decision_id: it DOES contain 'reasoning' (stored server-side).
-    """
-    print("\n" + "="*80)
-    print("TEST 3: FREE - HISTORY CLEAN")
-    print("="*80)
-    
-    # GET /api/brain/decisions
-    url = f"{BACKEND_URL}/brain/decisions"
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    print(f"→ GET /api/brain/decisions...")
-    resp = requests.get(url, headers=headers)
-    assert resp.status_code == 200, f"Get decisions failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    
-    decisions = data.get("decisions", [])
-    print(f"✓ 200 response, {len(decisions)} decisions returned")
-    
-    # Verify NO decision contains 'reasoning' or 'strategic_alignment'
-    for i, dec in enumerate(decisions):
-        assert "reasoning" not in dec, f"FAIL: decision {i} contains 'reasoning' key (should be stripped from history)"
-        assert "strategic_alignment" not in dec, f"FAIL: decision {i} contains 'strategic_alignment' key (should be stripped)"
-    
-    print(f"  ✓ All {len(decisions)} decisions do NOT contain 'reasoning' or 'strategic_alignment' keys")
-    
-    # Check Mongo: decision doc DOES contain 'reasoning'
-    mongo_client, db = get_mongo()
-    decisions_col = db.decisions
-    
-    print(f"\n→ Checking MongoDB decisions collection for decision_id={decision_id}...")
-    mongo_doc = decisions_col.find_one({"id": decision_id})
-    assert mongo_doc is not None, f"FAIL: decision {decision_id} not found in MongoDB"
-    
-    assert "reasoning" in mongo_doc, "FAIL: MongoDB decision doc does NOT contain 'reasoning' (should be stored server-side)"
-    reasoning = mongo_doc["reasoning"]
-    assert reasoning is not None, "FAIL: MongoDB decision doc has reasoning=None"
-    print(f"  ✓ MongoDB decision doc DOES contain 'reasoning' (stored server-side, may include hidden_desire)")
-    
-    # Check if hidden_desire is present in the stored reasoning
-    if isinstance(reasoning, dict) and "hidden_desire" in reasoning:
-        print(f"  ✓ MongoDB reasoning contains 'hidden_desire' (full trace stored server-side)")
-    
-    print("\n✅ TEST 3 PASSED: History clean (reasoning stripped from API, stored in Mongo)")
-    
-    mongo_client.close()
+def log_info(msg):
+    log(f"ℹ️  {msg}", BLUE)
 
-def test_unit_tests():
-    """FREE - UNIT TESTS (python, no HTTP).
-    
-    sys.path.insert(0,'/app/backend'); from benchmarks import ingest_facts, benchmark_digest, normalize_facts, _uid_hash.
-    
-    Call ingest_facts('unit-test-user','cloud-kitchen',[{'metric':'monthly-orders','value':500,'unit':'orders'}], now) 
-    then AGAIN with value 600: the monthly-orders doc count must increase by exactly 1 total across both calls 
-    (replace, not double count) and the sample for _uid_hash('unit-test-user') must show value 600.
-    
-    benchmark_digest('cloud-kitchen') must contain 'monthly-orders' with the correct n and the phrase 'EARLY SIGNAL' while n<5.
-    
-    normalize_facts({}) -> ("", []); normalize_facts({'industry':'X','facts':[{'metric':'','value':'abc'}]}) -> industry normalized, facts empty.
-    
-    CLEANUP after: pull the 'unit-test-user' sample from the monthly-orders doc and decrement its count so real data stays clean.
-    """
-    print("\n" + "="*80)
-    print("TEST 4: FREE - UNIT TESTS (benchmarks.py)")
-    print("="*80)
-    
-    from benchmarks import ingest_facts, benchmark_digest, normalize_facts, _uid_hash
-    
-    mongo_client, db = get_mongo()
-    benchmarks_col = db.benchmarks
-    
-    test_user = "unit-test-user"
-    test_uid = _uid_hash(test_user)
-    industry = "cloud-kitchen"
-    metric = "monthly-orders"
-    now = datetime.now(timezone.utc)
-    
-    print(f"→ Testing ingest_facts with user='{test_user}', uid_hash='{test_uid}'...")
-    
-    # Get initial count
-    doc_before = benchmarks_col.find_one({"industry": industry, "metric": metric})
-    count_before = doc_before.get("count", 0) if doc_before else 0
-    print(f"  Initial count for {metric}: {count_before}")
-    
-    # Call ingest_facts with value 500
-    print(f"  → ingest_facts(value=500)...")
-    written1 = ingest_facts(test_user, industry, [{"metric": metric, "value": 500, "unit": "orders"}], now)
-    assert written1 == 1, f"FAIL: ingest_facts returned {written1}, expected 1"
-    
-    doc_after1 = benchmarks_col.find_one({"industry": industry, "metric": metric})
-    count_after1 = doc_after1.get("count", 0)
-    samples_after1 = doc_after1.get("samples", [])
-    test_sample1 = next((s for s in samples_after1 if s.get("uid") == test_uid), None)
-    
-    assert test_sample1 is not None, f"FAIL: test user sample not found after first ingest"
-    assert test_sample1.get("value") == 500, f"FAIL: test sample value is {test_sample1.get('value')}, expected 500"
-    print(f"  ✓ After first ingest: count={count_after1}, test sample value=500")
-    
-    # Call ingest_facts AGAIN with value 600 (should REPLACE, not double count)
-    print(f"  → ingest_facts(value=600) - should REPLACE, not double count...")
-    written2 = ingest_facts(test_user, industry, [{"metric": metric, "value": 600, "unit": "orders"}], now)
-    assert written2 == 1, f"FAIL: ingest_facts returned {written2}, expected 1"
-    
-    doc_after2 = benchmarks_col.find_one({"industry": industry, "metric": metric})
-    count_after2 = doc_after2.get("count", 0)
-    samples_after2 = doc_after2.get("samples", [])
-    test_sample2 = next((s for s in samples_after2 if s.get("uid") == test_uid), None)
-    
-    # Count should increase by exactly 1 total (not 2)
-    count_increase = count_after2 - count_before
-    assert count_increase == 1, f"FAIL: count increased by {count_increase}, expected exactly 1 (replace, not double count)"
-    assert test_sample2 is not None, f"FAIL: test user sample not found after second ingest"
-    assert test_sample2.get("value") == 600, f"FAIL: test sample value is {test_sample2.get('value')}, expected 600 (replaced)"
-    print(f"  ✓ After second ingest: count={count_after2} (increased by {count_increase}), test sample value=600 (REPLACED)")
-    
-    # Test benchmark_digest
-    print(f"\n→ Testing benchmark_digest('{industry}')...")
-    digest = benchmark_digest(industry)
-    assert isinstance(digest, str) and len(digest) > 0, "FAIL: benchmark_digest returned empty string"
-    assert metric in digest, f"FAIL: digest does not contain '{metric}'"
-    
-    # Check for 'EARLY SIGNAL' phrase when n < 5
-    if count_after2 < 5:
-        assert "EARLY SIGNAL" in digest, f"FAIL: digest does not contain 'EARLY SIGNAL' when n={count_after2} < 5"
-        print(f"  ✓ digest contains '{metric}' with n={count_after2} and phrase 'EARLY SIGNAL' (n < 5)")
-    else:
-        print(f"  ✓ digest contains '{metric}' with n={count_after2}")
-    
-    print(f"\n  Digest preview:\n{digest[:500]}...")
-    
-    # Test normalize_facts
-    print(f"\n→ Testing normalize_facts...")
-    
-    # Empty dict
-    ind1, facts1 = normalize_facts({})
-    assert ind1 == "" and facts1 == [], f"FAIL: normalize_facts({{}}) returned ({ind1}, {facts1}), expected ('', [])"
-    print(f"  ✓ normalize_facts({{}}) -> ('', [])")
-    
-    # Invalid facts
-    ind2, facts2 = normalize_facts({"industry": "X", "facts": [{"metric": "", "value": "abc"}]})
-    assert ind2 == "x", f"FAIL: industry not normalized, got '{ind2}'"
-    assert facts2 == [], f"FAIL: facts not empty, got {facts2}"
-    print(f"  ✓ normalize_facts({{industry:'X', facts:[{{metric:'', value:'abc'}}]}}) -> ('{ind2}', [])")
-    
-    # Valid facts
-    ind3, facts3 = normalize_facts({"industry": "Cloud Kitchen", "facts": [{"metric": "monthly-orders", "value": 700, "unit": "orders"}]})
-    assert ind3 == "cloud-kitchen", f"FAIL: industry not normalized, got '{ind3}'"
-    assert len(facts3) == 1, f"FAIL: facts length {len(facts3)}, expected 1"
-    assert facts3[0]["metric"] == "monthly-orders", f"FAIL: metric not normalized"
-    assert facts3[0]["value"] == 700, f"FAIL: value not preserved"
-    print(f"  ✓ normalize_facts({{industry:'Cloud Kitchen', facts:[...]}}) -> ('{ind3}', [{facts3[0]}])")
-    
-    # CLEANUP: remove the test user sample
-    print(f"\n→ CLEANUP: removing test user sample from {metric} doc...")
-    doc_cleanup = benchmarks_col.find_one({"industry": industry, "metric": metric})
-    if doc_cleanup:
-        samples_cleanup = [s for s in doc_cleanup.get("samples", []) if s.get("uid") != test_uid]
-        new_count = len(samples_cleanup)
-        benchmarks_col.update_one(
-            {"id": doc_cleanup["id"]},
-            {"$set": {"samples": samples_cleanup, "count": new_count}}
-        )
-        print(f"  ✓ Removed test sample, count: {count_after2} -> {new_count}")
-    
-    print("\n✅ TEST 4 PASSED: All unit tests passed, cleanup complete")
-    
-    mongo_client.close()
+def log_warning(msg):
+    log(f"⚠️  {msg}", YELLOW)
 
-def main():
-    """Run all tests."""
-    print("\n" + "="*80)
-    print("BACKEND TESTING: Sprint 2a Brain reasoning port + cross-founder benchmarks")
-    print("="*80)
-    print(f"Backend URL: {BACKEND_URL}")
-    print(f"MongoDB: {MONGO_URL}/{DB_NAME}")
-    print(f"LLM Budget: <= 3 calls (2 planned + 1 spare)")
+class TestRunner:
+    def __init__(self):
+        self.admin_token = None
+        self.fresh_user_token = None
+        self.fresh_user_id = None
+        self.fresh_user_email = None
+        self.llm_calls_used = 0
+        self.failures = []
+        self.successes = []
+        
+    def signup_fresh_user(self, email_prefix="test"):
+        """Create a fresh signup user (50 credits)."""
+        email = f"{email_prefix}_{int(time.time())}@smartdecigen.com"
+        password = "Test@2026"
+        
+        resp = requests.post(f"{BACKEND_URL}/auth/signup", json={
+            "email": email,
+            "password": password,
+            "name": "Test User"
+        })
+        
+        if resp.status_code != 200:
+            raise Exception(f"Signup failed: {resp.status_code} {resp.text}")
+        
+        data = resp.json()
+        return data["token"], data["user"]["id"], email
     
-    llm_calls = 0
+    def login_admin(self):
+        """Login as admin."""
+        resp = requests.post(f"{BACKEND_URL}/auth/login", json={
+            "email": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD
+        })
+        
+        if resp.status_code != 200:
+            raise Exception(f"Admin login failed: {resp.status_code} {resp.text}")
+        
+        data = resp.json()
+        self.admin_token = data["token"]
+        log_success(f"Admin logged in: {ADMIN_EMAIL}")
+        return self.admin_token
     
-    try:
-        # TEST 1: LLM#1 - Benchmark aggregation (1 LLM call)
-        token1, user_id1 = test_benchmark_aggregation()
-        llm_calls += 1
-        print(f"\n→ LLM calls used: {llm_calls}/3")
+    def headers(self, token):
+        return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    
+    # ================================================================
+    # FEATURE 1: Organ 1 Decision Record + outcome loop
+    # ================================================================
+    
+    def test_feature_1_test_a(self):
+        """TEST A (THE 1 LLM CALL - new response contract): Fresh signup -> POST /api/brain/ask."""
+        log_info("\n" + "="*80)
+        log_info("FEATURE 1 - TEST A: Decision Record + predicted_outcome (1 LLM CALL)")
+        log_info("="*80)
         
-        # TEST 2: LLM#2 - Brain reasoning port (1 LLM call)
-        token2, user_id2, decision_id = test_brain_reasoning_port()
-        llm_calls += 1
-        print(f"\n→ LLM calls used: {llm_calls}/3")
+        # Create fresh signup user (50 credits)
+        token, user_id, email = self.signup_fresh_user("organ1_test_a")
+        self.fresh_user_token = token
+        self.fresh_user_id = user_id
+        self.fresh_user_email = email
+        log_success(f"Fresh user created: {email} (user_id: {user_id})")
         
-        # TEST 3: FREE - History clean (0 LLM calls)
-        test_history_clean(token2, user_id2, decision_id)
+        # Check initial credits
+        resp = requests.get(f"{BACKEND_URL}/auth/me", headers=self.headers(token))
+        initial_credits = resp.json()["credits"]
+        log_info(f"Initial credits: {initial_credits}")
         
-        # TEST 4: FREE - Unit tests (0 LLM calls)
-        test_unit_tests()
+        # POST /api/brain/ask with D2C tea brand question
+        question = "I run a small D2C tea brand doing 3 lakh a month. A distributor offers to put me in 40 retail stores if I give 35 percent margin plus 90 day credit. Should I take it?"
         
-        # SUMMARY
-        print("\n" + "="*80)
-        print("✅ ALL TESTS PASSED")
-        print("="*80)
-        print(f"Total LLM calls: {llm_calls}/3 (within budget)")
-        print("\nSummary:")
-        print("  ✅ TEST 1: Benchmark aggregation working (count >= 2, distinct UIDs)")
-        print("  ✅ TEST 2: Brain reasoning port working (9 keys, no hidden_desire, all assertions)")
-        print("  ✅ TEST 3: History clean (reasoning stripped from API, stored in Mongo)")
-        print("  ✅ TEST 4: Unit tests passed (ingest_facts, benchmark_digest, normalize_facts)")
+        log_info(f"Calling POST /api/brain/ask (LLM CALL #1)...")
+        resp = requests.post(f"{BACKEND_URL}/brain/ask", 
+                            headers=self.headers(token),
+                            json={"question": question})
         
-    except AssertionError as e:
-        print(f"\n❌ TEST FAILED: {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ UNEXPECTED ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        if resp.status_code != 200:
+            self.failures.append(f"TEST A: POST /api/brain/ask failed: {resp.status_code} {resp.text}")
+            log_error(f"POST /api/brain/ask failed: {resp.status_code}")
+            return False
+        
+        self.llm_calls_used += 1
+        data = resp.json()
+        log_success(f"POST /api/brain/ask returned 200")
+        
+        # CRITICAL ASSERTIONS
+        errors = []
+        
+        # Check predicted_outcome
+        predicted_outcome = data.get("predicted_outcome")
+        if predicted_outcome is None:
+            # null is acceptable ONLY if mode=answer with no recommendation
+            if data.get("mode") == "answer" and not data.get("recommendation"):
+                log_info("predicted_outcome is null (acceptable for pure answer mode)")
+            else:
+                errors.append("predicted_outcome is null but mode is not pure answer")
+        else:
+            # Validate predicted_outcome structure
+            if not isinstance(predicted_outcome, dict):
+                errors.append(f"predicted_outcome is not a dict: {type(predicted_outcome)}")
+            else:
+                claim = predicted_outcome.get("claim")
+                confidence = predicted_outcome.get("confidence")
+                review_after_days = predicted_outcome.get("review_after_days")
+                
+                if not (isinstance(claim, str) and claim.strip()):
+                    errors.append(f"predicted_outcome.claim is not a non-empty string: {claim}")
+                else:
+                    log_success(f"predicted_outcome.claim: '{claim[:100]}...'")
+                
+                if not isinstance(confidence, int) or not (0 <= confidence <= 100):
+                    errors.append(f"predicted_outcome.confidence is not int 0-100: {confidence}")
+                else:
+                    log_success(f"predicted_outcome.confidence: {confidence}")
+                
+                if not isinstance(review_after_days, int) or not (1 <= review_after_days <= 90):
+                    errors.append(f"predicted_outcome.review_after_days is not int 1-90: {review_after_days}")
+                else:
+                    log_success(f"predicted_outcome.review_after_days: {review_after_days}")
+        
+        # Check dont_follow_if
+        dont_follow_if = data.get("dont_follow_if")
+        if dont_follow_if is not None:
+            if not isinstance(dont_follow_if, str) or not dont_follow_if.strip():
+                errors.append(f"dont_follow_if is not a non-empty string: {dont_follow_if}")
+            else:
+                log_success(f"dont_follow_if: '{dont_follow_if[:100]}...'")
+        else:
+            log_info("dont_follow_if is null (acceptable)")
+        
+        # Check existing contract intact
+        decision_id = data.get("decision_id")
+        session_id = data.get("session_id")
+        mode = data.get("mode")
+        key_takeaway = data.get("key_takeaway")
+        next_action = data.get("next_action")
+        hook = data.get("hook")
+        cost = data.get("cost")
+        
+        if not decision_id:
+            errors.append("decision_id is missing")
+        else:
+            log_success(f"decision_id: {decision_id}")
+        
+        if not session_id:
+            errors.append("session_id is missing")
+        else:
+            log_success(f"session_id: {session_id}")
+        
+        if mode not in ("answer", "decide", "plan"):
+            errors.append(f"mode is invalid: {mode}")
+        else:
+            log_success(f"mode: {mode}")
+        
+        if not (isinstance(key_takeaway, str) and key_takeaway.strip()):
+            errors.append("key_takeaway is empty")
+        else:
+            log_success(f"key_takeaway: '{key_takeaway[:100]}...'")
+        
+        if not (isinstance(next_action, str) and next_action.strip()):
+            errors.append("next_action is empty")
+        else:
+            log_success(f"next_action: '{next_action[:100]}...'")
+        
+        if not (isinstance(hook, str) and hook.strip()):
+            errors.append("hook is empty")
+        else:
+            log_success(f"hook: '{hook[:100]}...'")
+        
+        if not isinstance(cost, int) or cost < 1:
+            errors.append(f"cost is not >= 1: {cost}")
+        else:
+            log_success(f"cost: {cost} credits")
+        
+        # Check reasoning object
+        reasoning = data.get("reasoning")
+        if not isinstance(reasoning, dict):
+            errors.append("reasoning is not a dict")
+        else:
+            uncertainty = reasoning.get("uncertainty")
+            if not isinstance(uncertainty, dict):
+                errors.append("reasoning.uncertainty is not a dict")
+            else:
+                # Should have 9 keys (NO hidden_desire in public view)
+                expected_keys = ["goal", "reality", "constraints", "risks", "resources", 
+                               "knowledge_gap", "assumptions", "decision_impact", "missing_info"]
+                actual_keys = list(uncertainty.keys())
+                if len(actual_keys) != 9:
+                    errors.append(f"reasoning.uncertainty has {len(actual_keys)} keys, expected 9: {actual_keys}")
+                else:
+                    log_success(f"reasoning.uncertainty has 9 keys (NO hidden_desire)")
+                
+                # Check NO hidden_desire key anywhere in reasoning
+                if "hidden_desire" in uncertainty:
+                    errors.append("reasoning.uncertainty contains hidden_desire (should be stripped)")
+                else:
+                    log_success("reasoning.uncertainty does NOT contain hidden_desire ✓")
+        
+        # Check NO strategic_alignment in response
+        if "strategic_alignment" in data:
+            errors.append("strategic_alignment is present in response (should be stripped)")
+        else:
+            log_success("strategic_alignment is NOT in response ✓")
+        
+        # Mongo check: decision doc has predicted_outcome, dont_follow_if, review_at, reviewed_at=null, impact_inr=null
+        log_info("Checking MongoDB decision document...")
+        from pymongo import MongoClient
+        mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+        client = MongoClient(mongo_url)
+        db = client.smartdecigen_db
+        
+        decision_doc = db.decisions.find_one({"id": decision_id})
+        if not decision_doc:
+            errors.append(f"Decision doc not found in MongoDB: {decision_id}")
+        else:
+            # Check predicted_outcome in doc
+            doc_predicted = decision_doc.get("predicted_outcome")
+            if doc_predicted != predicted_outcome:
+                errors.append(f"MongoDB predicted_outcome mismatch: {doc_predicted} != {predicted_outcome}")
+            else:
+                log_success("MongoDB: predicted_outcome matches response")
+            
+            # Check dont_follow_if in doc
+            doc_dont_follow = decision_doc.get("dont_follow_if")
+            if doc_dont_follow != dont_follow_if:
+                errors.append(f"MongoDB dont_follow_if mismatch: {doc_dont_follow} != {dont_follow_if}")
+            else:
+                log_success("MongoDB: dont_follow_if matches response")
+            
+            # Check review_at (should be created_at + review_after_days)
+            review_at = decision_doc.get("review_at")
+            if review_at is None:
+                if predicted_outcome is not None:
+                    errors.append("MongoDB: review_at is null but predicted_outcome exists")
+            else:
+                log_success(f"MongoDB: review_at is set: {review_at}")
+            
+            # Check reviewed_at is null
+            reviewed_at = decision_doc.get("reviewed_at")
+            if reviewed_at is not None:
+                errors.append(f"MongoDB: reviewed_at should be null: {reviewed_at}")
+            else:
+                log_success("MongoDB: reviewed_at is null ✓")
+            
+            # Check impact_inr is null
+            impact_inr = decision_doc.get("impact_inr")
+            if impact_inr is not None:
+                errors.append(f"MongoDB: impact_inr should be null: {impact_inr}")
+            else:
+                log_success("MongoDB: impact_inr is null ✓")
+        
+        client.close()
+        
+        if errors:
+            for err in errors:
+                log_error(err)
+            self.failures.append(f"TEST A: {len(errors)} assertion failures")
+            return False
+        else:
+            log_success("TEST A: ALL ASSERTIONS PASSED ✅")
+            self.successes.append("TEST A: Decision Record + predicted_outcome")
+            return True
+    
+    def test_feature_1_test_b(self):
+        """TEST B (FREE - review loop with seeded data)."""
+        log_info("\n" + "="*80)
+        log_info("FEATURE 1 - TEST B: Review loop with seeded data (FREE)")
+        log_info("="*80)
+        
+        # Use the same fresh user from TEST A
+        token = self.fresh_user_token
+        user_id = self.fresh_user_id
+        
+        # Insert seeded decision directly into MongoDB
+        from pymongo import MongoClient
+        mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+        client = MongoClient(mongo_url)
+        db = client.smartdecigen_db
+        
+        now = datetime.now(timezone.utc)
+        created_at = now - timedelta(days=15)
+        review_at = now - timedelta(days=1)  # Due yesterday
+        
+        seeded_doc = {
+            "id": "rev-test-1",
+            "user_id": user_id,
+            "org_id": None,
+            "user_name": "T",
+            "session_id": "s1",
+            "question": "seeded review test",
+            "mode": "decide",
+            "answer": "x",
+            "next_action": "do y",
+            "status": "open",
+            "committed_action": "do y",
+            "created_at": created_at,
+            "predicted_outcome": {
+                "claim": "sales will rise 20 pct",
+                "confidence": 70,
+                "review_after_days": 14
+            },
+            "dont_follow_if": "cash below 1L",
+            "review_at": review_at,
+            "reviewed_at": None,
+            "impact_inr": None,
+            "outcome": {"status": "unknown", "score": None, "source": None, "at": None}
+        }
+        
+        db.decisions.insert_one(seeded_doc)
+        log_success("Seeded decision 'rev-test-1' inserted into MongoDB")
+        
+        errors = []
+        
+        # 1. GET /api/brain/reviews/due
+        log_info("1. GET /api/brain/reviews/due")
+        resp = requests.get(f"{BACKEND_URL}/brain/reviews/due", headers=self.headers(token))
+        if resp.status_code != 200:
+            errors.append(f"GET /api/brain/reviews/due failed: {resp.status_code}")
+        else:
+            data = resp.json()
+            count = data.get("count", 0)
+            due = data.get("due", [])
+            
+            if count < 1:
+                errors.append(f"reviews/due count is {count}, expected >= 1")
+            else:
+                log_success(f"reviews/due count: {count}")
+            
+            # Check if rev-test-1 is in the list
+            found = any(d.get("id") == "rev-test-1" for d in due)
+            if not found:
+                errors.append("rev-test-1 not found in reviews/due")
+            else:
+                log_success("rev-test-1 found in reviews/due ✓")
+                # Check structure
+                rev = next(d for d in due if d.get("id") == "rev-test-1")
+                if not rev.get("predicted_outcome"):
+                    errors.append("rev-test-1 missing predicted_outcome")
+                if not rev.get("review_at"):
+                    errors.append("rev-test-1 missing review_at")
+                if not rev.get("question"):
+                    errors.append("rev-test-1 missing question")
+                log_success(f"rev-test-1 structure: predicted_outcome={rev.get('predicted_outcome')}, review_at={rev.get('review_at')}")
+        
+        # 2. POST /api/brain/decisions/rev-test-1/review
+        log_info("2. POST /api/brain/decisions/rev-test-1/review")
+        resp = requests.post(f"{BACKEND_URL}/brain/decisions/rev-test-1/review",
+                            headers=self.headers(token),
+                            json={
+                                "outcome": "worked",
+                                "actual": "Sales rose 24 percent",
+                                "impact_inr": 50000
+                            })
+        if resp.status_code != 200:
+            errors.append(f"POST review failed: {resp.status_code} {resp.text}")
+        else:
+            data = resp.json()
+            outcome = data.get("outcome", {})
+            impact_inr = data.get("impact_inr")
+            calibration = data.get("calibration", {})
+            
+            if outcome.get("status") != "success":
+                errors.append(f"outcome.status is {outcome.get('status')}, expected 'success'")
+            else:
+                log_success(f"outcome.status: success ✓")
+            
+            if outcome.get("source") != "review":
+                errors.append(f"outcome.source is {outcome.get('source')}, expected 'review'")
+            else:
+                log_success(f"outcome.source: review ✓")
+            
+            if impact_inr != 50000:
+                errors.append(f"impact_inr is {impact_inr}, expected 50000")
+            else:
+                log_success(f"impact_inr: 50000 ✓")
+            
+            # Check calibration object
+            if not isinstance(calibration, dict):
+                errors.append("calibration is not a dict")
+            else:
+                n = calibration.get("n")
+                avg_predicted = calibration.get("avg_predicted_confidence")
+                actual_win = calibration.get("actual_win_rate")
+                gap = calibration.get("calibration_gap")
+                label = calibration.get("label")
+                
+                if not isinstance(n, int) or n < 1:
+                    errors.append(f"calibration.n is {n}, expected >= 1")
+                else:
+                    log_success(f"calibration.n: {n}")
+                
+                if not isinstance(avg_predicted, int):
+                    errors.append(f"calibration.avg_predicted_confidence is not int: {avg_predicted}")
+                else:
+                    log_success(f"calibration.avg_predicted_confidence: {avg_predicted}")
+                
+                if not isinstance(actual_win, int):
+                    errors.append(f"calibration.actual_win_rate is not int: {actual_win}")
+                else:
+                    log_success(f"calibration.actual_win_rate: {actual_win}")
+                
+                if not isinstance(gap, int):
+                    errors.append(f"calibration.calibration_gap is not int: {gap}")
+                else:
+                    log_success(f"calibration.calibration_gap: {gap}")
+                
+                if not isinstance(label, str):
+                    errors.append(f"calibration.label is not string: {label}")
+                else:
+                    log_success(f"calibration.label: '{label}'")
+        
+        # 3. GET /api/brain/reviews/due (rev-test-1 should be GONE)
+        log_info("3. GET /api/brain/reviews/due (rev-test-1 should be gone)")
+        resp = requests.get(f"{BACKEND_URL}/brain/reviews/due", headers=self.headers(token))
+        if resp.status_code != 200:
+            errors.append(f"GET /api/brain/reviews/due failed: {resp.status_code}")
+        else:
+            data = resp.json()
+            due = data.get("due", [])
+            found = any(d.get("id") == "rev-test-1" for d in due)
+            if found:
+                errors.append("rev-test-1 still in reviews/due (should be gone)")
+            else:
+                log_success("rev-test-1 is GONE from reviews/due ✓")
+        
+        # 4. GET /api/brain/ledger
+        log_info("4. GET /api/brain/ledger")
+        resp = requests.get(f"{BACKEND_URL}/brain/ledger", headers=self.headers(token))
+        if resp.status_code != 200:
+            errors.append(f"GET /api/brain/ledger failed: {resp.status_code}")
+        else:
+            data = resp.json()
+            totals = data.get("totals", {})
+            outcomes = data.get("outcomes", {})
+            impact = data.get("impact", {})
+            calibration = data.get("calibration", {})
+            recent_reviews = data.get("recent_reviews", [])
+            
+            reviewed = totals.get("reviewed", 0)
+            if reviewed < 1:
+                errors.append(f"totals.reviewed is {reviewed}, expected >= 1")
+            else:
+                log_success(f"totals.reviewed: {reviewed}")
+            
+            success_count = outcomes.get("success", 0)
+            if success_count < 1:
+                errors.append(f"outcomes.success is {success_count}, expected >= 1")
+            else:
+                log_success(f"outcomes.success: {success_count}")
+            
+            total_inr = impact.get("total_inr", 0)
+            if total_inr < 50000:
+                errors.append(f"impact.total_inr is {total_inr}, expected >= 50000")
+            else:
+                log_success(f"impact.total_inr: {total_inr}")
+            
+            cal_n = calibration.get("n", 0)
+            if cal_n < 1:
+                errors.append(f"calibration.n is {cal_n}, expected >= 1")
+            else:
+                log_success(f"calibration.n: {cal_n}")
+            
+            # Check recent_reviews contains rev-test-1
+            found_review = any(r.get("id") == "rev-test-1" for r in recent_reviews)
+            if not found_review:
+                errors.append("rev-test-1 not found in recent_reviews")
+            else:
+                log_success("rev-test-1 found in recent_reviews ✓")
+                rev = next(r for r in recent_reviews if r.get("id") == "rev-test-1")
+                review_note = rev.get("review_note")
+                if review_note != "Sales rose 24 percent":
+                    errors.append(f"review_note mismatch: '{review_note}'")
+                else:
+                    log_success(f"review_note: '{review_note}' ✓")
+        
+        # 5. Validation tests
+        log_info("5. Validation tests")
+        
+        # POST review with outcome "bogus" -> 422
+        resp = requests.post(f"{BACKEND_URL}/brain/decisions/rev-test-1/review",
+                            headers=self.headers(token),
+                            json={"outcome": "bogus", "actual": "test"})
+        if resp.status_code != 422:
+            errors.append(f"POST review with bogus outcome returned {resp.status_code}, expected 422")
+        else:
+            log_success("POST review with bogus outcome -> 422 ✓")
+        
+        # Review on unknown id -> 404
+        resp = requests.post(f"{BACKEND_URL}/brain/decisions/unknown-id-999/review",
+                            headers=self.headers(token),
+                            json={"outcome": "worked", "actual": "test"})
+        if resp.status_code != 404:
+            errors.append(f"POST review on unknown id returned {resp.status_code}, expected 404")
+        else:
+            log_success("POST review on unknown id -> 404 ✓")
+        
+        # Review on ANOTHER user's decision -> 404
+        # Create second fresh user
+        token2, user_id2, email2 = self.signup_fresh_user("organ1_test_b_user2")
+        log_info(f"Created second user: {email2}")
+        
+        resp = requests.post(f"{BACKEND_URL}/brain/decisions/rev-test-1/review",
+                            headers=self.headers(token2),
+                            json={"outcome": "worked", "actual": "test"})
+        if resp.status_code != 404:
+            errors.append(f"POST review on another user's decision returned {resp.status_code}, expected 404")
+        else:
+            log_success("POST review on another user's decision -> 404 ✓")
+        
+        # 6. POST /api/brain/decisions/rev-test-1/status with negative impact_inr
+        log_info("6. POST /api/brain/decisions/rev-test-1/status with negative impact_inr")
+        resp = requests.post(f"{BACKEND_URL}/brain/decisions/rev-test-1/status",
+                            headers=self.headers(token),
+                            json={"status": "done", "outcome": "partly", "impact_inr": -2000})
+        if resp.status_code != 200:
+            errors.append(f"POST status with negative impact_inr failed: {resp.status_code}")
+        else:
+            data = resp.json()
+            impact_inr = data.get("impact_inr")
+            if impact_inr != -2000:
+                errors.append(f"impact_inr is {impact_inr}, expected -2000")
+            else:
+                log_success("impact_inr=-2000 accepted (negative allowed) ✓")
+        
+        # Cleanup
+        db.decisions.delete_one({"id": "rev-test-1"})
+        log_info("Cleaned up seeded decision")
+        client.close()
+        
+        if errors:
+            for err in errors:
+                log_error(err)
+            self.failures.append(f"TEST B: {len(errors)} assertion failures")
+            return False
+        else:
+            log_success("TEST B: ALL ASSERTIONS PASSED ✅")
+            self.successes.append("TEST B: Review loop with seeded data")
+            return True
+    
+    # ================================================================
+    # FEATURE 2: Launch KPI signals + admin aggregator
+    # ================================================================
+    
+    def test_feature_2(self):
+        """TEST FEATURE 2: KPI signals + admin aggregator (all FREE)."""
+        log_info("\n" + "="*80)
+        log_info("FEATURE 2: Launch KPI signals + admin aggregator (FREE)")
+        log_info("="*80)
+        
+        # Create fresh user for KPI tests
+        token, user_id, email = self.signup_fresh_user("kpi_test")
+        log_success(f"Fresh user created: {email}")
+        
+        errors = []
+        
+        # 1. No token POST /api/kpi/signal -> 401/403
+        log_info("1. No token POST /api/kpi/signal -> 401/403")
+        resp = requests.post(f"{BACKEND_URL}/kpi/signal", json={"kind": "problem_detection", "value": True})
+        if resp.status_code not in (401, 403):
+            errors.append(f"No token POST /api/kpi/signal returned {resp.status_code}, expected 401/403")
+        else:
+            log_success(f"No token POST /api/kpi/signal -> {resp.status_code} ✓")
+        
+        # 2. POST /api/kpi/signal as fresh user
+        log_info("2. POST /api/kpi/signal with problem_detection")
+        resp = requests.post(f"{BACKEND_URL}/kpi/signal",
+                            headers=self.headers(token),
+                            json={"kind": "problem_detection", "value": True, "decision_id": "rev-test-1"})
+        if resp.status_code != 200:
+            errors.append(f"POST /api/kpi/signal failed: {resp.status_code} {resp.text}")
+        else:
+            data = resp.json()
+            if not data.get("ok"):
+                errors.append("POST /api/kpi/signal did not return ok:true")
+            else:
+                log_success("POST /api/kpi/signal -> 200 {ok:true} ✓")
+        
+        # 3. IDEMPOTENCY: same call again with value:false
+        log_info("3. IDEMPOTENCY: same call with value:false")
+        resp = requests.post(f"{BACKEND_URL}/kpi/signal",
+                            headers=self.headers(token),
+                            json={"kind": "problem_detection", "value": False, "decision_id": "rev-test-1"})
+        if resp.status_code != 200:
+            errors.append(f"POST /api/kpi/signal (idempotent) failed: {resp.status_code}")
+        else:
+            log_success("POST /api/kpi/signal (idempotent) -> 200 ✓")
+            
+            # Check MongoDB: should be EXACTLY 1 row with value=false
+            from pymongo import MongoClient
+            mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+            client = MongoClient(mongo_url)
+            db = client.smartdecigen_db
+            
+            count = db.kpi_events.count_documents({
+                "user_id": user_id,
+                "kind": "problem_detection",
+                "dedupe": "rev-test-1"
+            })
+            
+            if count != 1:
+                errors.append(f"kpi_events count is {count}, expected EXACTLY 1 (idempotent)")
+            else:
+                log_success(f"kpi_events count: 1 (idempotent) ✓")
+                
+                # Check value is false (replaced)
+                doc = db.kpi_events.find_one({
+                    "user_id": user_id,
+                    "kind": "problem_detection",
+                    "dedupe": "rev-test-1"
+                })
+                if doc.get("value") != False:
+                    errors.append(f"kpi_events value is {doc.get('value')}, expected False (replaced)")
+                else:
+                    log_success("kpi_events value: False (replaced, not appended) ✓")
+            
+            client.close()
+        
+        # 4. POST with decision_improvement (no decision_id, day-bucket dedupe)
+        log_info("4. POST /api/kpi/signal with decision_improvement (day-bucket dedupe)")
+        resp = requests.post(f"{BACKEND_URL}/kpi/signal",
+                            headers=self.headers(token),
+                            json={"kind": "decision_improvement", "value": True})
+        if resp.status_code != 200:
+            errors.append(f"POST /api/kpi/signal (decision_improvement) failed: {resp.status_code}")
+        else:
+            log_success("POST /api/kpi/signal (decision_improvement) -> 200 ✓")
+        
+        # 5. Invalid kind -> 422
+        log_info("5. Invalid kind -> 422")
+        resp = requests.post(f"{BACKEND_URL}/kpi/signal",
+                            headers=self.headers(token),
+                            json={"kind": "invalid_kind", "value": True})
+        if resp.status_code != 422:
+            errors.append(f"POST /api/kpi/signal with invalid kind returned {resp.status_code}, expected 422")
+        else:
+            log_success("POST /api/kpi/signal with invalid kind -> 422 ✓")
+        
+        # 6. GET /api/admin/launch-readiness as NON-admin -> 403
+        log_info("6. GET /api/admin/launch-readiness as non-admin -> 403")
+        resp = requests.get(f"{BACKEND_URL}/admin/launch-readiness", headers=self.headers(token))
+        if resp.status_code != 403:
+            errors.append(f"GET /api/admin/launch-readiness as non-admin returned {resp.status_code}, expected 403")
+        else:
+            log_success("GET /api/admin/launch-readiness as non-admin -> 403 ✓")
+        
+        # 7. No token -> 401/403
+        log_info("7. GET /api/admin/launch-readiness no token -> 401/403")
+        resp = requests.get(f"{BACKEND_URL}/admin/launch-readiness")
+        if resp.status_code not in (401, 403):
+            errors.append(f"GET /api/admin/launch-readiness no token returned {resp.status_code}, expected 401/403")
+        else:
+            log_success(f"GET /api/admin/launch-readiness no token -> {resp.status_code} ✓")
+        
+        # 8. GET /api/admin/launch-readiness as admin
+        log_info("8. GET /api/admin/launch-readiness as admin")
+        admin_token = self.login_admin()
+        resp = requests.get(f"{BACKEND_URL}/admin/launch-readiness", headers=self.headers(admin_token))
+        if resp.status_code != 200:
+            errors.append(f"GET /api/admin/launch-readiness as admin failed: {resp.status_code} {resp.text}")
+        else:
+            data = resp.json()
+            log_success("GET /api/admin/launch-readiness as admin -> 200 ✓")
+            
+            # Check all required keys
+            required_keys = ["kpi1_problem_detection", "kpi2_decision_improvement", 
+                           "kpi3_execution", "kpi4_outcome", "kpi5_return", 
+                           "release_gate", "generated_at"]
+            
+            for key in required_keys:
+                if key not in data:
+                    errors.append(f"Missing key in launch-readiness: {key}")
+            
+            if not errors:
+                log_success("All required keys present in launch-readiness ✓")
+                
+                # Check kpi1 structure
+                kpi1 = data.get("kpi1_problem_detection", {})
+                if not all(k in kpi1 for k in ["yes", "no", "n", "pct"]):
+                    errors.append("kpi1_problem_detection missing keys")
+                else:
+                    log_success(f"kpi1_problem_detection: yes={kpi1['yes']}, no={kpi1['no']}, n={kpi1['n']}, pct={kpi1['pct']}")
+                    if kpi1["n"] < 1:
+                        errors.append(f"kpi1.n is {kpi1['n']}, expected >= 1")
+                
+                # Check kpi2 structure
+                kpi2 = data.get("kpi2_decision_improvement", {})
+                if not all(k in kpi2 for k in ["yes", "no", "n", "pct"]):
+                    errors.append("kpi2_decision_improvement missing keys")
+                else:
+                    log_success(f"kpi2_decision_improvement: yes={kpi2['yes']}, no={kpi2['no']}, n={kpi2['n']}, pct={kpi2['pct']}")
+                
+                # Check kpi3 structure
+                kpi3 = data.get("kpi3_execution", {})
+                required_kpi3 = ["committed", "done", "dropped", "open", "completion_pct", "follow_through_pct"]
+                if not all(k in kpi3 for k in required_kpi3):
+                    errors.append("kpi3_execution missing keys")
+                else:
+                    log_success(f"kpi3_execution: committed={kpi3['committed']}, done={kpi3['done']}, completion_pct={kpi3['completion_pct']}, follow_through_pct={kpi3['follow_through_pct']}")
+                
+                # Check kpi4 structure
+                kpi4 = data.get("kpi4_outcome", {})
+                required_kpi4 = ["outcomes", "n", "positive_pct", "impact_inr_total", "impact_reports", "calibration"]
+                if not all(k in kpi4 for k in required_kpi4):
+                    errors.append("kpi4_outcome missing keys")
+                else:
+                    log_success(f"kpi4_outcome: n={kpi4['n']}, positive_pct={kpi4['positive_pct']}, impact_inr_total={kpi4['impact_inr_total']}")
+                    
+                    # Check impact_inr_total reflects reviewed impacts (>= 40000 from TEST B: 50000 + (-2000))
+                    # Note: This depends on TEST B running first
+                    impact_total = kpi4.get("impact_inr_total", 0)
+                    log_info(f"kpi4.impact_inr_total: {impact_total} (should reflect reviewed impacts)")
+                
+                # Check kpi5 structure
+                kpi5 = data.get("kpi5_return", {})
+                required_kpi5 = ["eligible", "returned", "return_pct", "active_7d"]
+                if not all(k in kpi5 for k in required_kpi5):
+                    errors.append("kpi5_return missing keys")
+                else:
+                    log_success(f"kpi5_return: eligible={kpi5['eligible']}, returned={kpi5['returned']}, return_pct={kpi5['return_pct']}, active_7d={kpi5['active_7d']}")
+                
+                # Check release_gate (object or null)
+                release_gate = data.get("release_gate")
+                if release_gate is not None and not isinstance(release_gate, dict):
+                    errors.append("release_gate is not object or null")
+                else:
+                    log_success(f"release_gate: {release_gate}")
+        
+        if errors:
+            for err in errors:
+                log_error(err)
+            self.failures.append(f"FEATURE 2: {len(errors)} assertion failures")
+            return False
+        else:
+            log_success("FEATURE 2: ALL ASSERTIONS PASSED ✅")
+            self.successes.append("FEATURE 2: Launch KPI signals + admin aggregator")
+            return True
+    
+    # ================================================================
+    # FEATURE 3: Release Gate (READ-ONLY, DO NOT RUN)
+    # ================================================================
+    
+    def test_feature_3(self):
+        """TEST FEATURE 3: Release Gate READ-ONLY (all FREE, DO NOT RUN)."""
+        log_info("\n" + "="*80)
+        log_info("FEATURE 3: Release Gate READ-ONLY (FREE, DO NOT RUN)")
+        log_info("="*80)
+        
+        errors = []
+        
+        # 1. GET /api/admin/release-gate as admin
+        log_info("1. GET /api/admin/release-gate as admin")
+        admin_token = self.admin_token or self.login_admin()
+        resp = requests.get(f"{BACKEND_URL}/admin/release-gate", headers=self.headers(admin_token))
+        if resp.status_code != 200:
+            errors.append(f"GET /api/admin/release-gate as admin failed: {resp.status_code} {resp.text}")
+        else:
+            data = resp.json()
+            log_success("GET /api/admin/release-gate as admin -> 200 ✓")
+            
+            # Check latest run exists
+            latest = data.get("latest")
+            if not latest:
+                log_warning("No previous release-gate run found (expected from smoke test)")
+            else:
+                log_success("Previous release-gate run found ✓")
+                
+                # Check latest.status should be "done"
+                status = latest.get("status")
+                if status != "done":
+                    log_warning(f"latest.status is '{status}', expected 'done' (from previous smoke run)")
+                else:
+                    log_success(f"latest.status: 'done' ✓")
+                
+                # Check overall.gate_avgs
+                overall = latest.get("overall", {})
+                gate_avgs = overall.get("gate_avgs", {})
+                
+                expected_gates = ["truth", "reasoning", "actionability", "impact"]
+                for gate in expected_gates:
+                    if gate not in gate_avgs:
+                        errors.append(f"Missing gate in overall.gate_avgs: {gate}")
+                    elif not isinstance(gate_avgs[gate], int):
+                        errors.append(f"gate_avgs.{gate} is not int: {gate_avgs[gate]}")
+                
+                if not errors:
+                    log_success(f"overall.gate_avgs: {gate_avgs} ✓")
+                
+                # Check scenarios[0]
+                scenarios = latest.get("scenarios", [])
+                if not scenarios:
+                    log_warning("No scenarios in latest run")
+                else:
+                    sc0 = scenarios[0]
+                    sc0_name = sc0.get("name")
+                    if sc0_name != "cloud-kitchen-discount":
+                        log_warning(f"scenarios[0].name is '{sc0_name}', expected 'cloud-kitchen-discount'")
+                    else:
+                        log_success(f"scenarios[0].name: 'cloud-kitchen-discount' ✓")
+                    
+                    # Check gates structure
+                    gates = sc0.get("gates", {})
+                    for gate in expected_gates:
+                        if gate not in gates:
+                            errors.append(f"Missing gate in scenarios[0].gates: {gate}")
+                        else:
+                            g = gates[gate]
+                            if not all(k in g for k in ["score", "note", "passed"]):
+                                errors.append(f"scenarios[0].gates.{gate} missing keys")
+                            else:
+                                log_success(f"scenarios[0].gates.{gate}: score={g['score']}, passed={g['passed']}")
+                    
+                    # Check better_decision
+                    better_decision = sc0.get("better_decision")
+                    if not isinstance(better_decision, bool):
+                        errors.append(f"scenarios[0].better_decision is not bool: {better_decision}")
+                    else:
+                        log_success(f"scenarios[0].better_decision: {better_decision} ✓")
+            
+            # Check history
+            history = data.get("history")
+            if not isinstance(history, list):
+                errors.append("history is not a list")
+            else:
+                log_success(f"history is a list with {len(history)} runs ✓")
+        
+        # 2. GET /api/admin/release-gate as non-admin -> 403
+        log_info("2. GET /api/admin/release-gate as non-admin -> 403")
+        # Create fresh user
+        token, user_id, email = self.signup_fresh_user("release_gate_test")
+        resp = requests.get(f"{BACKEND_URL}/admin/release-gate", headers=self.headers(token))
+        if resp.status_code != 403:
+            errors.append(f"GET /api/admin/release-gate as non-admin returned {resp.status_code}, expected 403")
+        else:
+            log_success("GET /api/admin/release-gate as non-admin -> 403 ✓")
+        
+        # 3. POST /api/admin/release-gate/run validation ONLY (DO NOT send valid body)
+        log_info("3. POST /api/admin/release-gate/run validation ONLY")
+        
+        # limit=0 -> 422
+        resp = requests.post(f"{BACKEND_URL}/admin/release-gate/run",
+                            headers=self.headers(admin_token),
+                            json={"limit": 0})
+        if resp.status_code != 422:
+            errors.append(f"POST /api/admin/release-gate/run with limit=0 returned {resp.status_code}, expected 422")
+        else:
+            log_success("POST /api/admin/release-gate/run with limit=0 -> 422 ✓")
+        
+        # limit=9 -> 422
+        resp = requests.post(f"{BACKEND_URL}/admin/release-gate/run",
+                            headers=self.headers(admin_token),
+                            json={"limit": 9})
+        if resp.status_code != 422:
+            errors.append(f"POST /api/admin/release-gate/run with limit=9 returned {resp.status_code}, expected 422")
+        else:
+            log_success("POST /api/admin/release-gate/run with limit=9 -> 422 ✓")
+        
+        log_warning("DO NOT send valid body to POST /api/admin/release-gate/run (each scenario costs 2 LLM calls)")
+        
+        if errors:
+            for err in errors:
+                log_error(err)
+            self.failures.append(f"FEATURE 3: {len(errors)} assertion failures")
+            return False
+        else:
+            log_success("FEATURE 3: ALL ASSERTIONS PASSED ✅")
+            self.successes.append("FEATURE 3: Release Gate READ-ONLY")
+            return True
+    
+    def run_all_tests(self):
+        """Run all tests in sequence."""
+        log_info("\n" + "="*80)
+        log_info("SMARTDECIGEN BACKEND TEST - THREE NEW FEATURES")
+        log_info("="*80)
+        log_info(f"Backend URL: {BACKEND_URL}")
+        log_info(f"LLM Budget: EXACTLY 1 LLM call (one POST /api/brain/ask)")
+        log_info("="*80 + "\n")
+        
+        # Run tests
+        self.test_feature_1_test_a()
+        self.test_feature_1_test_b()
+        self.test_feature_2()
+        self.test_feature_3()
+        
+        # Summary
+        log_info("\n" + "="*80)
+        log_info("TEST SUMMARY")
+        log_info("="*80)
+        log_info(f"LLM calls used: {self.llm_calls_used}/1")
+        log_info(f"Successes: {len(self.successes)}")
+        log_info(f"Failures: {len(self.failures)}")
+        
+        if self.successes:
+            log_success("\nPASSED:")
+            for s in self.successes:
+                log_success(f"  ✅ {s}")
+        
+        if self.failures:
+            log_error("\nFAILED:")
+            for f in self.failures:
+                log_error(f"  ❌ {f}")
+        
+        log_info("="*80 + "\n")
+        
+        if self.failures:
+            sys.exit(1)
+        else:
+            log_success("ALL TESTS PASSED ✅")
+            sys.exit(0)
 
 if __name__ == "__main__":
-    main()
+    runner = TestRunner()
+    runner.run_all_tests()

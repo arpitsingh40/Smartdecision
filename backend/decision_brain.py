@@ -184,6 +184,8 @@ def ensure_brain_startup():
     decisions_col.create_index([("org_id", 1), ("status", 1)])
     decisions_col.create_index([("session_id", 1), ("created_at", 1)])
     decisions_col.create_index([("user_id", 1), ("status", 1), ("due_at", 1)])
+    decisions_col.create_index([("user_id", 1), ("reviewed_at", 1), ("review_at", 1)])
+    decisions_col.create_index([("outcome.status", 1)])
 
 
 def token_cost(tin: int, tout: int) -> int:
@@ -337,6 +339,10 @@ STRONG HOOK: alongside the action, give ONE short, motivating line (hook) that m
 
 COMMIT THEN SHARPEN: when the decision genuinely hinges on ONE missing fact, still deliver your best recommendation under a clearly stated assumption, then ask ONE sharp, connected question (sharpening_question) that digs toward the real lever, not a generic "anything else?". The question MUST attack the dimension your reasoning sweep found most uncertain AND most decision-critical (highest expected information gain). One question, only when it truly earns its place, otherwise null.
 
+PREDICT THE OUTCOME: whenever you recommend an action, a decision, or a plan, commit to ONE measurable prediction (predicted_outcome): what will observably happen if the user follows it (a number, a signal, a state change they can check later), an HONEST confidence 0..100 (calibrated: 55 when genuinely unsure, 85+ only when the mechanism is near-certain, never cluster everything at 70-80), and review_after_days (7 for fast-feedback actions, 14 for medium, 30 for slow-burn strategy). You WILL be checked against this prediction later, so make it checkable. Pure factual lookups (mode answer with no recommendation) may set predicted_outcome to null.
+
+WHEN NOT TO FOLLOW: name the ONE condition under which the user should NOT follow this recommendation (dont_follow_if): the specific fact that, if true in their world, flips the call. Plain, specific, one line, never a generic disclaimer. Pure factual lookups may set null.
+
 REASONING SWEEP (do this silently on EVERY message, before writing anything): update a ten-dimension uncertainty map about THIS user's situation, each scored 0..100 (0 = fully understood, 100 = complete unknown), honest, may rise when new information exposes a problem: goal (what they really want), reality (facts on the ground), constraints (hard limits), risks, resources, knowledge_gap (what THEY cannot do), assumptions (unsupported beliefs they carry), hidden_desire (what they really want beneath the ask), decision_impact (stakes + reversibility of THIS decision), missing_info (facts nobody has). Detect their unsupported assumptions. Classify the decision (idea|validation|execution|scaling|crisis|other) and whether it is reversible. Note the 2-4 expert lenses you applied. If the decision-critical dimensions are already low-uncertainty, set sufficient=true and sharpening_question SHOULD be null.
 
 USE PLATFORM BENCHMARKS: when a REAL PLATFORM BENCHMARKS block is present, prefer that real founder data over generic knowledge, and ALWAYS cite it honestly with its sample size ("founders on this platform report..., n=3, early signal"). Never present an early signal as an established statistic.
@@ -368,6 +374,8 @@ Return ONLY valid JSON, no markdown fences:
  "sharpening_question": "ONE connected question that would most sharpen this decision (it must attack the most uncertain decision-critical dimension from your reasoning sweep), or null when nothing genuinely needs it.",
  "citations": [{"doc": "document name", "chapter": "chapter title"}],
  "confidence": "high" | "medium" | "low",
+ "predicted_outcome": {"claim": "ONE measurable, checkable thing that will happen if they follow this", "confidence": 62, "review_after_days": 14} or null,
+ "dont_follow_if": "ONE plain, specific condition under which they should NOT follow this recommendation" or null,
  "reasoning": {
    "uncertainty": {"goal": {"score": 0, "note": ""}, "reality": {"score": 0, "note": ""}, "constraints": {"score": 0, "note": ""}, "risks": {"score": 0, "note": ""}, "resources": {"score": 0, "note": ""}, "knowledge_gap": {"score": 0, "note": ""}, "assumptions": {"score": 0, "note": ""}, "hidden_desire": {"score": 0, "note": ""}, "decision_impact": {"score": 0, "note": ""}, "missing_info": {"score": 0, "note": ""}},
    "biggest_uncertainty": "one of the ten dimension keys",
@@ -397,6 +405,25 @@ def _clean(s):
     return s
 
 
+def _sanitize_prediction(raw):
+    """Coerce the model's predicted_outcome into a clean, checkable record (or None).
+    This is the 'before' half of KPI 4: the claim we later verify against reality."""
+    if not isinstance(raw, dict):
+        return None
+    claim = _clean(raw.get("claim"))
+    if not (isinstance(claim, str) and claim.strip()):
+        return None
+    try:
+        conf = max(0, min(100, int(raw.get("confidence"))))
+    except Exception:
+        conf = 50
+    try:
+        days = max(1, min(90, int(raw.get("review_after_days"))))
+    except Exception:
+        days = 14
+    return {"claim": claim.strip()[:400], "confidence": conf, "review_after_days": days}
+
+
 def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = "", founder_block: str = "", industry_block: str = "", benchmarks_block: str = ""):
     """ONE LLM call. Returns (out_dict, model, usage)."""
     if passages:
@@ -419,7 +446,7 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
     last_err = None
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            r = client().messages.create(model=model, max_tokens=2600, system=system_blocks,
+            r = client().messages.create(model=model, max_tokens=2800, system=system_blocks,
                                          messages=[{"role": "user", "content": prompt}])
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
             out = json.loads(_extract_json(txt))
@@ -437,6 +464,9 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
             out["hook"] = _clean(out.get("hook", "")) or ""
             _sq = out.get("sharpening_question")
             out["sharpening_question"] = (_clean(_sq) if isinstance(_sq, str) and _sq.strip() else None)
+            _dfi = out.get("dont_follow_if")
+            out["dont_follow_if"] = (_clean(_dfi) if isinstance(_dfi, str) and _dfi.strip() else None)
+            out["predicted_outcome"] = _sanitize_prediction(out.get("predicted_outcome"))
             if not out["next_action"]:
                 out["next_action"] = out.get("recommendation") or out["key_takeaway"] or "Decide the single next step and take it within 48 hours."
             plan = out.get("plan")
@@ -713,6 +743,13 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
             "strategy_version": (org.get("strategy_version", 0) if org else 0),
             "alignment_band": _band(alignment),   # founder-only (derived from the private score)
             "outcome": {"status": "unknown", "score": None, "source": None, "at": None},
+            # ---- Organ 1: the prediction we will verify on the review date (the proof engine) ----
+            "predicted_outcome": out.get("predicted_outcome"),
+            "dont_follow_if": out.get("dont_follow_if"),
+            "review_at": ((now_utc() + timedelta(days=out["predicted_outcome"]["review_after_days"]))
+                          if out.get("predicted_outcome") else None),
+            "reviewed_at": None,
+            "impact_inr": None,
         })
     except Exception as e:
         log.warning(f"decision persist failed: {e}")
@@ -768,6 +805,7 @@ class StatusIn(BaseModel):
     status: str
     result: str | None = Field(default=None, max_length=2000)
     outcome: str | None = Field(default=None, max_length=20)  # worked | partly | didnt (one-tap self-report)
+    impact_inr: int | None = Field(default=None, ge=-1000000000, le=1000000000)  # rupee impact (may be negative)
 
 
 OUTCOME_MAP = {"worked": "success", "partly": "partial", "didnt": "failed", "didn't": "failed",
@@ -859,9 +897,12 @@ def set_status(decision_id: str, body: StatusIn, user: dict = Depends(current_us
 
     if outcome is not None:
         upd["outcome"] = outcome
+    if body.impact_inr is not None:
+        upd["impact_inr"] = body.impact_inr
     decisions_col.update_one({"id": decision_id}, {"$set": upd})
     return {"ok": True, "decision_id": decision_id, "status": st,
-            "result": upd.get("result"), "outcome": upd.get("outcome")}
+            "result": upd.get("result"), "outcome": upd.get("outcome"),
+            "impact_inr": upd.get("impact_inr")}
 
 
 @router.post("/decisions/{decision_id}/next-step")
@@ -880,3 +921,111 @@ def next_step(decision_id: str, user: dict = Depends(current_user)):
     q += "Given where we are now, what is the single most important next step I should take, and why."
     session_id = d.get("session_id") or str(uuid.uuid4())
     return _answer_and_log(user, q, session_id)
+
+
+# ---------------------------------------------------------------- Organ 1: outcome review loop + calibration
+_WIN_VALUE = {"success": 1.0, "partial": 0.5, "failed": 0.0}
+
+
+def calibration_for(match: dict) -> dict:
+    """Predicted-vs-actual calibration over outcome-scored decisions that carried a prediction.
+    Deterministic Mongo read, no LLM. Shared by the member ledger and Founder OS launch KPIs."""
+    rows = list(decisions_col.find(
+        {**match, "predicted_outcome.confidence": {"$ne": None},
+         "outcome.status": {"$in": list(_WIN_VALUE.keys())}},
+        {"_id": 0, "predicted_outcome": 1, "outcome": 1}))
+    n = len(rows)
+    if n == 0:
+        return {"n": 0, "avg_predicted_confidence": None, "actual_win_rate": None,
+                "calibration_gap": None, "label": "No reviewed predictions yet"}
+    avg_pred = sum(r["predicted_outcome"]["confidence"] for r in rows) / n
+    actual = 100.0 * sum(_WIN_VALUE.get((r.get("outcome") or {}).get("status"), 0.0) for r in rows) / n
+    gap = round(avg_pred - actual)
+    if abs(gap) <= 10:
+        label = "Well calibrated"
+    elif gap > 0:
+        label = f"Overconfident by {gap} pts"
+    else:
+        label = f"Underconfident by {-gap} pts"
+    if n < 5:
+        label += f" (early signal, n={n})"
+    return {"n": n, "avg_predicted_confidence": round(avg_pred), "actual_win_rate": round(actual),
+            "calibration_gap": gap, "label": label}
+
+
+class ReviewIn(BaseModel):
+    outcome: str = Field(min_length=2, max_length=20)      # worked | partly | didnt
+    actual: str | None = Field(default=None, max_length=2000)
+    impact_inr: int | None = Field(default=None, ge=-1000000000, le=1000000000)
+
+
+@router.get("/reviews/due")
+def reviews_due(user: dict = Depends(current_user)):
+    """Decisions whose review date has arrived and that have not been reviewed yet.
+    Drives the 'How did it actually go?' banner (KPI 4's actual-outcome capture)."""
+    now = now_utc()
+    rows = list(decisions_col.find(
+        {"user_id": user["id"], "reviewed_at": None, "predicted_outcome": {"$ne": None},
+         "review_at": {"$ne": None, "$lte": now}},
+        {"_id": 0, "id": 1, "question": 1, "next_action": 1, "committed_action": 1,
+         "predicted_outcome": 1, "review_at": 1, "status": 1, "created_at": 1},
+    ).sort("review_at", 1).limit(10))
+    for r in rows:
+        r["question"] = (r.get("question") or "")[:200]
+        r["review_at"] = _iso(r.get("review_at"))
+        r["created_at"] = _iso(r.get("created_at"))
+    return {"due": rows, "count": len(rows)}
+
+
+@router.post("/decisions/{decision_id}/review")
+def review_decision(decision_id: str, body: ReviewIn, user: dict = Depends(current_user)):
+    """Close the loop on a past decision: what ACTUALLY happened vs what was predicted.
+    One-tap outcome (worked/partly/didnt) + optional what-happened note + optional rupee impact.
+    Every review updates the user's calibration record (the proof engine)."""
+    oc = body.outcome.strip().lower()
+    if oc not in OUTCOME_MAP:
+        raise HTTPException(422, "outcome must be worked, partly, or didnt")
+    d = decisions_col.find_one({"id": decision_id, "user_id": user["id"]})
+    if not d:
+        raise HTTPException(404, "Decision not found")
+    now = now_utc()
+    upd = {"outcome": {"status": OUTCOME_MAP[oc], "score": None, "source": "review", "at": now},
+           "reviewed_at": now}
+    if (body.actual or "").strip():
+        upd["review_note"] = body.actual.strip()
+    if body.impact_inr is not None:
+        upd["impact_inr"] = body.impact_inr
+    decisions_col.update_one({"id": decision_id}, {"$set": upd})
+    return {"ok": True, "decision_id": decision_id, "outcome": upd["outcome"],
+            "impact_inr": upd.get("impact_inr"),
+            "calibration": calibration_for({"user_id": user["id"]})}
+
+
+@router.get("/ledger")
+def decision_ledger(user: dict = Depends(current_user)):
+    """The member's proof engine: decisions -> commitments -> outcomes -> calibration -> rupee tally."""
+    base = {"user_id": user["id"]}
+    total = decisions_col.count_documents(base)
+    committed = decisions_col.count_documents({**base, "committed_action": {"$ne": None}})
+    done = decisions_col.count_documents({**base, "status": "done"})
+    reviewed = decisions_col.count_documents({**base, "reviewed_at": {"$ne": None}})
+    oc = {s: decisions_col.count_documents({**base, "outcome.status": s})
+          for s in ("success", "partial", "failed")}
+    imp = list(decisions_col.aggregate([
+        {"$match": {**base, "impact_inr": {"$ne": None}}},
+        {"$group": {"_id": None, "total": {"$sum": "$impact_inr"}, "n": {"$sum": 1}}}]))
+    recent = list(decisions_col.find(
+        {**base, "reviewed_at": {"$ne": None}},
+        {"_id": 0, "id": 1, "question": 1, "predicted_outcome": 1, "outcome": 1,
+         "impact_inr": 1, "review_note": 1, "reviewed_at": 1},
+    ).sort("reviewed_at", -1).limit(10))
+    for r in recent:
+        r["question"] = (r.get("question") or "")[:200]
+        r["reviewed_at"] = _iso(r.get("reviewed_at"))
+        if isinstance(r.get("outcome"), dict):
+            r["outcome"] = {**r["outcome"], "at": _iso(r["outcome"].get("at"))}
+    return {"totals": {"decisions": total, "committed": committed, "done": done, "reviewed": reviewed},
+            "outcomes": oc,
+            "impact": {"total_inr": (int(imp[0]["total"]) if imp else 0),
+                       "reviewed_with_impact": (int(imp[0]["n"]) if imp else 0)},
+            "calibration": calibration_for(base), "recent_reviews": recent}

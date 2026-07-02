@@ -29,3 +29,5 @@ plans_col = db.org_plans               # Layer 6: founder-ratified objective cas
 journeys_col = db.journeys             # chat-first founder journey: live understanding model + stage + unlocks
 shares_col = db.shares                 # public Decision Cards (virality layer): share links, views, second opinions
 benchmarks_col = db.benchmarks         # evolving cross-founder aggregates: (industry, metric) -> samples/stats
+kpi_events_col = db.kpi_events         # one-tap launch-KPI signals (problem detection / decision improvement)
+gates_col = db.release_gates           # release-gate runs (four gates: truth/reasoning/actionability/impact)

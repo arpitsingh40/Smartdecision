@@ -29,6 +29,8 @@ from founder_profile import router as founder_router
 from journey import router as journey_router, ensure_journey_startup
 from share import router as share_router, referral_router, ensure_share_startup
 from benchmarks import ensure_benchmarks_startup
+from kpi import router as kpi_router, launch_router, ensure_kpi_startup
+from release_gate import router as release_gate_router, ensure_gate_startup
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -542,6 +544,9 @@ app.include_router(founder_router)
 app.include_router(journey_router)
 app.include_router(share_router)
 app.include_router(referral_router)
+app.include_router(kpi_router)
+app.include_router(launch_router)
+app.include_router(release_gate_router)
 
 @app.on_event("startup")
 def _startup():
@@ -551,6 +556,8 @@ def _startup():
     ensure_journey_startup()  # idempotent: founder-journey indexes
     ensure_share_startup()  # idempotent: virality-layer indexes (decision cards + referrals)
     ensure_benchmarks_startup()  # idempotent: cross-founder benchmark indexes
+    ensure_kpi_startup()  # idempotent: launch-KPI signal indexes
+    ensure_gate_startup()  # idempotent: release-gate run indexes
 
 app.add_middleware(
     CORSMiddleware,

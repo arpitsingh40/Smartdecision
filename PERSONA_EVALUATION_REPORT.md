@@ -1,7 +1,7 @@
 # FOUNDER OS — FULL END-TO-END PERSONA EVALUATION REPORT
 
 **Test Date:** 2026-06-25  
-**Base URL:** https://be836756-4ed3-49fb-aa0b-56db7cb7d2df.preview.emergentagent.com/api  
+**Base URL:** https://founder-strategy-3.preview.emergentagent.com/api  
 **LLM Budget:** 18 calls max  
 **LLM Calls Used:** 8 / 18 ✅ (well within budget)
 
@@ -178,7 +178,7 @@ The Founder OS backend demonstrates **strong core functionality** across both pe
 - **Status:** PASS
 - **Goal:** "Grow my neighborhood bakery"
 - **Why Now:** "I run a single-outlet bakery in Meerut. Sales are flat, and I want to double revenue in the next year without opening a second location."
-- **Result:** Thread created, thread_id=6e0b602a-097d-4be8-9eac-ff11c82d88c5
+- **Result:** Thread created, thread_id=founder-strategy-3
 
 #### Step 17: Coach Turn (LLM #7) ❌
 - **Status:** FAIL (expected behavior, not a bug)

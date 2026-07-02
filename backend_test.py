@@ -1,559 +1,434 @@
-"""Backend test for SmartDecigen 3-layer batch build (Layer 1, 2, 3).
-
-CRITICAL: ANTHROPIC_API_KEY is a PLACEHOLDER (environment was reset).
-NO LLM call can succeed. Every LLM endpoint must return 502 AND fully refund credits.
-LLM budget is ZERO.
-
-Test scenarios:
-(A) Journey view shape: fresh signup -> GET /api/journey
-(B) 502+refund: POST /api/journey/start -> 502 and credits UNCHANGED (full refund)
-(C) Milestone result capture: seed journey doc, test milestone status updates
-(D) Referral: GET /api/referral, signup with ref code, invalid ref silently ignored
-(E) Decision Cards: share direction, public GET, opinions, delete
-(F) POST /api/share/direction for fresh user with no direction -> 400
+#!/usr/bin/env python3
 """
-import os
-import sys
+Backend test for SmartDecigen Layer 1-3 batch build (LIVE ANTHROPIC KEY).
+STRICT LLM BUDGET: <= 4 calls total (3 planned + 1 spare for genuine retry).
+"""
+import requests
 import json
 import uuid
-import requests
-from datetime import datetime, timezone
-from pymongo import MongoClient
+import sys
+from datetime import datetime
 
-# Backend URL from frontend/.env
-BACKEND_URL = "https://a60d8ec6-5fe4-4fd9-b382-0edaea73b42b.preview.emergentagent.com/api"
+BASE_URL = "https://founder-reasoning.preview.emergentagent.com/api"
 
-# Test credentials from /app/memory/test_credentials.md
-FOUNDER_EMAIL = "ceo@smartdecigen.com"
-FOUNDER_PASSWORD = "FounderOS@2026"
-
-# MongoDB connection
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
-mongo = MongoClient(MONGO_URL)
-db = mongo["test_database"]
-users_col = db.users
-journeys_col = db.journeys
-
-def now_utc():
-    return datetime.now(timezone.utc)
+# Track LLM calls globally
+LLM_CALLS_USED = 0
+MAX_LLM_CALLS = 4
 
 def log(msg):
-    print(f"[TEST] {msg}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-def signup_user(email, password, name="", ref=""):
-    """Create a fresh user account."""
-    payload = {"email": email, "password": password, "name": name}
-    if ref:
-        payload["ref"] = ref
-    r = requests.post(f"{BACKEND_URL}/auth/signup", json=payload)
-    return r
+def assert_eq(actual, expected, msg):
+    if actual != expected:
+        raise AssertionError(f"{msg}: expected {expected}, got {actual}")
 
-def login_user(email, password):
-    """Login and return token."""
-    r = requests.post(f"{BACKEND_URL}/auth/login", json={"email": email, "password": password})
-    if r.status_code == 200:
-        return r.json()["token"]
-    return None
+def assert_in(item, container, msg):
+    if item not in container:
+        raise AssertionError(f"{msg}: {item} not in {container}")
 
-def get_user_credits(token):
-    """Get current user credits."""
-    r = requests.get(f"{BACKEND_URL}/auth/me", headers={"Authorization": f"Bearer {token}"})
-    if r.status_code == 200:
-        return r.json()["credits"]
-    return None
+def assert_true(condition, msg):
+    if not condition:
+        raise AssertionError(f"{msg}: condition is False")
 
-# ============================================================================
-# TEST (A): Journey view shape
-# ============================================================================
-def test_a_journey_view_shape():
-    log("=" * 80)
-    log("TEST (A): Journey view shape - fresh signup -> GET /api/journey")
-    log("=" * 80)
-    
-    # Fresh signup (100 credits)
-    email = f"journey_test_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email, "Test@2026", name="Journey Tester")
-    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
-    data = r.json()
+def assert_range(value, min_val, max_val, msg):
+    if not (min_val <= value <= max_val):
+        raise AssertionError(f"{msg}: {value} not in range [{min_val}, {max_val}]")
+
+def fresh_signup():
+    """Create a fresh user account with SIGNUP_CREDITS (50)."""
+    email = f"journey_live_{uuid.uuid4().hex[:8]}@test.com"
+    password = "TestPass123!"
+    resp = requests.post(f"{BASE_URL}/auth/signup", json={
+        "email": email,
+        "password": password,
+        "name": "Test User"
+    })
+    assert_eq(resp.status_code, 200, "Signup failed")
+    data = resp.json()
     token = data["token"]
-    user_data = data["user"]
-    assert user_data["credits"] == 100, f"Expected 100 credits, got {user_data['credits']}"
-    log(f"✓ Fresh signup: {email}, credits={user_data['credits']}")
-    
-    # GET /api/journey
-    r = requests.get(f"{BACKEND_URL}/journey", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200, f"GET /journey failed: {r.status_code} {r.text}"
-    j = r.json()
-    
-    # CRITICAL ASSERTIONS
-    assert j["reasoning"] is None, f"Expected reasoning=null, got {j['reasoning']}"
-    assert j["confidence"] == 0, f"Expected confidence=0, got {j['confidence']}"
-    assert j["confidence_source"] == "completeness", f"Expected confidence_source='completeness', got {j['confidence_source']}"
-    assert j["completeness"] == 0, f"Expected completeness=0, got {j['completeness']}"
-    assert j["ready_for_direction"] is False, f"Expected ready_for_direction=false, got {j['ready_for_direction']}"
-    assert j["started"] is False, f"Expected started=false, got {j['started']}"
-    
-    log(f"✓ GET /api/journey -> 200 with reasoning=null, confidence=0, confidence_source='completeness', completeness=0, ready_for_direction=false, started=false")
-    log(f"  Full response keys: {list(j.keys())}")
-    log("")
-    return token, email
+    user = data["user"]
+    log(f"✓ Fresh signup: {email}, credits={user['credits']}")
+    return token, user
 
-# ============================================================================
-# TEST (B): 502+refund guarantee
-# ============================================================================
-def test_b_502_refund():
-    log("=" * 80)
-    log("TEST (B): 502+refund - LLM endpoints return 502 and FULLY refund credits")
-    log("=" * 80)
+def test_layer1_live_loop():
+    """
+    LIVE TEST: Full Layer-1 Decision Intelligence Engine loop with REAL ANTHROPIC KEY.
+    LLM BUDGET: 3 calls (start, message, direction).
+    """
+    global LLM_CALLS_USED
+    
+    log("\n=== LAYER 1: DECISION INTELLIGENCE ENGINE (LIVE) ===")
     
     # Fresh signup
-    email = f"refund_test_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email, "Test@2026")
-    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
-    token = r.json()["token"]
-    credits_before = r.json()["user"]["credits"]
-    assert credits_before == 100, f"Expected 100 credits, got {credits_before}"
-    log(f"✓ Fresh signup: {email}, credits={credits_before}")
+    token, user = fresh_signup()
+    headers = {"Authorization": f"Bearer {token}"}
+    initial_credits = user["credits"]
+    assert_eq(initial_credits, 50, "SIGNUP_CREDITS should be 50")
     
-    # TEST B1: POST /api/journey/start with objective -> 502 and credits UNCHANGED
-    log("TEST B1: POST /api/journey/start -> 502 and credits UNCHANGED (full refund)")
-    r = requests.post(f"{BACKEND_URL}/journey/start", 
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"objective": "Grow my bakery to 12L"})
-    assert r.status_code == 502, f"Expected 502, got {r.status_code} {r.text}"
-    log(f"✓ POST /api/journey/start -> 502 (expected, ANTHROPIC_API_KEY is placeholder)")
+    # LLM CALL #1: POST /api/journey/start
+    log("\n--- LLM CALL #1: POST /api/journey/start ---")
+    objective = "Grow my Jaipur boutique hotel from 40% to 75% occupancy in 9 months, I depend fully on OTAs and their 22% commission is killing me."
+    resp = requests.post(f"{BASE_URL}/journey/start", headers=headers, json={"objective": objective})
+    assert_eq(resp.status_code, 200, "journey/start should return 200")
+    LLM_CALLS_USED += 1
+    log(f"✓ LLM CALL #{LLM_CALLS_USED} completed (journey/start)")
     
-    # Check credits UNCHANGED
-    credits_after = get_user_credits(token)
-    assert credits_after == credits_before, f"REFUND FAILED: credits before={credits_before}, after={credits_after}"
-    log(f"✓ Credits UNCHANGED: {credits_before} -> {credits_after} (full refund guarantee working)")
+    turn1 = resp.json()
     
-    # TEST B2: POST /api/journey/message before start -> 400
-    log("TEST B2: POST /api/journey/message before start -> 400")
-    r = requests.post(f"{BACKEND_URL}/journey/message",
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"message": "test message"})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code} {r.text}"
-    log(f"✓ POST /api/journey/message before start -> 400")
+    # CRITICAL ASSERTIONS FOR TURN 1
+    log("\n--- Turn 1 Assertions ---")
     
-    # TEST B3: POST /api/journey/start with empty objective -> 422
-    log("TEST B3: POST /api/journey/start with empty objective -> 422")
-    r = requests.post(f"{BACKEND_URL}/journey/start",
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"objective": ""})
-    assert r.status_code == 422, f"Expected 422, got {r.status_code} {r.text}"
-    log(f"✓ POST /api/journey/start with empty objective -> 422")
-    log("")
+    # 1. reasoning is an object
+    assert_true(isinstance(turn1.get("reasoning"), dict), "reasoning must be an object")
+    reasoning = turn1["reasoning"]
+    log(f"✓ reasoning is an object")
+    
+    # 2. reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire)
+    uncertainty = reasoning.get("uncertainty", {})
+    assert_eq(len(uncertainty), 9, "reasoning.uncertainty must have EXACTLY 9 keys (hidden_desire stripped)")
+    assert_true("hidden_desire" not in uncertainty, "hidden_desire must NOT be in public uncertainty map")
+    log(f"✓ reasoning.uncertainty has EXACTLY 9 keys (hidden_desire stripped)")
+    log(f"  Keys: {list(uncertainty.keys())}")
+    
+    # 3. Every dim has int score 0..100 + note
+    for dim, val in uncertainty.items():
+        assert_true(isinstance(val, dict), f"{dim} must be a dict")
+        assert_true(isinstance(val.get("score"), int), f"{dim}.score must be int")
+        assert_range(val["score"], 0, 100, f"{dim}.score must be 0-100")
+        assert_true(isinstance(val.get("note"), str), f"{dim}.note must be str")
+    log(f"✓ Every dim has int score 0..100 + note")
+    
+    # Log exact scores for reporting
+    log("\n  Turn 1 Uncertainty Scores:")
+    for dim, val in uncertainty.items():
+        log(f"    {dim}: {val['score']} - {val['note'][:50]}...")
+    
+    # 4. biggest_uncertainty and question_target are among the 9 dims
+    biggest = reasoning.get("biggest_uncertainty")
+    question_target = reasoning.get("question_target")
+    assert_in(biggest, uncertainty, "biggest_uncertainty must be one of the 9 dims")
+    assert_in(question_target, uncertainty, "question_target must be one of the 9 dims")
+    log(f"✓ biggest_uncertainty={biggest}, question_target={question_target} (both in 9 dims)")
+    
+    # 5. question_rationale non-empty
+    question_rationale = reasoning.get("question_rationale", "")
+    assert_true(len(question_rationale) > 0, "question_rationale must be non-empty")
+    log(f"✓ question_rationale non-empty: '{question_rationale[:60]}...'")
+    
+    # 6. sufficient is boolean
+    sufficient = reasoning.get("sufficient")
+    assert_true(isinstance(sufficient, bool), "sufficient must be boolean")
+    log(f"✓ sufficient is boolean: {sufficient}")
+    
+    # 7. assumptions_detected is list
+    assumptions = reasoning.get("assumptions_detected", [])
+    assert_true(isinstance(assumptions, list), "assumptions_detected must be list")
+    log(f"✓ assumptions_detected is list with {len(assumptions)} items")
+    
+    # 8. decision_type in allowed values
+    decision_type = reasoning.get("decision_type")
+    allowed_types = ["idea", "validation", "execution", "scaling", "crisis", "other"]
+    assert_in(decision_type, allowed_types, "decision_type must be in allowed values")
+    log(f"✓ decision_type={decision_type} (valid)")
+    
+    # 9. reversible is true/false/null
+    reversible = reasoning.get("reversible")
+    assert_true(reversible in [True, False, None], "reversible must be true/false/null")
+    log(f"✓ reversible={reversible}")
+    
+    # 10. expert_lenses is list
+    expert_lenses = reasoning.get("expert_lenses", [])
+    assert_true(isinstance(expert_lenses, list), "expert_lenses must be list")
+    log(f"✓ expert_lenses is list: {expert_lenses}")
+    
+    # 11. dim_order (9) + dim_labels present
+    dim_order = reasoning.get("dim_order", [])
+    dim_labels = reasoning.get("dim_labels", {})
+    assert_eq(len(dim_order), 9, "dim_order must have 9 items")
+    assert_true(len(dim_labels) >= 9, "dim_labels must have at least 9 items")
+    log(f"✓ dim_order has 9 items, dim_labels present")
+    
+    # 12. confidence int > 0
+    confidence = turn1.get("confidence")
+    assert_true(isinstance(confidence, int), "confidence must be int")
+    assert_true(confidence > 0, "confidence must be > 0")
+    log(f"✓ confidence={confidence} (int > 0)")
+    
+    # 13. confidence_source == "reasoning"
+    confidence_source = turn1.get("confidence_source")
+    assert_eq(confidence_source, "reasoning", "confidence_source must be 'reasoning'")
+    log(f"✓ confidence_source='reasoning'")
+    
+    # 14. cost >= 1
+    cost1 = turn1.get("cost")
+    assert_true(cost1 >= 1, "cost must be >= 1")
+    log(f"✓ cost={cost1} (>= 1)")
+    
+    # 15. credits dropped from 50
+    credits_after_turn1 = turn1.get("credits")
+    assert_true(credits_after_turn1 < 50, "credits must have dropped from 50")
+    log(f"✓ credits dropped: 50 -> {credits_after_turn1}")
+    
+    # LLM CALL #2: POST /api/journey/message
+    log("\n--- LLM CALL #2: POST /api/journey/message ---")
+    message = "I get 900 room-nights a month, ADR 4200, direct bookings are only 8%, I have 6 staff, 3L cash buffer, and honestly I do not know digital marketing at all."
+    resp = requests.post(f"{BASE_URL}/journey/message", headers=headers, json={"message": message})
+    assert_eq(resp.status_code, 200, "journey/message should return 200")
+    LLM_CALLS_USED += 1
+    log(f"✓ LLM CALL #{LLM_CALLS_USED} completed (journey/message)")
+    
+    turn2 = resp.json()
+    
+    # CRITICAL ASSERTIONS FOR TURN 2
+    log("\n--- Turn 2 Assertions ---")
+    
+    # 1. confidence CHANGED vs turn 1 (any direction)
+    confidence2 = turn2.get("confidence")
+    assert_true(confidence2 != confidence, "confidence must have CHANGED from turn 1")
+    log(f"✓ confidence CHANGED: {confidence} -> {confidence2}")
+    
+    # 2. reasoning updated (at least one uncertainty dim score differs)
+    reasoning2 = turn2.get("reasoning", {})
+    uncertainty2 = reasoning2.get("uncertainty", {})
+    changed_dims = []
+    for dim in uncertainty:
+        if dim in uncertainty2:
+            if uncertainty[dim]["score"] != uncertainty2[dim]["score"]:
+                changed_dims.append(dim)
+    assert_true(len(changed_dims) > 0, "At least one uncertainty dim score must differ from turn 1")
+    log(f"✓ Uncertainty map updated: {len(changed_dims)} dims changed: {changed_dims}")
+    
+    # Log turn 2 scores
+    log("\n  Turn 2 Uncertainty Scores:")
+    for dim, val in uncertainty2.items():
+        log(f"    {dim}: {val['score']} (was {uncertainty.get(dim, {}).get('score', 'N/A')})")
+    
+    # 3. messages length 4 (2 from start + 2 from message)
+    messages = turn2.get("messages", [])
+    assert_eq(len(messages), 4, "messages must have length 4")
+    log(f"✓ messages length=4")
+    
+    # 4. credits dropped again
+    credits_after_turn2 = turn2.get("credits")
+    assert_true(credits_after_turn2 < credits_after_turn1, "credits must have dropped again")
+    cost2 = turn2.get("cost")
+    log(f"✓ credits dropped again: {credits_after_turn1} -> {credits_after_turn2} (cost={cost2})")
+    
+    # LLM CALL #3: POST /api/journey/direction
+    log("\n--- LLM CALL #3: POST /api/journey/direction ---")
+    resp = requests.post(f"{BASE_URL}/journey/direction", headers=headers)
+    assert_eq(resp.status_code, 200, "journey/direction should return 200")
+    LLM_CALLS_USED += 1
+    log(f"✓ LLM CALL #{LLM_CALLS_USED} completed (journey/direction)")
+    
+    turn3 = resp.json()
+    
+    # CRITICAL ASSERTIONS FOR TURN 3
+    log("\n--- Turn 3 (Direction) Assertions ---")
+    
+    direction = turn3.get("direction")
+    assert_true(isinstance(direction, dict), "direction must be an object")
+    log(f"✓ direction is an object")
+    
+    # 1. decision (non-empty string)
+    decision = direction.get("decision", "")
+    assert_true(len(decision) > 0, "direction.decision must be non-empty")
+    log(f"✓ decision: '{decision[:80]}...'")
+    
+    # 2. goal
+    goal = direction.get("goal", "")
+    assert_true(len(goal) > 0, "direction.goal must be non-empty")
+    log(f"✓ goal: '{goal[:80]}...'")
+    
+    # 3. blockers (2-5)
+    blockers = direction.get("blockers", [])
+    assert_range(len(blockers), 2, 5, "direction.blockers must have 2-5 items")
+    log(f"✓ blockers: {len(blockers)} items")
+    
+    # 4. highest_leverage
+    highest_leverage = direction.get("highest_leverage", "")
+    assert_true(len(highest_leverage) > 0, "direction.highest_leverage must be non-empty")
+    log(f"✓ highest_leverage: '{highest_leverage[:80]}...'")
+    
+    # 5. success_probability (int 0-100)
+    success_probability = direction.get("success_probability")
+    assert_true(isinstance(success_probability, int), "success_probability must be int")
+    assert_range(success_probability, 0, 100, "success_probability must be 0-100")
+    log(f"✓ success_probability: {success_probability}")
+    
+    # 6. probability_rationale
+    probability_rationale = direction.get("probability_rationale", "")
+    assert_true(len(probability_rationale) > 0, "probability_rationale must be non-empty")
+    log(f"✓ probability_rationale: '{probability_rationale[:80]}...'")
+    
+    # 7. risks (2-5)
+    risks = direction.get("risks", [])
+    assert_range(len(risks), 2, 5, "direction.risks must have 2-5 items")
+    log(f"✓ risks: {len(risks)} items")
+    
+    # 8. missing_info (2-5)
+    missing_info = direction.get("missing_info", [])
+    assert_range(len(missing_info), 2, 5, "direction.missing_info must have 2-5 items")
+    log(f"✓ missing_info: {len(missing_info)} items")
+    
+    # 9. trade_offs (2-4 non-empty)
+    trade_offs = direction.get("trade_offs", [])
+    assert_range(len(trade_offs), 2, 4, "direction.trade_offs must have 2-4 items")
+    for i, to in enumerate(trade_offs):
+        assert_true(len(to) > 0, f"trade_offs[{i}] must be non-empty")
+    log(f"✓ trade_offs: {len(trade_offs)} items (all non-empty)")
+    
+    # 10. first_moves (2-4 non-empty)
+    first_moves = direction.get("first_moves", [])
+    assert_range(len(first_moves), 2, 4, "direction.first_moves must have 2-4 items")
+    for i, fm in enumerate(first_moves):
+        assert_true(len(fm) > 0, f"first_moves[{i}] must be non-empty")
+    log(f"✓ first_moves: {len(first_moves)} items (all non-empty)")
+    
+    # 11. learning_loop.signals (2-4)
+    learning_loop = direction.get("learning_loop", {})
+    signals = learning_loop.get("signals", [])
+    assert_range(len(signals), 2, 4, "learning_loop.signals must have 2-4 items")
+    log(f"✓ learning_loop.signals: {len(signals)} items")
+    
+    # 12. learning_loop.assumptions_to_test (2-3)
+    assumptions_to_test = learning_loop.get("assumptions_to_test", [])
+    assert_range(len(assumptions_to_test), 2, 3, "learning_loop.assumptions_to_test must have 2-3 items")
+    log(f"✓ learning_loop.assumptions_to_test: {len(assumptions_to_test)} items")
+    
+    # 13. stage == "refine"
+    stage = turn3.get("stage")
+    assert_eq(stage, "refine", "stage must be 'refine'")
+    log(f"✓ stage='refine'")
+    
+    # 14. has_direction == true
+    has_direction = turn3.get("has_direction")
+    assert_eq(has_direction, True, "has_direction must be true")
+    log(f"✓ has_direction=true")
+    
+    # 15. cost >= 1, credits dropped
+    cost3 = turn3.get("cost")
+    assert_true(cost3 >= 1, "cost must be >= 1")
+    credits_after_turn3 = turn3.get("credits")
+    assert_true(credits_after_turn3 < credits_after_turn2, "credits must have dropped")
+    log(f"✓ cost={cost3}, credits: {credits_after_turn2} -> {credits_after_turn3}")
+    
+    log("\n✅ LAYER 1 LIVE LOOP: ALL ASSERTIONS PASSED")
+    log(f"   Total LLM calls used: {LLM_CALLS_USED}/{MAX_LLM_CALLS}")
+    log(f"   Credits used: {initial_credits - credits_after_turn3} (50 -> {credits_after_turn3})")
+    
+    return token, direction, turn3
 
-# ============================================================================
-# TEST (C): Milestone result capture
-# ============================================================================
-def test_c_milestone_result():
-    log("=" * 80)
-    log("TEST (C): Milestone result capture - seed journey doc, test milestone status")
-    log("=" * 80)
+def test_layer3_share_and_reset(token, direction, journey_view):
+    """
+    FREE TESTS: Share direction, public GET, reset.
+    NO LLM CALLS.
+    """
+    global LLM_CALLS_USED
     
-    # Fresh signup
-    email = f"milestone_test_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email, "Test@2026")
-    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
-    token = r.json()["token"]
-    user_id = r.json()["user"]["id"]
-    log(f"✓ Fresh signup: {email}, user_id={user_id}")
+    log("\n=== LAYER 3: VIRALITY (FREE) ===")
+    headers = {"Authorization": f"Bearer {token}"}
     
-    # Seed a journey doc directly in Mongo with milestones
-    journey_id = str(uuid.uuid4())
-    milestone_id = "m1"
-    journey_doc = {
-        "id": journey_id,
-        "user_id": user_id,
-        "stage": "milestones",
-        "objective": "Test objective",
-        "model": {},
-        "messages": [{"role": "user", "text": "test", "at": now_utc()}],
-        "milestones": [{
-            "id": milestone_id,
-            "order": 1,
-            "title": "Test milestone",
-            "success_metric": "",
-            "target": "",
-            "deadline": "",
-            "status": "not_started"
-        }],
-        "created_at": now_utc(),
-        "updated_at": now_utc()
-    }
+    # FREE: POST /api/share/direction
+    log("\n--- FREE: POST /api/share/direction ---")
+    resp = requests.post(f"{BASE_URL}/share/direction", headers=headers)
+    assert_eq(resp.status_code, 200, "share/direction should return 200")
+    share_data = resp.json()
     
-    # Check if user already has a journey (unique index on user_id)
-    existing = journeys_col.find_one({"user_id": user_id})
-    if existing:
-        log(f"  User already has journey, updating with $set")
-        journeys_col.update_one({"user_id": user_id}, {"$set": journey_doc})
-    else:
-        log(f"  Inserting new journey doc")
-        journeys_col.insert_one(journey_doc)
-    log(f"✓ Seeded journey doc with milestone_id={milestone_id}")
+    share_id = share_data.get("share_id")
+    path = share_data.get("path")
+    assert_true(len(share_id) > 0, "share_id must be non-empty")
+    assert_eq(path, f"/d/{share_id}", "path must be /d/<share_id>")
+    log(f"✓ share_id={share_id}, path={path}")
     
-    # TEST C1: POST /api/journey/milestones/{id}/status with status='done' and result
-    log("TEST C1: POST milestone status='done' with result")
-    r = requests.post(f"{BACKEND_URL}/journey/milestones/{milestone_id}/status",
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"status": "done", "result": "Hired 2 reps"})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    j = r.json()
-    milestone = next((m for m in j["milestones"] if m["id"] == milestone_id), None)
-    assert milestone is not None, "Milestone not found in response"
-    assert milestone["result"] == "Hired 2 reps", f"Expected result='Hired 2 reps', got {milestone['result']}"
-    assert milestone["status"] == "done", f"Expected status='done', got {milestone['status']}"
-    assert j["progress_pct"] == 100, f"Expected progress_pct=100, got {j['progress_pct']}"
-    log(f"✓ Milestone status='done', result='Hired 2 reps', progress_pct=100")
+    # FREE: Public GET /api/share/{id} (NO AUTH)
+    log("\n--- FREE: Public GET /api/share/{id} (no auth) ---")
+    resp = requests.get(f"{BASE_URL}/share/{share_id}")
+    assert_eq(resp.status_code, 200, "public share GET should return 200")
+    card_data = resp.json()
     
-    # TEST C2: POST status='in_progress' (no result field) -> result PRESERVED
-    log("TEST C2: POST status='in_progress' (no result) -> result PRESERVED")
-    r = requests.post(f"{BACKEND_URL}/journey/milestones/{milestone_id}/status",
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"status": "in_progress"})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    j = r.json()
-    milestone = next((m for m in j["milestones"] if m["id"] == milestone_id), None)
-    assert milestone["result"] == "Hired 2 reps", f"Result NOT preserved: got {milestone['result']}"
-    assert milestone["status"] == "in_progress", f"Expected status='in_progress', got {milestone['status']}"
-    assert j["progress_pct"] == 0, f"Expected progress_pct=0, got {j['progress_pct']}"
-    log(f"✓ Result PRESERVED: 'Hired 2 reps', status='in_progress', progress_pct=0")
+    card = card_data.get("card", {})
     
-    # TEST C3: POST status='bogus' -> 422
-    log("TEST C3: POST status='bogus' -> 422")
-    r = requests.post(f"{BACKEND_URL}/journey/milestones/{milestone_id}/status",
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"status": "bogus"})
-    assert r.status_code == 422, f"Expected 422, got {r.status_code} {r.text}"
-    log(f"✓ Invalid status -> 422")
+    # 1. card.decision == direction.decision
+    card_decision = card.get("decision", "")
+    assert_eq(card_decision, direction.get("decision"), "card.decision must match direction.decision")
+    log(f"✓ card.decision matches direction.decision")
     
-    # TEST C4: Unknown milestone id -> 404
-    log("TEST C4: Unknown milestone id -> 404")
-    r = requests.post(f"{BACKEND_URL}/journey/milestones/unknown-id/status",
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"status": "done"})
-    assert r.status_code == 404, f"Expected 404, got {r.status_code} {r.text}"
-    log(f"✓ Unknown milestone id -> 404")
+    # 2. card.confidence is int
+    card_confidence = card.get("confidence")
+    assert_true(isinstance(card_confidence, int), "card.confidence must be int")
+    log(f"✓ card.confidence={card_confidence} (int)")
     
-    # TEST C5: result of 501 chars -> 422
-    log("TEST C5: result of 501 chars -> 422")
-    long_result = "x" * 501
-    r = requests.post(f"{BACKEND_URL}/journey/milestones/{milestone_id}/status",
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"status": "done", "result": long_result})
-    assert r.status_code == 422, f"Expected 422, got {r.status_code} {r.text}"
-    log(f"✓ result of 501 chars -> 422")
-    log("")
-
-# ============================================================================
-# TEST (D): Referral
-# ============================================================================
-def test_d_referral():
-    log("=" * 80)
-    log("TEST (D): Referral - stable code, signup with ref, invalid ref ignored")
-    log("=" * 80)
+    # 3. card.trade_offs and card.first_moves present
+    assert_true("trade_offs" in card, "card must have trade_offs")
+    assert_true("first_moves" in card, "card must have first_moves")
+    log(f"✓ card.trade_offs and card.first_moves present")
     
-    # User1: GET /api/referral
-    email1 = f"referrer_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email1, "Test@2026")
-    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
-    token1 = r.json()["token"]
-    user1_id = r.json()["user"]["id"]
-    log(f"✓ User1 signup: {email1}")
-    
-    # GET /api/referral
-    r = requests.get(f"{BACKEND_URL}/referral", headers={"Authorization": f"Bearer {token1}"})
-    assert r.status_code == 200, f"GET /referral failed: {r.status_code} {r.text}"
-    ref_data = r.json()
-    code = ref_data["code"]
-    assert len(code) == 8, f"Expected 8-char code, got {len(code)}"
-    assert ref_data["path"] == f"/auth?ref={code}", f"Expected path=/auth?ref={code}, got {ref_data['path']}"
-    assert ref_data["invited_count"] == 0, f"Expected invited_count=0, got {ref_data['invited_count']}"
-    assert ref_data["credits_earned"] == 0, f"Expected credits_earned=0, got {ref_data['credits_earned']}"
-    assert ref_data["bonus"] == 25, f"Expected bonus=25, got {ref_data['bonus']}"
-    log(f"✓ GET /api/referral -> code={code}, invited_count=0, credits_earned=0, bonus=25")
-    
-    # Call again -> SAME code (stable)
-    r = requests.get(f"{BACKEND_URL}/referral", headers={"Authorization": f"Bearer {token1}"})
-    assert r.status_code == 200, f"GET /referral failed: {r.status_code} {r.text}"
-    code2 = r.json()["code"]
-    assert code2 == code, f"Code NOT stable: first={code}, second={code2}"
-    log(f"✓ GET /api/referral again -> SAME code (stable)")
-    
-    # User2: Signup with ref code
-    email2 = f"referred_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email2, "Test@2026", ref=code)
-    assert r.status_code == 200, f"Signup with ref failed: {r.status_code} {r.text}"
-    user2_credits = r.json()["user"]["credits"]
-    assert user2_credits == 125, f"Expected 125 credits (100+25), got {user2_credits}"
-    log(f"✓ User2 signup with ref={code} -> credits=125 (100+25 bonus)")
-    
-    # User1: Check credits increased by 25
-    user1_credits = get_user_credits(token1)
-    assert user1_credits == 125, f"Expected 125 credits (100+25), got {user1_credits}"
-    log(f"✓ User1 credits increased by 25 -> {user1_credits}")
-    
-    # User1: GET /api/referral -> invited_count=1, credits_earned=25
-    r = requests.get(f"{BACKEND_URL}/referral", headers={"Authorization": f"Bearer {token1}"})
-    assert r.status_code == 200, f"GET /referral failed: {r.status_code} {r.text}"
-    ref_data = r.json()
-    assert ref_data["invited_count"] == 1, f"Expected invited_count=1, got {ref_data['invited_count']}"
-    assert ref_data["credits_earned"] == 25, f"Expected credits_earned=25, got {ref_data['credits_earned']}"
-    log(f"✓ GET /api/referral -> invited_count=1, credits_earned=25")
-    
-    # User3: Signup with invalid ref code -> 200 and credits=100 (invalid ref silently ignored)
-    email3 = f"invalid_ref_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email3, "Test@2026", ref="garbagecode")
-    assert r.status_code == 200, f"Signup with invalid ref failed: {r.status_code} {r.text}"
-    user3_credits = r.json()["user"]["credits"]
-    assert user3_credits == 100, f"Expected 100 credits (invalid ref ignored), got {user3_credits}"
-    log(f"✓ User3 signup with ref='garbagecode' -> 200, credits=100 (invalid ref silently ignored, signup never blocked)")
-    log("")
-
-# ============================================================================
-# TEST (E): Decision Cards
-# ============================================================================
-def test_e_decision_cards():
-    log("=" * 80)
-    log("TEST (E): Decision Cards - share, public GET, opinions, delete")
-    log("=" * 80)
-    
-    # Setup: Create user with direction (seed journey doc with direction)
-    email = f"card_owner_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email, "Test@2026", name="Card Owner")
-    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
-    token = r.json()["token"]
-    user_id = r.json()["user"]["id"]
-    log(f"✓ Card owner signup: {email}, user_id={user_id}")
-    
-    # Seed journey doc with direction
-    journey_id = str(uuid.uuid4())
-    direction = {
-        "decision": "Decline low-margin walk-ins",
-        "goal": "12L monthly in 12 months",
-        "highest_leverage": "Fix pricing",
-        "success_probability": 60,
-        "probability_rationale": "rough",
-        "risks": ["r1", "r2"],
-        "missing_info": [],
-        "blockers": ["b1"],
-        "trade_offs": ["Give up quick cash"],
-        "first_moves": ["Call 5 customers in 48h"],
-        "learning_loop": {
-            "signals": ["weekly margin"],
-            "assumptions_to_test": ["demand exists"]
-        }
-    }
-    journey_doc = {
-        "id": journey_id,
-        "user_id": user_id,
-        "stage": "milestones",
-        "objective": "Grow my bakery to 12L",
-        "model": {},
-        "messages": [{"role": "user", "text": "test", "at": now_utc()}],
-        "direction": direction,
-        "milestones": [],
-        "created_at": now_utc(),
-        "updated_at": now_utc()
-    }
-    existing = journeys_col.find_one({"user_id": user_id})
-    if existing:
-        journeys_col.update_one({"user_id": user_id}, {"$set": journey_doc})
-    else:
-        journeys_col.insert_one(journey_doc)
-    log(f"✓ Seeded journey doc with direction")
-    
-    # TEST E1: POST /api/share/direction -> 200 with share_id
-    log("TEST E1: POST /api/share/direction -> 200 with share_id")
-    r = requests.post(f"{BACKEND_URL}/share/direction", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    share_data = r.json()
-    share_id = share_data["share_id"]
-    assert len(share_id) == 10, f"Expected 10-char share_id, got {len(share_id)}"
-    assert share_data["path"] == f"/d/{share_id}", f"Expected path=/d/{share_id}, got {share_data['path']}"
-    log(f"✓ POST /api/share/direction -> share_id={share_id}, path={share_data['path']}")
-    
-    # POST again -> SAME share_id (stable link)
-    r = requests.post(f"{BACKEND_URL}/share/direction", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    share_id2 = r.json()["share_id"]
-    assert share_id2 == share_id, f"Share ID NOT stable: first={share_id}, second={share_id2}"
-    log(f"✓ POST /api/share/direction again -> SAME share_id (stable link)")
-    
-    # TEST E2: GET /api/share/{share_id} WITH NO AUTH HEADER -> 200
-    log("TEST E2: GET /api/share/{share_id} public (no auth) -> 200")
-    r = requests.get(f"{BACKEND_URL}/share/{share_id}")
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    card = r.json()
-    
-    # Check founder_name (first name only)
-    assert "founder_name" in card, "Missing founder_name"
-    assert card["founder_name"] == "Card", f"Expected first name 'Card', got {card['founder_name']}"
-    log(f"✓ founder_name={card['founder_name']} (first name only)")
-    
-    # Check card contains required fields
-    assert "card" in card, "Missing card"
-    c = card["card"]
-    assert c["decision"] == "Decline low-margin walk-ins", f"decision mismatch"
-    assert c["goal"] == "12L monthly in 12 months", f"goal mismatch"
-    assert c["trade_offs"] == ["Give up quick cash"], f"trade_offs mismatch"
-    assert c["first_moves"] == ["Call 5 customers in 48h"], f"first_moves mismatch"
-    assert c["success_probability"] == 60, f"success_probability mismatch"
-    assert len(c["risks"]) <= 3, f"risks should be max 3, got {len(c['risks'])}"
-    log(f"✓ Card contains decision/goal/trade_offs/first_moves/success_probability/risks")
-    
-    # Privacy check: response must NOT contain keys: model, messages, objective, hidden_desire
-    forbidden_keys = ["model", "messages", "objective", "hidden_desire"]
-    for key in forbidden_keys:
-        assert key not in card, f"PRIVACY LEAK: response contains forbidden key '{key}'"
-        assert key not in c, f"PRIVACY LEAK: card contains forbidden key '{key}'"
+    # 4. Privacy check: NO model/messages/objective/hidden_desire
+    assert_true("model" not in card_data, "card must NOT contain 'model'")
+    assert_true("messages" not in card_data, "card must NOT contain 'messages'")
+    assert_true("objective" not in card_data, "card must NOT contain 'objective'")
+    assert_true("hidden_desire" not in card_data, "card must NOT contain 'hidden_desire'")
     log(f"✓ Privacy check: NO model/messages/objective/hidden_desire in response")
     
-    # Call public GET twice -> views increments
-    views1 = card["views"]
-    r = requests.get(f"{BACKEND_URL}/share/{share_id}")
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    views2 = r.json()["views"]
-    assert views2 > views1, f"Views did NOT increment: {views1} -> {views2}"
-    log(f"✓ Views incremented: {views1} -> {views2}")
+    # FREE: POST /api/journey/reset
+    log("\n--- FREE: POST /api/journey/reset ---")
+    resp = requests.post(f"{BASE_URL}/journey/reset", headers=headers)
+    assert_eq(resp.status_code, 200, "journey/reset should return 200")
+    reset_data = resp.json()
     
-    # TEST E3: POST /api/share/{share_id}/opinion by card OWNER -> 400
-    log("TEST E3: POST opinion by card OWNER -> 400")
-    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
-                     headers={"Authorization": f"Bearer {token}"},
-                     json={"text": "My own opinion"})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code} {r.text}"
-    log(f"✓ Owner cannot leave opinion on own card -> 400")
+    # 1. reasoning null
+    reset_reasoning = reset_data.get("reasoning")
+    assert_eq(reset_reasoning, None, "reasoning must be null after reset")
+    log(f"✓ reasoning=null")
     
-    # TEST E4: POST opinion by SECOND signed-in user -> 200
-    log("TEST E4: POST opinion by second user -> 200")
-    email2 = f"opinion_user_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email2, "Test@2026", name="Opinion User")
-    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
-    token2 = r.json()["token"]
-    log(f"✓ Second user signup: {email2}")
+    # 2. confidence 0
+    reset_confidence = reset_data.get("confidence")
+    assert_eq(reset_confidence, 0, "confidence must be 0 after reset")
+    log(f"✓ confidence=0")
     
-    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
-                     headers={"Authorization": f"Bearer {token2}"},
-                     json={"text": "Solid call, but test pricing first"})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    opinions = r.json()["opinions"]
-    assert len(opinions) == 1, f"Expected 1 opinion, got {len(opinions)}"
-    assert opinions[0]["text"] == "Solid call, but test pricing first", f"Opinion text mismatch"
-    log(f"✓ Opinion added: {opinions[0]['text']}")
+    # 3. confidence_source "completeness"
+    reset_confidence_source = reset_data.get("confidence_source")
+    assert_eq(reset_confidence_source, "completeness", "confidence_source must be 'completeness' after reset")
+    log(f"✓ confidence_source='completeness'")
     
-    # Same second user posts again with different text -> opinions STILL length 1 (replaced)
-    log("TEST E5: Same user posts again -> opinion REPLACED (not appended)")
-    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
-                     headers={"Authorization": f"Bearer {token2}"},
-                     json={"text": "Actually, I changed my mind"})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    opinions = r.json()["opinions"]
-    assert len(opinions) == 1, f"Expected 1 opinion (replaced), got {len(opinions)}"
-    assert opinions[0]["text"] == "Actually, I changed my mind", f"Opinion NOT replaced"
-    log(f"✓ Opinion replaced: {opinions[0]['text']}")
+    # 4. started false
+    reset_started = reset_data.get("started")
+    assert_eq(reset_started, False, "started must be false after reset")
+    log(f"✓ started=false")
     
-    # TEST E6: No auth opinion -> 401
-    log("TEST E6: No auth opinion -> 401")
-    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
-                     json={"text": "Anonymous opinion"})
-    assert r.status_code == 401, f"Expected 401, got {r.status_code} {r.text}"
-    log(f"✓ No auth opinion -> 401")
-    
-    # TEST E7: Empty text -> 422
-    log("TEST E7: Empty text -> 422")
-    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
-                     headers={"Authorization": f"Bearer {token2}"},
-                     json={"text": ""})
-    assert r.status_code == 422, f"Expected 422, got {r.status_code} {r.text}"
-    log(f"✓ Empty text -> 422")
-    
-    # TEST E8: Opinion on unknown card id -> 404
-    log("TEST E8: Opinion on unknown card id -> 404")
-    r = requests.post(f"{BACKEND_URL}/share/unknownid/opinion",
-                     headers={"Authorization": f"Bearer {token2}"},
-                     json={"text": "test"})
-    assert r.status_code == 404, f"Expected 404, got {r.status_code} {r.text}"
-    log(f"✓ Opinion on unknown card -> 404")
-    
-    # TEST E9: DELETE by second user -> 404
-    log("TEST E9: DELETE by second user -> 404")
-    r = requests.delete(f"{BACKEND_URL}/share/{share_id}",
-                       headers={"Authorization": f"Bearer {token2}"})
-    assert r.status_code == 404, f"Expected 404, got {r.status_code} {r.text}"
-    log(f"✓ DELETE by non-owner -> 404")
-    
-    # TEST E10: DELETE by owner -> 200
-    log("TEST E10: DELETE by owner -> 200")
-    r = requests.delete(f"{BACKEND_URL}/share/{share_id}",
-                       headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
-    assert r.json()["removed"] is True, f"Expected removed=true"
-    log(f"✓ DELETE by owner -> 200, removed=true")
-    
-    # TEST E11: Public GET after delete -> 404
-    log("TEST E11: Public GET after delete -> 404")
-    r = requests.get(f"{BACKEND_URL}/share/{share_id}")
-    assert r.status_code == 404, f"Expected 404, got {r.status_code} {r.text}"
-    log(f"✓ Public GET after delete -> 404")
-    log("")
+    log("\n✅ LAYER 3 SHARE & RESET: ALL ASSERTIONS PASSED")
+    log(f"   Total LLM calls used: {LLM_CALLS_USED}/{MAX_LLM_CALLS} (no additional calls)")
 
-# ============================================================================
-# TEST (F): POST /api/share/direction for fresh user with no direction -> 400
-# ============================================================================
-def test_f_share_no_direction():
-    log("=" * 80)
-    log("TEST (F): POST /api/share/direction for fresh user with no direction -> 400")
-    log("=" * 80)
-    
-    # Fresh signup
-    email = f"no_direction_{uuid.uuid4().hex[:8]}@test.com"
-    r = signup_user(email, "Test@2026")
-    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
-    token = r.json()["token"]
-    log(f"✓ Fresh signup: {email}")
-    
-    # POST /api/share/direction -> 400
-    r = requests.post(f"{BACKEND_URL}/share/direction", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code} {r.text}"
-    log(f"✓ POST /api/share/direction with no direction -> 400")
-    log("")
-
-# ============================================================================
-# MAIN
-# ============================================================================
 def main():
-    log("=" * 80)
-    log("SmartDecigen Backend Test - 3-Layer Batch Build (Layer 1, 2, 3)")
-    log("CRITICAL: ANTHROPIC_API_KEY is PLACEHOLDER -> LLM budget is ZERO")
-    log("All LLM endpoints must return 502 AND fully refund credits")
-    log("=" * 80)
-    log("")
-    
     try:
-        # Run all tests
-        test_a_journey_view_shape()
-        test_b_502_refund()
-        test_c_milestone_result()
-        test_d_referral()
-        test_e_decision_cards()
-        test_f_share_no_direction()
+        log("=" * 80)
+        log("SMARTDECIGEN BACKEND TEST - LAYER 1-3 BATCH BUILD (LIVE)")
+        log("STRICT LLM BUDGET: <= 4 calls total")
+        log("=" * 80)
         
+        # Test Layer 1 (3 LLM calls)
+        token, direction, journey_view = test_layer1_live_loop()
+        
+        # Test Layer 3 (0 LLM calls)
+        test_layer3_share_and_reset(token, direction, journey_view)
+        
+        log("\n" + "=" * 80)
+        log("✅ ALL TESTS PASSED")
+        log(f"   Total LLM calls used: {LLM_CALLS_USED}/{MAX_LLM_CALLS}")
         log("=" * 80)
-        log("ALL TESTS PASSED ✓")
-        log("=" * 80)
+        
         return 0
+        
     except AssertionError as e:
-        log(f"TEST FAILED: {e}")
-        import traceback
-        traceback.print_exc()
+        log(f"\n❌ TEST FAILED: {e}")
+        log(f"   LLM calls used before failure: {LLM_CALLS_USED}/{MAX_LLM_CALLS}")
         return 1
     except Exception as e:
-        log(f"TEST ERROR: {e}")
+        log(f"\n❌ UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
+        log(f"   LLM calls used before error: {LLM_CALLS_USED}/{MAX_LLM_CALLS}")
         return 1
 
 if __name__ == "__main__":

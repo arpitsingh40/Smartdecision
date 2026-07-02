@@ -37,6 +37,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "PASS - ALL TESTS PASSED (0 LLM calls, fully free). TEST A (Journey view shape): Fresh signup (100 credits) -> GET /api/journey -> 200 with reasoning=null, confidence=0, confidence_source='completeness', completeness=0, ready_for_direction=false, started=false ✓. All required keys present in response. TEST B (502+refund guarantee): POST /api/journey/start with objective='Grow my bakery to 12L' -> 502 (expected, ANTHROPIC_API_KEY is placeholder) AND credits UNCHANGED at 100 (full refund guarantee working) ✓. POST /api/journey/message before start -> 400 ✓. POST /api/journey/start with empty objective -> 422 ✓. CRITICAL: Full refund guarantee verified - credits before=100, after=100 (no charge for failed LLM call). Feature is production-ready for free paths."
+      - working: true
+        agent: "testing"
+        comment: "PASS - LIVE ANTHROPIC KEY TEST: ALL ASSERTIONS PASSED (3 LLM calls used, within budget of 4). Fresh signup (50 credits, SIGNUP_CREDITS updated). LLM CALL #1 (journey/start with Jaipur hotel objective): 200, reasoning object with EXACTLY 9 keys (hidden_desire stripped from public map) ✓, every dim has int score 0-100 + note ✓, biggest_uncertainty='reality', question_target='reality' (both in 9 dims) ✓, question_rationale non-empty ✓, sufficient=false (bool) ✓, assumptions_detected list ✓, decision_type='execution' (valid) ✓, reversible=true ✓, expert_lenses=['revenue management / RevPAR', 'distribution and direct-booking GTM', 'unit economics', 'hospitality marketing'] ✓, dim_order has 9 items + dim_labels present ✓, confidence=38 (int > 0) ✓, confidence_source='reasoning' ✓, cost=4 (>= 1) ✓, credits dropped 50->46 ✓. Turn 1 uncertainty scores: goal:25, reality:80, constraints:70, risks:65, resources:75, knowledge_gap:70, assumptions:55, decision_impact:55, missing_info:80. LLM CALL #2 (journey/message with room-nights/ADR/staff data): 200, confidence CHANGED 38->63 ✓, ALL 9 dims updated (reality:80->35, constraints:70->35, resources:75->45, knowledge_gap:70->30, missing_info:80->45, etc.) ✓, messages length=4 ✓, cost=6, credits 46->40 ✓. LLM CALL #3 (journey/direction): 200, direction object with ALL required keys ✓: decision='Convert the 828 room-nights a month OTA already sends you into repeat direct guests...' (non-empty) ✓, goal='Lift direct bookings from 8% to 25%...' ✓, blockers=4 items (2-5 range) ✓, highest_leverage='Systematically capture guest phone and email...' ✓, success_probability=55 (int 0-100) ✓, probability_rationale='The demand and staff already exist...' ✓, risks=4 items ✓, missing_info=4 items ✓, trade_offs=3 items (all non-empty) ✓, first_moves=4 items (all non-empty) ✓, learning_loop.signals=4 items (2-4 range) ✓, learning_loop.assumptions_to_test=3 items (2-3 range) ✓, stage='refine' ✓, has_direction=true ✓, cost=8, credits 40->32 ✓. FREE: POST /api/share/direction -> 200 {share_id='c04f50d5c6', path='/d/c04f50d5c6'} ✓. Public GET /api/share/{id} (no auth) -> 200, card.decision matches direction.decision ✓, card.confidence=63 (int) ✓, card.trade_offs + first_moves present ✓, privacy check: NO model/messages/objective/hidden_desire in response ✓. FREE: POST /api/journey/reset -> 200, reasoning=null ✓, confidence=0 ✓, confidence_source='completeness' ✓, started=false ✓. TOTAL: 3 LLM calls (within budget of 4), 18 credits used (50->32). All Layer 1 Decision Intelligence Engine features working correctly with live Anthropic key. Feature is production-ready."
   - task: "Layer 2 Outcome Learning Flywheel: _learning_digest (past done/dropped decisions w/ results + done milestones) injected into every journey turn + direction/refine; milestone status accepts optional result (stored w/ result_at, returned in view)"
     implemented: true
     working: true
@@ -1369,6 +1372,32 @@ agent_communication:
           DELETE /api/share/<id> by second user -> 404; by owner -> 200; then public GET -> 404.
       (F) Share without direction: fresh user POST /api/share/direction -> 400.
       Report exact numbers. NO LLM SPEND.
+  - agent: "main"
+    message: >
+      LIVE TEST (real ANTHROPIC key restored, SIGNUP_CREDITS now 50). STRICT LLM BUDGET <= 4 calls.
+      DO NOT TOUCH /api/payments (Zoho is LIVE now, real money). Founder: ceo@smartdecigen.com / FounderOS@2026.
+      Main agent already self-verified 1 live start-turn (reasoning map returned, hidden_desire stripped,
+      confidence_source=reasoning). VERIFY the full Layer-1 live loop with a FRESH signup:
+      (1) LLM#1 POST /api/journey/start {objective:"Grow my Jaipur boutique hotel from 40% to 75% occupancy
+          in 9 months, I depend fully on OTAs and their 22% commission is killing me."} -> 200; assert:
+          reasoning is an object; reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire); every dim has
+          int score 0..100 + note; biggest_uncertainty + question_target in the 9 dims; question_rationale
+          non-empty; sufficient is bool; assumptions_detected is list; decision_type in
+          idea|validation|execution|scaling|crisis|other; confidence int >0; confidence_source=="reasoning";
+          cost>=1; credits dropped from 50.
+      (2) LLM#2 POST /api/journey/message {message:"I get 900 room-nights a month, ADR 4200, direct bookings
+          are only 8%, I have 6 staff, 3L cash buffer, and honestly I do not know digital marketing at all."}
+          -> 200; assert confidence CHANGED vs turn 1 (any direction), reasoning updated (uncertainty map
+          scores differ from turn 1 on at least one dim), messages length 4, credits dropped again.
+      (3) LLM#3 POST /api/journey/direction -> 200; assert direction has ALL of: decision (non-empty string),
+          goal, blockers(2-5), highest_leverage, success_probability(int 0-100), probability_rationale,
+          risks(2-5), missing_info(2-5), trade_offs(2-4 non-empty), first_moves(2-4 non-empty),
+          learning_loop.signals(2-4), learning_loop.assumptions_to_test(2-3); stage=="refine".
+      (4) FREE POST /api/share/direction -> 200 {share_id, path}; public no-auth GET /api/share/{id} -> 200,
+          card.decision == direction.decision, card.confidence is int (live), card.trade_offs/first_moves present.
+      (5) FREE POST /api/journey/reset -> 200, reasoning null, confidence 0, confidence_source completeness.
+      Report exact reasoning payload seen on turn 1 (scores) and the direction keys. TOTAL LLM <= 4 (3 used + 1 spare
+      ONLY if a retry is genuinely needed).
   - agent: "testing"
     message: >
       TESTING COMPLETE - ALL 3-LAYER BATCH BUILD TESTS PASSED (0 LLM calls, fully free).
@@ -1409,3 +1438,60 @@ agent_communication:
       All 3 layers (Decision Intelligence Engine, Outcome Learning Flywheel, Virality) are production-ready
       for free paths. LLM-dependent features (journey start/message, direction, refine, approve) correctly
       return 502 and fully refund credits when ANTHROPIC_API_KEY is a placeholder.
+  - agent: "testing"
+    message: >
+      LIVE ANTHROPIC KEY TEST COMPLETE - ALL ASSERTIONS PASSED ✅ (3 LLM calls, within budget of 4).
+      
+      LAYER 1 LIVE LOOP (3 LLM calls):
+      
+      LLM CALL #1 - POST /api/journey/start (Jaipur hotel objective):
+      ✓ 200 response, reasoning object with EXACTLY 9 keys (hidden_desire stripped from public map)
+      ✓ Turn 1 uncertainty scores: goal:25, reality:80, constraints:70, risks:65, resources:75, 
+        knowledge_gap:70, assumptions:55, decision_impact:55, missing_info:80
+      ✓ biggest_uncertainty='reality', question_target='reality' (both in 9 dims)
+      ✓ question_rationale='Room count and ADR reveal whether the constraint is occupancy or pricing...'
+      ✓ sufficient=false (bool), assumptions_detected=['Assumes commission is the core problem...']
+      ✓ decision_type='execution', reversible=true
+      ✓ expert_lenses=['revenue management / RevPAR', 'distribution and direct-booking GTM', 
+        'unit economics', 'hospitality marketing']
+      ✓ dim_order has 9 items, dim_labels present
+      ✓ confidence=38 (int > 0), confidence_source='reasoning'
+      ✓ cost=4 (>= 1), credits dropped 50->46
+      
+      LLM CALL #2 - POST /api/journey/message (room-nights/ADR/staff data):
+      ✓ 200 response, confidence CHANGED 38->63 (honest update, increased)
+      ✓ ALL 9 dims updated: reality:80->35, constraints:70->35, resources:75->45, knowledge_gap:70->30, 
+        missing_info:80->45, goal:25->20, risks:65->45, assumptions:55->50, decision_impact:55->35
+      ✓ messages length=4 (2 from start + 2 from message)
+      ✓ cost=6, credits dropped 46->40
+      
+      LLM CALL #3 - POST /api/journey/direction:
+      ✓ 200 response, direction object with ALL required keys
+      ✓ decision='Convert the 828 room-nights a month OTA already sends you into repeat direct guests...'
+      ✓ goal='Lift direct bookings from 8% to 25% of mix within 6 months and occupancy from 40% to 75%...'
+      ✓ blockers=4 items (2-5 range), highest_leverage='Systematically capture guest phone and email...'
+      ✓ success_probability=55 (int 0-100), probability_rationale='The demand and staff already exist...'
+      ✓ risks=4 items, missing_info=4 items
+      ✓ trade_offs=3 items (all non-empty), first_moves=4 items (all non-empty)
+      ✓ learning_loop.signals=4 items (2-4 range), learning_loop.assumptions_to_test=3 items (2-3 range)
+      ✓ stage='refine', has_direction=true
+      ✓ cost=8, credits dropped 40->32
+      
+      LAYER 3 FREE TESTS (0 LLM calls):
+      ✓ POST /api/share/direction -> 200 {share_id='c04f50d5c6', path='/d/c04f50d5c6'}
+      ✓ Public GET /api/share/{id} (no auth) -> 200, card.decision matches direction.decision
+      ✓ card.confidence=63 (int), card.trade_offs + first_moves present
+      ✓ Privacy check: NO model/messages/objective/hidden_desire in response
+      ✓ POST /api/journey/reset -> 200, reasoning=null, confidence=0, confidence_source='completeness', started=false
+      
+      SUMMARY:
+      - Total LLM calls: 3/4 (within strict budget)
+      - Total credits used: 18 (50->32)
+      - All Layer 1 Decision Intelligence Engine features working correctly with live Anthropic key
+      - Reasoning engine produces honest uncertainty maps (can go up or down)
+      - hidden_desire correctly stripped from public view (9 dims visible, not 10)
+      - Confidence computed server-side from weighted uncertainty map (not LLM-claimed)
+      - Direction package contains all required keys with proper ranges
+      - Share/reset free paths working correctly
+      
+      Feature is production-ready. NO ISSUES FOUND.

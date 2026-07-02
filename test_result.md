@@ -23,6 +23,17 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Proactive Analyst voice (founder 7.8/10 feedback): journey_turn SYSTEM gains LEAD THE ANALYSIS (declare named archetype framework turn 1, ELIMINATE OUT LOUD each turn, ASK AS AN ANALYST, PROJECT THE PATH); reply recipe 3-6 sentences"
+    implemented: true
+    working: true
+    file: "/app/backend/journey.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Prompt-only change, SELF-VERIFIED LIVE (2 LLM calls on fresh user replicating the founder's exact '100 billion dollar startup' message): turn 1 declares 4 named archetypes + 'each thing you tell me eliminates some of them' + ONE multi-path analyst question (no binary fork). Turn 2 ELIMINATES OUT LOUD (ruled out lived-market-insight + distribution-brand + capital-heavy infra archetypes citing the 10-lakh constraint), narrows to 2 named paths, question framed as 'this answer decides which of the two paths we pursue'. Confidence 14->46. JSON contract unchanged (no parser change). No automated retest needed."
   - task: "Organ 1 Decision Record + outcome loop: brain_answer emits predicted_outcome{claim,confidence,review_after_days} + dont_follow_if (same single LLM call, max_tokens 2800); stored on decision doc with review_at/reviewed_at/impact_inr; set_status accepts impact_inr; NEW GET /api/brain/reviews/due, POST /api/brain/decisions/{id}/review (worked|partly|didnt + actual + impact_inr -> outcome source=review + calibration), GET /api/brain/ledger (totals/outcomes/impact/calibration/recent_reviews)"
     implemented: true
     working: true

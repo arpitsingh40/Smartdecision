@@ -1458,6 +1458,33 @@ agent_communication:
           -> ("", []) / empty facts. CLEANUP: remove the 'unit-test-user' sample afterwards (pull uid hash)
           so real data stays clean.
       Report exact counts and keys seen. TOTAL LLM <= 3 (2 planned + 1 spare).
+  - agent: "main"
+    message: >
+      BUG FIX VERIFICATION (founder feedback: engine replied like a "knowledgeable chatbot", gave generic
+      startup wisdom with zero founder facts, asked a weak binary fork). FIX: journey.py SYSTEM gained
+      DIAGNOSE BEFORE YOU PRESCRIBE (early turns = diagnostician not advisor, generic book-wisdom banned
+      unless anchored to a fact THEY gave) + PREFER MULTI-PATH DIAGNOSTIC QUESTIONS (one question that
+      lays out named starting-point paths: problem / technology / market / unfair advantage / ambition).
+      Main agent self-verified once live: exact input "I want to build my 100 billion dollar startup" now
+      returns a diagnostic reframe + ONE five-path question, no generic advice, conf 16.
+      LIVE key. STRICT LLM BUDGET <= 3 calls, all on FRESH signups:
+      (1) LLM#1: POST /api/journey/start {objective:"I want to build my 100 billion dollar startup"}.
+          ASSERT (structural): reply contains NONE of the phrases "structural shift", "ride the wave",
+          "talk to customers", "focus on a niche", "distribution is king". Reply asks a question that
+          names AT LEAST 3 distinct starting-point options among: problem, technology/skill, market,
+          advantage/network/capital, ambition. ASSERT (semantic judgment, report your verdict): the reply
+          DIAGNOSES the situation (reframes what a 100B outcome actually is + says it needs their starting
+          point) rather than giving advice. reasoning.question_rationale non-empty.
+      (2) LLM#2: fresh user, POST /api/journey/start {objective:"I'm thinking of building a B2B SaaS."}.
+          ASSERT: same class of behavior, a diagnosis/reframe + ONE question (no stacked "? ... ?" beyond
+          one question), NO generic book-wisdom line without their facts. Report the reply verbatim.
+      (3) LLM#3 REGRESSION (facts-rich opening must still get real VALUE, not just diagnosis): fresh user,
+          POST /api/journey/start {objective:"I run a rooftop solar EPC in Meerut doing 25 lakh monthly
+          revenue at 14 percent margin and want to double revenue in 12 months."}.
+          ASSERT: reply contains at least one SPECIFIC useful thing anchored to their facts (a number,
+          margin/ticket-size lever, or named trade-off relevant to solar EPC / their 25L / 14%), plus ONE
+          question. It must NOT be pure diagnosis with no value, and NOT generic wisdom.
+      Report all three replies verbatim + your pass/fail verdicts. TOTAL LLM <= 3, no spare.
   - agent: "testing"
     message: >
       TESTING COMPLETE - ALL 3-LAYER BATCH BUILD TESTS PASSED (0 LLM calls, fully free).

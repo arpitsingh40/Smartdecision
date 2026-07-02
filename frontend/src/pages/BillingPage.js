@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Sparkles, Check } from 'lucide-react';
+import { Sparkles, Check, Gift, Copy } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
@@ -11,13 +11,26 @@ export default function BillingPage() {
   const [packs, setPacks] = useState([]);
   const [history, setHistory] = useState([]);
   const [busy, setBusy] = useState(null);
+  const [referral, setReferral] = useState(null);
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
   useEffect(() => {
     api.get('/payments/packs').then((r) => setPacks(r.data.packs)).catch(() => {});
     api.get('/payments/history').then((r) => setHistory(r.data.items)).catch(() => {});
+    api.get('/referral').then((r) => setReferral(r.data)).catch(() => {});
   }, []);
+
+  const copyReferral = async () => {
+    if (!referral) return;
+    const url = `${window.location.origin}${referral.path}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Invite link copied.');
+    } catch (_e) {
+      toast.message(url);
+    }
+  };
 
   useEffect(() => {
     if (params.get('canceled') === '1') {
@@ -114,6 +127,26 @@ export default function BillingPage() {
         <p className="mt-6 text-[11px] text-muted-foreground/80 max-w-3xl">
           The Elite plan gives <span className="text-foreground font-mono-plex">10× the credits of Pro for 2.5× the price</span> — built for users who run multiple goals and attach files (PDFs, sheets, screenshots) to every turn.
         </p>
+
+        {referral ? (
+          <div className="mt-12 rounded-2xl border border-emerald-300/50 bg-emerald-50/50 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4" data-testid="referral-block">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-600 text-white shrink-0">
+                <Gift size={17} />
+              </span>
+              <div>
+                <div className="font-display text-lg">Give {referral.bonus}, get {referral.bonus}.</div>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Invite a founder. When they sign up with your link, you both get {referral.bonus} credits.
+                  {referral.invited_count > 0 ? ` You've invited ${referral.invited_count} and earned ${referral.credits_earned} credits.` : ''}
+                </p>
+              </div>
+            </div>
+            <Button onClick={copyReferral} variant="outline" className="rounded-full shrink-0" data-testid="referral-copy-btn">
+              <Copy size={14} className="mr-2" /> Copy invite link
+            </Button>
+          </div>
+        ) : null}
 
         {history.length > 0 && (
           <div className="mt-14">

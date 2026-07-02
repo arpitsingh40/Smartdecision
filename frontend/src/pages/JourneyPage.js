@@ -9,7 +9,8 @@ import { toast } from 'sonner';
 import {
   Send, Loader2, Sparkles, ArrowRight, Brain, ChevronDown, ChevronUp, CircleDot,
   Target, Gauge, Flag, CheckCircle2, Circle, AlertTriangle, HelpCircle, Lightbulb, Clock,
-  Users, UserPlus, Calendar, Shield, ListChecks,
+  Users, UserPlus, Calendar, Shield, ListChecks, Radar, Scale, Rocket, Activity,
+  FlaskConical, Share2,
 } from 'lucide-react';
 
 const PLACEHOLDERS = [
@@ -70,6 +71,8 @@ export default function JourneyPage() {
   const [teamStarting, setTeamStarting] = useState(false);
   const [teamSkipping, setTeamSkipping] = useState(false);
   const [teamBuilding, setTeamBuilding] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [resultDrafts, setResultDrafts] = useState({});
   const endRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -212,6 +215,31 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setTeamBuilding(false); }
   }, [setCredits]);
 
+  const shareDirection = useCallback(async () => {
+    setSharing(true);
+    try {
+      const r = await api.post('/share/direction');
+      const url = `${window.location.origin}${r.data.path}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success('Public link copied. Share your call with other founders.');
+      } catch (_e) {
+        toast.success(`Your public decision card: ${url}`);
+      }
+    } catch (e) { handleError(e); } finally { setSharing(false); }
+  }, []);
+
+  const saveMilestoneResult = useCallback(async (m) => {
+    const text = (resultDrafts[m.id] || '').trim();
+    if (!text) return;
+    try {
+      const r = await api.post(`/journey/milestones/${m.id}/status`, { status: 'done', result: text });
+      setJourney(r.data);
+      setResultDrafts((d) => ({ ...d, [m.id]: '' }));
+      toast.success('Outcome saved. Your engine just got smarter.');
+    } catch (e) { handleError(e); }
+  }, [resultDrafts]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -276,6 +304,7 @@ export default function JourneyPage() {
   const filled = order.filter((f) => isFilled(f, model[f]));
   const empties = order.filter((f) => !isFilled(f, model[f]));
   const conf = journey.confidence ?? 0;
+  const reasoning = journey.reasoning || null;
   const team = journey.team || {};
   const teamMode = team.started && !team.plan;
   const showTeamOffer = !!(journey.milestones && journey.milestones.length) && !team.started && !team.offer_dismissed && !team.plan;
@@ -285,7 +314,7 @@ export default function JourneyPage() {
     <div className="space-y-5">
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">What I understand</span>
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Decision confidence</span>
           <span data-testid="journey-confidence" className="font-mono-plex text-xs text-foreground">{conf}%</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -311,7 +340,75 @@ export default function JourneyPage() {
         ) : null}
       </div>
 
-      <div className="space-y-3">
+      {reasoning ? (
+        <div className="pt-3 border-t border-border/60 space-y-3" data-testid="journey-reasoning-panel">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+            <Radar size={11} /> How clearly I see each dimension
+          </div>
+          <div className="space-y-1.5">
+            {(reasoning.dim_order || []).map((d) => {
+              const u = reasoning.uncertainty?.[d];
+              if (!u) return null;
+              const biggest = reasoning.biggest_uncertainty === d;
+              const clarity = 100 - (u.score ?? 100);
+              return (
+                <div key={d} data-testid={`reasoning-dim-${d}`} title={u.note || ''}>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className={biggest ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                      {reasoning.dim_labels?.[d] || d}{biggest ? ' · probing this' : ''}
+                    </span>
+                    <span className="font-mono-plex text-muted-foreground">{clarity}%</span>
+                  </div>
+                  <div className="h-1 w-full rounded-full bg-muted overflow-hidden mt-0.5">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${biggest ? 'bg-amber-500' : 'bg-primary/60'}`}
+                      style={{ width: `${clarity}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {reasoning.question_rationale ? (
+            <div className="rounded-xl bg-secondary/60 px-3 py-2 text-xs leading-snug" data-testid="reasoning-rationale">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground block mb-0.5">
+                {reasoning.sufficient ? 'Why I stopped asking' : 'Why I asked that'}
+              </span>
+              {reasoning.sufficient && reasoning.sufficiency_reason ? reasoning.sufficiency_reason : reasoning.question_rationale}
+            </div>
+          ) : null}
+          {reasoning.assumptions_detected?.length ? (
+            <div data-testid="reasoning-assumptions">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Assumptions I am hearing</div>
+              <ul className="space-y-1">
+                {reasoning.assumptions_detected.map((a, i) => (
+                  <li key={i} className="text-xs text-foreground/85 leading-snug flex items-start gap-1.5">
+                    <AlertTriangle size={11} className="mt-0.5 shrink-0 text-amber-500" />{a}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-1.5">
+            {reasoning.decision_type && reasoning.decision_type !== 'other' ? (
+              <span className="text-[10px] uppercase tracking-wide rounded-full bg-secondary px-2 py-0.5">
+                {reasoning.decision_type} problem
+              </span>
+            ) : null}
+            {reasoning.reversible === false ? (
+              <span className="text-[10px] uppercase tracking-wide rounded-full bg-red-100 text-red-700 px-2 py-0.5">one-way door</span>
+            ) : reasoning.reversible === true ? (
+              <span className="text-[10px] uppercase tracking-wide rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5">reversible</span>
+            ) : null}
+            {(reasoning.expert_lenses || []).map((l, i) => (
+              <span key={i} className="text-[10px] rounded-full border border-border/70 px-2 py-0.5 text-muted-foreground">{l}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="space-y-3 pt-3 border-t border-border/60">
+        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">What I understand</div>
         {filled.map((f) => (
           <div key={f} data-testid={`journey-field-${f}`}>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels[f] || f}</div>
@@ -391,12 +488,24 @@ export default function JourneyPage() {
               <div className="rounded-2xl border border-border/70 bg-card p-5 space-y-4" data-testid="direction-card">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                    <Target size={13} /> Initial direction
+                    <Target size={13} /> Decision package
                   </span>
-                  <span className="inline-flex items-center gap-1 text-xs rounded-full bg-secondary px-2.5 py-1" title="A rough estimate, not a promise" data-testid="direction-probability">
-                    <Gauge size={12} /> ~{journey.direction.success_probability}% odds
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-xs rounded-full bg-secondary px-2.5 py-1" title="A rough estimate, not a promise" data-testid="direction-probability">
+                      <Gauge size={12} /> ~{journey.direction.success_probability}% odds
+                    </span>
+                    <Button size="sm" variant="outline" className="rounded-full h-7 px-2.5 text-xs" onClick={shareDirection} disabled={sharing} data-testid="share-direction-btn" title="Create a public decision card and copy the link">
+                      {sharing ? <Loader2 className="animate-spin" size={12} /> : <Share2 size={12} />}
+                      <span className="ml-1">{sharing ? 'Sharing' : 'Share'}</span>
+                    </Button>
+                  </div>
                 </div>
+                {journey.direction.decision ? (
+                  <div className="rounded-xl bg-primary/5 border border-primary/20 px-3.5 py-2.5" data-testid="direction-decision">
+                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground block">The call</span>
+                    <div className="text-[15px] font-medium leading-snug mt-0.5">{journey.direction.decision}</div>
+                  </div>
+                ) : null}
                 <div>
                   <div className="font-display text-lg leading-snug">{journey.direction.goal}</div>
                   {journey.direction.probability_rationale ? (
@@ -417,6 +526,36 @@ export default function JourneyPage() {
                   <DirList icon={AlertTriangle} label="Risks" items={journey.direction.risks} />
                   <DirList icon={HelpCircle} label="Missing info" items={journey.direction.missing_info} />
                 </div>
+                {journey.direction.trade_offs?.length ? (
+                  <div className="pt-3 border-t border-border/60" data-testid="direction-tradeoffs">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5">
+                      <Scale size={12} /> Trade-offs you are accepting
+                    </div>
+                    <ul className="space-y-1">
+                      {journey.direction.trade_offs.map((t, i) => (
+                        <li key={i} className="text-sm leading-snug text-foreground/90">{t}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {journey.direction.first_moves?.length ? (
+                  <div data-testid="direction-first-moves">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5">
+                      <Rocket size={12} /> First moves
+                    </div>
+                    <ol className="space-y-1">
+                      {journey.direction.first_moves.map((t, i) => (
+                        <li key={i} className="text-sm leading-snug text-foreground/90">{i + 1}. {t}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+                {journey.direction.learning_loop && (journey.direction.learning_loop.signals?.length || journey.direction.learning_loop.assumptions_to_test?.length) ? (
+                  <div className="grid sm:grid-cols-2 gap-4 pt-3 border-t border-border/60" data-testid="direction-learning-loop">
+                    <DirList icon={Activity} label="Signals to watch" items={journey.direction.learning_loop.signals} />
+                    <DirList icon={FlaskConical} label="Assumptions to test" items={journey.direction.learning_loop.assumptions_to_test} />
+                  </div>
+                ) : null}
                 {journey.stage === 'refine' && !journey.milestones.length ? (
                   <div className="pt-3 border-t border-border/60 space-y-2.5" data-testid="direction-refine">
                     <div className="text-xs text-muted-foreground">Does this represent your business? Refine it, or approve to lock measurable milestones.</div>
@@ -471,6 +610,25 @@ export default function JourneyPage() {
                           {m.target ? <span className="text-[11px] rounded-full bg-secondary px-2 py-0.5">{m.target}</span> : null}
                           {m.deadline ? <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><Clock size={11} />{m.deadline}</span> : null}
                         </div>
+                        {m.status === 'done' && m.result ? (
+                          <div className="text-xs text-emerald-700 mt-1.5" data-testid={`milestone-result-${m.order}`}>
+                            Outcome: {m.result}
+                          </div>
+                        ) : null}
+                        {m.status === 'done' && !m.result ? (
+                          <div className="flex items-center gap-1.5 mt-1.5" data-testid={`milestone-result-input-${m.order}`}>
+                            <input
+                              value={resultDrafts[m.id] || ''}
+                              onChange={(e) => setResultDrafts((d) => ({ ...d, [m.id]: e.target.value }))}
+                              placeholder="What actually happened? (feeds your engine)"
+                              maxLength={500}
+                              className="flex-1 text-xs rounded-lg border border-border/70 bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
+                            />
+                            <Button size="sm" variant="outline" className="h-7 rounded-lg text-xs px-2" onClick={() => saveMilestoneResult(m)} disabled={!(resultDrafts[m.id] || '').trim()}>
+                              Save
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     </li>
                   ))}
@@ -572,7 +730,7 @@ export default function JourneyPage() {
             className="lg:hidden flex items-center justify-between rounded-xl border border-border/70 px-3 py-2 text-sm text-muted-foreground mb-3"
             data-testid="journey-panel-toggle"
           >
-            <span>What I understand · {conf}%</span>
+            <span>Decision confidence · {conf}%</span>
             {panelOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
           </button>
           {panelOpen ? <div className="lg:hidden rounded-2xl border border-border/70 bg-card/60 p-4 mb-3">{Panel}</div> : null}

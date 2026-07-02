@@ -23,6 +23,48 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Layer 1 Decision Intelligence Engine: journey turn returns reasoning trace (10-dim uncertainty map, biggest_uncertainty, assumptions, decision_type, reversible, expert_lenses, question_target+rationale, sufficient stop-rule); confidence computed server-side from uncertainty map (can go down); hidden_desire stripped from public view; direction upgraded to Decision+Trade-offs+Execution+Learning"
+    implemented: true
+    working: true
+    file: "/app/backend/journey.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW (3-layer batch build). journey.py: REASONING_DIMS (goal/reality/constraints/risks/resources/knowledge_gap/assumptions/hidden_desire/decision_impact/missing_info) + DIM_WEIGHTS (goal 1.5, reality+decision_impact 1.25, hidden_desire 0.5, rest 1.0/0.75). journey_turn SYSTEM rewritten as collective reasoning engine: every turn = full internal sweep -> uncertainty map (0-100 per dim, may RISE honestly) -> ONE highest-information-gain question -> stop rule (sufficient=true => no more discovery questions, reply offers direction). New LLM JSON: {reply, model(15 legacy fields, unchanged merge semantics), reasoning{uncertainty{dim:{score,note}}, biggest_uncertainty, assumptions_detected[<=5], hidden_desire, decision_type(idea|validation|execution|scaling|crisis|other), reversible(bool|null), expert_lenses[<=4], question_target, question_rationale, sufficient, sufficiency_reason}}. _normalize_reasoning sanitizes (returns None if LLM omitted map -> old reasoning kept on message turns). _decision_confidence = server-side weighted arithmetic on the map (NOT an LLM-claimed number). _public_reasoning strips hidden_desire (both the text field and the dim from public map; falls back biggest/target if they pointed there) + adds dim_labels/dim_order. _view: confidence=reasoning-based (fallback field-completeness), confidence_source ('reasoning'|'completeness'), completeness, ready_for_direction = sufficient OR conf>=70, reasoning=_public_reasoning. max_tokens 2600 (reserve 16 still covers). DIRECTION_SYSTEM/REFINE_SYSTEM extended: +decision (one clear call), +trade_offs[2-4], +first_moves[2-4 with timeframe], +learning_loop{signals[2-4], assumptions_to_test[2-3]}; _build_direction normalizes all new keys; direction prompt injects FULL reasoning state (incl hidden_desire, private LLM call) + learning digest. reset clears reasoning. NOTE: ANTHROPIC_API_KEY is PLACEHOLDER (env was reset in this continuation) -> every LLM turn 502 + FULL REFUND until a real key is set. FREE-testable now: view structure (reasoning null, confidence_source completeness), 502+refund guarantee, 400/422 guards."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL TESTS PASSED (0 LLM calls, fully free). TEST A (Journey view shape): Fresh signup (100 credits) -> GET /api/journey -> 200 with reasoning=null, confidence=0, confidence_source='completeness', completeness=0, ready_for_direction=false, started=false ✓. All required keys present in response. TEST B (502+refund guarantee): POST /api/journey/start with objective='Grow my bakery to 12L' -> 502 (expected, ANTHROPIC_API_KEY is placeholder) AND credits UNCHANGED at 100 (full refund guarantee working) ✓. POST /api/journey/message before start -> 400 ✓. POST /api/journey/start with empty objective -> 422 ✓. CRITICAL: Full refund guarantee verified - credits before=100, after=100 (no charge for failed LLM call). Feature is production-ready for free paths."
+  - task: "Layer 2 Outcome Learning Flywheel: _learning_digest (past done/dropped decisions w/ results + done milestones) injected into every journey turn + direction/refine; milestone status accepts optional result (stored w/ result_at, returned in view)"
+    implemented: true
+    working: true
+    file: "/app/backend/journey.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW. _learning_digest(user_id, j): last 5 done/dropped decisions (committed_action + result from decisions_col) + done milestones w/ results -> compact 'WHAT THIS FOUNDER HAS ACTUALLY DONE BEFORE' block injected into journey_turn prompt AND direction/refine prompts (build on what worked, never re-suggest what failed). MilestoneStatusIn gains optional result (max_length 500 -> 422 above); when provided -> stored as m.result + m.result_at, exposed in _view milestones (empty string when absent). FREE to test fully (milestone endpoints cost nothing); the injection effect needs a live key."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL MILESTONE TESTS PASSED (0 LLM calls, fully free). TEST C (Milestone result capture): Seeded journey doc with milestone_id='m1' for fresh user. TEST C1: POST /api/journey/milestones/m1/status with status='done', result='Hired 2 reps' -> 200, milestone.result='Hired 2 reps', milestone.status='done', progress_pct=100 ✓. TEST C2: POST status='in_progress' (no result field) -> 200, result PRESERVED as 'Hired 2 reps', status='in_progress', progress_pct=0 ✓. TEST C3: POST status='bogus' -> 422 ✓. TEST C4: Unknown milestone id -> 404 ✓. TEST C5: result of 501 chars -> 422 (max_length validation working) ✓. CRITICAL: Result field correctly stored, preserved when not provided, and returned in view. Feature is production-ready."
+  - task: "Layer 3 Virality: share.py Decision Cards (POST /api/share/direction, GET /api/share/{id} public+views, POST /api/share/{id}/opinion one-per-user not-own, DELETE owner-only) + referrals (GET /api/referral lazy stable code; signup ?ref= grants +25/+25 both sides, ledger type referral_bonus, invalid ref ignored)"
+    implemented: true
+    working: true
+    file: "/app/backend/share.py, /app/backend/server.py, /app/backend/db.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW. share.py routers /api/share + /api/referral, shares_col in db.py, ensure_share_startup indexes (shares.id unique, user_id+type, users.referral_code sparse unique, referred_by sparse). Card = public-safe snapshot {decision, goal, highest_leverage, success_probability, probability_rationale, trade_offs<=4, risks<=3, first_moves<=4, confidence} + founder FIRST NAME only (never the model/convo/hidden_desire). POST /api/share/direction: 400 if no direction; one card per user, re-share refreshes snapshot but keeps the SAME share_id (stable link); returns {share_id, path:/d/<id>, views}. GET /api/share/{id}: PUBLIC no-auth, $inc views, returns founder_name+card+views+opinions; 404 unknown. POST /api/share/{id}/opinion {text 1..1000}: auth-only (401), 400 on own card, one per user (repost replaces), capped 50, 404 unknown card. DELETE /api/share/{id}: owner-only (404 otherwise). GET /api/referral: lazily creates stable 8-hex referral_code, returns {code, path:/auth?ref=<code>, invited_count, credits_earned, bonus}. server.py: SignupIn.ref (optional); valid foreign ref -> both sides +REFERRAL_BONUS(env, default 25), referred_by set on new user, 2 ledger rows type=referral_bonus, stats credits_issued_free +2x bonus; invalid ref silently ignored (never blocks signup). SELF-VERIFIED via curl: bad-ref signup=100cr; code created; referred signup=125cr; referrer invited_count=1 credits_earned=25; public GET 404 on unknown; share-without-direction 400. All FREE (no LLM)."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL TESTS PASSED (0 LLM calls, fully free). TEST D (Referral): User1 GET /api/referral -> 200 with 8-char code, path='/auth?ref={code}', invited_count=0, credits_earned=0, bonus=25 ✓. Call again -> SAME code (stable) ✓. User2 signup with ref={code} -> 200, credits=125 (100+25 bonus) ✓. User1 credits increased by 25 -> 125 ✓. User1 GET /api/referral -> invited_count=1, credits_earned=25 ✓. User3 signup with ref='garbagecode' -> 200, credits=100 (invalid ref silently ignored, signup never blocked) ✓. TEST E (Decision Cards): Seeded journey doc with direction for card owner. POST /api/share/direction -> 200 with 10-char share_id, path='/d/{share_id}' ✓. POST again -> SAME share_id (stable link) ✓. GET /api/share/{share_id} public (no auth) -> 200 with founder_name='Card' (first name only), card contains decision/goal/trade_offs/first_moves/success_probability/risks (max 3) ✓. Privacy check: NO model/messages/objective/hidden_desire in response ✓. Views incremented on repeated GET ✓. POST opinion by card OWNER -> 400 ✓. POST opinion by second user -> 200, opinions length=1 ✓. Same user posts again -> opinion REPLACED (not appended), opinions still length=1 ✓. No auth opinion -> 401 ✓. Empty text -> 422 ✓. Opinion on unknown card -> 404 ✓. DELETE by non-owner -> 404 ✓. DELETE by owner -> 200, removed=true ✓. Public GET after delete -> 404 ✓. TEST F (Share without direction): Fresh user POST /api/share/direction -> 400 ✓. All virality features working correctly. Feature is production-ready."
   - task: "Founder Journey (chat-first front door): /api/journey GET + /start + /message + /reset + Phase2 /direction + /direction/refine + /direction/approve + /milestones/{id}/status"
     implemented: true
     working: true
@@ -1294,3 +1336,76 @@ agent_communication:
 agent_communication:
   - agent: "testing"
     message: "Phase 2 Founder Journey testing COMPLETE. All 5 LLM-spending endpoints tested successfully (exactly 5/5 LLM calls used, at budget limit). All assertions passed: direction structure (goal, blockers, highest_leverage, success_probability, probability_rationale, risks, missing_info), refine updates direction correctly, approve generates 4-10 measurable milestones with correct structure, milestone status updates work (done/in_progress/not_started), progress_pct calculation correct, all validation working (422 for invalid status/empty feedback, 404 for non-existent milestone, 400 for operations before journey started). NO 502 errors, live Anthropic key working correctly. Credits tracked accurately (50->30, used 20 credits). Test user: journey_phase2_1782437950@cloudkitchen.com. Feature is production-ready."
+  - agent: "main"
+    message: >
+      TEST (3-layer batch build, FREE PATHS ONLY - ANTHROPIC_API_KEY IS A PLACEHOLDER, environment was
+      reset, so DO NOT expect any LLM call to succeed; every LLM endpoint must 502 AND fully refund).
+      LLM BUDGET: 0. DB is FRESH (reset too); founder ceo@smartdecigen.com / FounderOS@2026 exists.
+      VERIFY:
+      (A) Journey view shape (free): fresh signup -> GET /api/journey -> 200 with reasoning:null,
+          confidence:0, confidence_source:"completeness", completeness:0, ready_for_direction:false.
+      (B) 502+refund guarantee: same user POST /api/journey/start {objective:"Grow my bakery to 12L"}
+          -> 502, and credits UNCHANGED at 100 (full refund). POST /api/journey/message before start -> 400.
+      (C) Milestone result capture (free): seed a journey doc directly in Mongo (db test_database,
+          collection journeys) for a fresh user with milestones:[{id:"m1",order:1,title:"T",success_metric:"",
+          target:"",deadline:"",status:"not_started"}] then POST /api/journey/milestones/m1/status
+          {status:"done", result:"Hired 2 reps"} -> 200 and view milestone has result:"Hired 2 reps";
+          then {status:"in_progress"} (no result) -> 200 and result STILL "Hired 2 reps" (preserved);
+          {status:"bogus"} -> 422; unknown id -> 404; result > 500 chars -> 422.
+      (D) Referral: GET /api/referral (auth) -> {code(8 hex), path, invited_count:0, bonus:25}; call twice,
+          code STABLE. Signup {ref:<code>} -> new user credits 125; referrer credits +25 (verify via
+          /auth/me or login); GET /api/referral again -> invited_count:1, credits_earned:25. Signup with
+          ref:"garbage" -> 200 and credits 100 (ignored). Check ledger via admin (optional).
+      (E) Decision Cards: for the milestone-seeded user, also $set a direction object in their journey doc
+          ({decision:"Do X",goal:"12L in 12 months",highest_leverage:"L",success_probability:60,
+          probability_rationale:"r",risks:["r1"],missing_info:[],blockers:[],trade_offs:["t1"],
+          first_moves:["f1"],learning_loop:{signals:["s1"],assumptions_to_test:["a1"]}}) then:
+          POST /api/share/direction -> 200 {share_id, path:"/d/<id>"}; POST again -> SAME share_id.
+          GET /api/share/<id> WITH NO AUTH -> 200, card has decision/goal/trade_offs/first_moves/
+          success_probability, founder first name, and does NOT contain model/messages/objective/
+          hidden_desire; views increments across two GETs. POST /api/share/<id>/opinion by the card OWNER
+          -> 400; by a SECOND user {text:"Take"} -> 200 opinions length 1 with name+text; second user
+          posts AGAIN -> still length 1 (replaced); no auth -> 401; empty text -> 422; unknown card -> 404.
+          DELETE /api/share/<id> by second user -> 404; by owner -> 200; then public GET -> 404.
+      (F) Share without direction: fresh user POST /api/share/direction -> 400.
+      Report exact numbers. NO LLM SPEND.
+  - agent: "testing"
+    message: >
+      TESTING COMPLETE - ALL 3-LAYER BATCH BUILD TESTS PASSED (0 LLM calls, fully free).
+      
+      LAYER 1 (Decision Intelligence Engine) ✅:
+      - Journey view shape: Fresh signup (100 credits) -> GET /api/journey -> 200 with reasoning=null, 
+        confidence=0, confidence_source='completeness', completeness=0, ready_for_direction=false, started=false.
+      - 502+refund guarantee: POST /api/journey/start with objective -> 502 (ANTHROPIC_API_KEY is placeholder)
+        AND credits UNCHANGED at 100 (full refund working correctly).
+      - Validation: POST /api/journey/message before start -> 400. Empty objective -> 422.
+      
+      LAYER 2 (Outcome Learning Flywheel) ✅:
+      - Milestone result capture: Seeded journey doc with milestone 'm1'.
+      - POST milestone status='done' with result='Hired 2 reps' -> 200, result stored, progress_pct=100.
+      - POST status='in_progress' (no result) -> result PRESERVED as 'Hired 2 reps', progress_pct=0.
+      - Validation: status='bogus' -> 422, unknown id -> 404, result 501 chars -> 422.
+      
+      LAYER 3 (Virality) ✅:
+      - Referral: GET /api/referral -> 8-char code, stable across calls. Signup with ref -> both sides +25 credits.
+        User1: 100->125, User2: 125. Referrer invited_count=1, credits_earned=25. Invalid ref silently ignored.
+      - Decision Cards: POST /api/share/direction -> 10-char share_id, stable link. Public GET (no auth) -> 200
+        with founder first name only, card contains decision/goal/trade_offs/first_moves/success_probability/risks.
+        Privacy check: NO model/messages/objective/hidden_desire in response. Views increment. Opinions: owner -> 400,
+        second user -> 200 (length 1), same user again -> replaced (still length 1). No auth -> 401, empty -> 422,
+        unknown card -> 404. DELETE: non-owner -> 404, owner -> 200. Public GET after delete -> 404.
+      - Share without direction: Fresh user -> 400.
+      
+      CRITICAL ASSERTIONS VERIFIED:
+      1. Full refund guarantee working: LLM failure (502) returns ALL credits (100 -> 100).
+      2. Journey view structure correct for fresh user (all fields present, reasoning=null).
+      3. Milestone result field correctly stored, preserved when not provided, and returned in view.
+      4. Referral code stable, both sides receive bonus, invalid ref silently ignored (never blocks signup).
+      5. Decision Card privacy: NO leakage of model/messages/objective/hidden_desire.
+      6. Share link stable (same share_id on re-share), public access working, opinions one-per-user (replaced not appended).
+      
+      TOTAL LLM CALLS: 0/0 (budget respected, all tests are free paths).
+      
+      All 3 layers (Decision Intelligence Engine, Outcome Learning Flywheel, Virality) are production-ready
+      for free paths. LLM-dependent features (journey start/message, direction, refine, approve) correctly
+      return 502 and fully refund credits when ANTHROPIC_API_KEY is a placeholder.

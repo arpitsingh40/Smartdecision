@@ -16,6 +16,7 @@ import JoinPage from './pages/JoinPage';
 import CockpitPage from './pages/CockpitPage';
 import GoalSetupPage from './pages/GoalSetupPage';
 import FounderProfilePage from './pages/FounderProfilePage';
+import DecisionCardPage from './pages/DecisionCardPage';
 import { api, setAuthToken } from './lib/api';
 import { trackPixel } from './lib/pixel';
 import { toast } from 'sonner';
@@ -115,6 +116,7 @@ function App() {
             <Route path="/goal-setup" element={token ? <GoalSetupPage /> : <Navigate to="/auth" replace />} />
             <Route path="/founder-profile" element={token ? <FounderProfilePage /> : <Navigate to="/auth" replace />} />
             <Route path="/join/:code" element={<JoinPage />} />
+            <Route path="/d/:shareId" element={<DecisionCardPage />} />
             <Route path="/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/test-checkout" element={token ? <TestCheckoutPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/result" element={<PaymentResultPage />} />

@@ -51,6 +51,124 @@ FIELD_ORDER = ["objective", "why_now", "whats_at_stake", "timeline", "urgency", 
                "blockers", "tried", "knowledge_level", "people", "resources",
                "constraints", "leverage", "fears", "unknowns"]
 
+# ---- the reasoning layer: the collective situation-understanding engine ----
+# Ten dimensions the engine sweeps on EVERY turn. Uncertainty 0 (fully known) .. 100 (unknown).
+REASONING_DIMS = ["goal", "reality", "constraints", "risks", "resources",
+                  "knowledge_gap", "assumptions", "hidden_desire", "decision_impact", "missing_info"]
+DIM_LABELS = {"goal": "Goal", "reality": "Reality", "constraints": "Constraints", "risks": "Risks",
+              "resources": "Resources", "knowledge_gap": "Knowledge gap", "assumptions": "Assumptions",
+              "hidden_desire": "Hidden desire", "decision_impact": "Decision impact",
+              "missing_info": "Missing information"}
+# Decision-critical dimensions weigh more in the confidence computation.
+DIM_WEIGHTS = {"goal": 1.5, "reality": 1.25, "decision_impact": 1.25, "constraints": 1.0, "risks": 1.0,
+               "assumptions": 1.0, "missing_info": 1.0, "resources": 0.75, "knowledge_gap": 0.75,
+               "hidden_desire": 0.5}
+DECISION_TYPES = ("idea", "validation", "execution", "scaling", "crisis", "other")
+
+
+def _normalize_reasoning(raw):
+    """Sanitize the engine's reasoning trace. Returns None when the LLM omitted it entirely."""
+    if not isinstance(raw, dict):
+        return None
+    unc_in = raw.get("uncertainty") if isinstance(raw.get("uncertainty"), dict) else {}
+    if not unc_in:
+        return None
+    unc = {}
+    for d in REASONING_DIMS:
+        v = unc_in.get(d)
+        score, note = 100, ""
+        if isinstance(v, dict):
+            try:
+                score = int(round(float(v.get("score", 100))))
+            except Exception:
+                score = 100
+            note = _clean(str(v.get("note", "")))[:220]
+        elif isinstance(v, (int, float)):
+            score = int(round(float(v)))
+        unc[d] = {"score": max(0, min(100, score)), "note": note}
+    biggest = raw.get("biggest_uncertainty")
+    if biggest not in REASONING_DIMS:
+        biggest = max(unc, key=lambda d: unc[d]["score"] * DIM_WEIGHTS[d])
+    qt = raw.get("question_target")
+    if qt not in REASONING_DIMS:
+        qt = biggest
+    dt = str(raw.get("decision_type", "other")).strip().lower()
+    if dt not in DECISION_TYPES:
+        dt = "other"
+    rev = raw.get("reversible")
+    if not isinstance(rev, bool):
+        rev = None
+    return {
+        "uncertainty": unc,
+        "biggest_uncertainty": biggest,
+        "assumptions_detected": _norm_str_list(raw.get("assumptions_detected"), 5),
+        "hidden_desire": _clean(str(raw.get("hidden_desire", "")))[:300],
+        "decision_type": dt,
+        "reversible": rev,
+        "expert_lenses": _norm_str_list(raw.get("expert_lenses"), 4),
+        "question_target": qt,
+        "question_rationale": _clean(str(raw.get("question_rationale", "")))[:300],
+        "sufficient": bool(raw.get("sufficient", False)),
+        "sufficiency_reason": _clean(str(raw.get("sufficiency_reason", "")))[:300],
+    }
+
+
+def _decision_confidence(reasoning):
+    """Weighted decision confidence computed server-side from the engine's uncertainty map.
+    NOT an LLM-claimed number: the map is structured evidence, the arithmetic is ours.
+    Can honestly go DOWN when new information reveals new uncertainty."""
+    unc = (reasoning or {}).get("uncertainty") or {}
+    if not unc:
+        return None
+    total_w = sum(DIM_WEIGHTS[d] for d in REASONING_DIMS)
+    certainty = sum((100 - (unc.get(d) or {}).get("score", 100)) * DIM_WEIGHTS[d] for d in REASONING_DIMS)
+    return int(round(certainty / total_w))
+
+
+def _public_reasoning(reasoning):
+    """Founder-visible copy of the reasoning trace. hidden_desire stays internal
+    (the engine still uses it, the founder never sees 'what you really want is...')."""
+    if not reasoning:
+        return None
+    pub = {k: v for k, v in reasoning.items() if k != "hidden_desire"}
+    vis = {d: v for d, v in (reasoning.get("uncertainty") or {}).items() if d != "hidden_desire"}
+    pub["uncertainty"] = vis
+    if vis:
+        fallback = max(vis, key=lambda d: vis[d]["score"] * DIM_WEIGHTS[d])
+        if pub.get("biggest_uncertainty") == "hidden_desire":
+            pub["biggest_uncertainty"] = fallback
+        if pub.get("question_target") == "hidden_desire":
+            pub["question_target"] = fallback
+    pub["dim_labels"] = {d: DIM_LABELS[d] for d in REASONING_DIMS if d != "hidden_desire"}
+    pub["dim_order"] = [d for d in REASONING_DIMS if d != "hidden_desire"]
+    return pub
+
+
+def _learning_digest(user_id, j=None):
+    """Layer 2 flywheel: what this founder actually did and what happened.
+    Pulled from the decision ledger (committed actions + results) and done milestones,
+    injected into every reasoning turn and direction synthesis so the engine learns."""
+    lines = []
+    try:
+        rows = decisions_col.find(
+            {"user_id": user_id, "status": {"$in": ["done", "dropped"]}},
+            {"committed_action": 1, "status": 1, "result": 1},
+        ).sort("created_at", -1).limit(5)
+        for r in rows:
+            act = (r.get("committed_action") or "").strip()
+            if not act:
+                continue
+            res = (r.get("result") or "").strip()
+            tag = "DID" if r.get("status") == "done" else "DROPPED"
+            lines.append(f"- {tag}: {act}" + (f" -> outcome: {res}" if res else ""))
+    except Exception as e:
+        log.warning(f"learning digest failed for {user_id}: {e}")
+    for m in ((j or {}).get("milestones") or []):
+        if m.get("status") == "done":
+            res = (m.get("result") or "").strip()
+            lines.append(f"- MILESTONE DONE: {m.get('title', '')}" + (f" -> outcome: {res}" if res else ""))
+    return "\n".join(lines[:8])
+
 
 def _empty_model():
     m = {f: "" for f in STRING_FIELDS}
@@ -138,62 +256,101 @@ def _unlocks(user, journey):
 
 
 # ----------------------------------------------------------------- the conversation engine
-SYSTEM = """You are the founder's thinking partner inside SmartDeciGen, a calm and sharp operating system that earns trust by building a real model of the founder's situation BEFORE giving direction.
+SYSTEM = """You are the Decision Intelligence Engine inside SmartDeciGen. You are NOT a questionnaire and NOT a chatbot: you are a collective reasoning system that reduces a founder's decision uncertainty with the fewest possible questions.
 
 WHO YOU ARE
-- You talk like a seasoned founder-operator and strategist, not a chatbot. Warm, direct, concrete, never fluffy.
-- You are deliberately building a MENTAL MODEL of this person and their business. You are not asking random questions.
+- You talk like a seasoned founder-operator and strategist. Warm, direct, concrete, never fluffy.
+- Every founder message activates ALL of your reasoning modules at once. You then decide whether ONE more question is worth the founder's time, and if so, which single question buys the most decision quality.
 
-HOW EVERY TURN WORKS (always all three, in this order):
-1. ACKNOWLEDGE what they just told you in one specific line. Never generic praise like "great" or "you've got this".
-2. GIVE BEFORE YOU ASK. Hand them one genuinely useful thing they did not have: a real number or benchmark, a sharp reframe, a concrete example or template, a named trade-off or fork, a lever, or a quick mental model. Localize it to their actual world and industry. If you lack hard data, give a clearly labelled realistic ballpark. Banned: vague encouragement, restating their words, generic truisms.
-3. ASK THE SINGLE most valuable next question that fills the biggest gap in your model. EXACTLY ONE question.
+YOUR INTERNAL SWEEP (do ALL of this silently on EVERY turn, before writing anything):
+1. UPDATE the ten-dimension SITUATION UNDERSTANDING and score each dimension's uncertainty 0..100 (0 = fully understood, 100 = complete unknown). Be honest: uncertainty MAY RISE when new information exposes a problem you had glossed over.
+   - goal: what they are really trying to achieve (not just what they typed)
+   - reality: current facts on the ground (numbers, traction, operations)
+   - constraints: hard limits (cash, time, people, skills)
+   - risks: what could kill or badly wound this
+   - resources: assets they can actually deploy (team, money, docs, channels, relationships)
+   - knowledge_gap: what the FOUNDER does not know how to do
+   - assumptions: unsupported beliefs baked into their thinking
+   - hidden_desire: what they really want beneath the stated ask (status, safety, escape, proof)
+   - decision_impact: the stakes and reversibility of the decision actually in front of them
+   - missing_info: facts nobody in the room has yet that would change the answer
+2. DETECT the unsupported assumptions they are making, and the hidden desire.
+3. CLASSIFY the real decision: is this an idea problem, a validation problem, an execution problem, scaling, or crisis? Is it reversible or one-way?
+4. ACTIVATE the 2-4 expert lenses that matter here (unit economics, GTM, hiring, pricing, product, fundraising, ops, legal, distribution...).
+5. PICK THE QUESTION TARGET: the dimension where reducing uncertainty MOST improves the decision. Weight decision-critical unknowns (goal, reality, decision_impact) higher than nice-to-knows. Never ask about something you can infer.
+6. STOP RULE: when one more question would barely improve the decision (the decision-critical dimensions are already low-uncertainty), set "sufficient" to true and DO NOT ask another discovery question. Instead say plainly that you have enough, name in one line what you now understand, and offer to shape their direction.
 
-WHAT YOU ARE TRYING TO LEARN (your checklist, pursue what is missing, skip what you already know, in whatever order feels natural and human):
-objective, why_now, whats_at_stake (what happens if nothing changes), blockers, what they have already tried (and what worked or failed), their knowledge level in this area, who else is involved (people), resources they have (SOPs, Excel or sheets, CRM, past reports, financials, customer interviews, sales scripts, process docs), constraints, fears, unknowns, leverage points, urgency, impact, and timeline.
+THE REPLY (two to five sentences, then at most ONE question):
+1. Acknowledge specifically what they just told you. Never generic praise.
+2. GIVE BEFORE YOU ASK: one genuinely useful thing they did not have, a real number or benchmark, a sharp reframe, a named fork or trade-off, a lever, a quick mental model. Localize it to their industry and geography. If you lack hard data, give a clearly labelled realistic ballpark. Banned: vague encouragement, restating their words, generic truisms.
+3. Ask EXACTLY ONE question, the single highest-information-gain one from your sweep. Never stack questions. If sufficient=true, ask NO discovery question and offer the direction instead.
 
-IF THEY LACK A RESOURCE (no SOP, no customer persona, no sales process, no financial model, etc.): do NOT just move on. Offer to build it WITH them right here in the chat, and ask the first concrete question that starts building it.
+IF THEY LACK A RESOURCE (no SOP, no persona, no sales process, no financial model): do not just move on, offer to build it WITH them right here, and ask the first concrete question that starts building it.
 
-STYLE
-- Tight. Two to five sentences, then your one question. Never a wall of text. No big report yet.
-- One question per turn. Never stack multiple questions.
-- No em-dashes, use commas. No markdown headers, no bullet lists in the reply.
+STYLE: tight, no wall of text, no em-dashes (use commas), no markdown headers or bullet lists in the reply.
 
 OUTPUT: return STRICT JSON only, nothing before or after it:
 {
- "reply": "your chat message to the founder (acknowledge + one useful thing + ONE question)",
+ "reply": "your chat message (acknowledge + one useful thing + ONE question, or the sufficient-offer)",
  "model": {
    "objective": "", "why_now": "", "whats_at_stake": "",
    "blockers": [], "tried": [], "knowledge_level": "",
    "people": [], "resources": {}, "constraints": [],
    "fears": [], "unknowns": [], "leverage": [],
    "urgency": "", "impact": "", "timeline": ""
+ },
+ "reasoning": {
+   "uncertainty": {
+     "goal": {"score": 0, "note": "one short line on what is still unclear"},
+     "reality": {"score": 0, "note": ""}, "constraints": {"score": 0, "note": ""},
+     "risks": {"score": 0, "note": ""}, "resources": {"score": 0, "note": ""},
+     "knowledge_gap": {"score": 0, "note": ""}, "assumptions": {"score": 0, "note": ""},
+     "hidden_desire": {"score": 0, "note": ""}, "decision_impact": {"score": 0, "note": ""},
+     "missing_info": {"score": 0, "note": ""}
+   },
+   "biggest_uncertainty": "one of the ten dimension keys",
+   "assumptions_detected": ["an unsupported belief they are carrying"],
+   "hidden_desire": "what they seem to really want, one line, empty string if unknown",
+   "decision_type": "idea|validation|execution|scaling|crisis|other",
+   "reversible": true,
+   "expert_lenses": ["the 2-4 expert perspectives you applied"],
+   "question_target": "the dimension your question attacks",
+   "question_rationale": "why this question has the highest expected value right now, one line",
+   "sufficient": false,
+   "sufficiency_reason": "one line on why more questions would, or would not, still pay"
  }
 }
 RULES FOR "model": fill EVERY field you can infer from the WHOLE conversation so far and carry forward everything you already knew (never blank out something you previously learned). Use "" for unknown strings and [] for unknown lists. "resources" maps a resource name to what they have, for example {"sop": "none", "crm": "HubSpot", "financials": "basic P&L"}.
+RULES FOR "reasoning": every score must reflect your honest current uncertainty. question_rationale must explain the expected VALUE of the question, not restate it.
 """
 
 
-def journey_turn(objective, model, transcript_msgs, latest_user_msg):
-    """ONE LLM call. Returns (reply:str, new_model:dict, model_name:str, usage:dict)."""
+def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning=""):
+    """ONE LLM call = the full reasoning sweep + reply.
+    Returns (reply:str, new_model:dict, reasoning:dict|None, model_name:str, usage:dict)."""
     model_json = json.dumps(model or _empty_model(), ensure_ascii=False)
     convo = "\n".join(
         f"{'FOUNDER' if m.get('role') == 'user' else 'YOU'}: {m.get('text', '')}"
         for m in (transcript_msgs or [])[-12:]
     )
+    unc = (prev_reasoning or {}).get("uncertainty") or {}
+    prev_map = ", ".join(f"{d}:{unc[d].get('score', 100)}" for d in REASONING_DIMS if d in unc)
     prompt = (
         f"FOUNDER'S TOP-LEVEL OBJECTIVE (their very first answer): {objective or '(not yet stated)'}\n\n"
         f"YOUR CURRENT MODEL OF THEM (extend it, keep everything that is already here):\n{model_json}\n\n"
-        f"CONVERSATION SO FAR:\n{convo or '(none yet, this is the opening turn)'}\n\n"
+        + (f"YOUR PREVIOUS UNCERTAINTY MAP (0=known, 100=unknown): {prev_map}\n\n" if prev_map else "")
+        + (f"WHAT THIS FOUNDER HAS ACTUALLY DONE BEFORE (real outcomes from their ledger, build on what "
+           f"worked, never re-suggest what failed):\n{learning}\n\n" if learning else "")
+        + f"CONVERSATION SO FAR:\n{convo or '(none yet, this is the opening turn)'}\n\n"
         f"LATEST FROM THE FOUNDER: {latest_user_msg}\n\n"
-        f"Respond now exactly as specified (acknowledge, give one useful thing, ask ONE question) "
-        f"and return the updated model."
+        f"Run your full reasoning sweep now, then respond exactly as specified and return the updated "
+        f"model and reasoning."
     )
     system_blocks = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
     last_err = None
     for model_name in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            r = client().messages.create(model=model_name, max_tokens=1800, system=system_blocks,
+            r = client().messages.create(model=model_name, max_tokens=2600, system=system_blocks,
                                          messages=[{"role": "user", "content": prompt}])
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
             out = json.loads(_extract_json(txt))
@@ -201,37 +358,49 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg):
             if not reply:
                 raise ValueError("empty reply")
             new_model = out.get("model") if isinstance(out.get("model"), dict) else {}
+            reasoning = _normalize_reasoning(out.get("reasoning"))
             usage = {"input_tokens": int(getattr(r.usage, "input_tokens", 0) or 0),
                      "output_tokens": int(getattr(r.usage, "output_tokens", 0) or 0)}
-            return reply, new_model, model_name, usage
+            return reply, new_model, reasoning, model_name, usage
         except Exception as e:
             last_err = e
     raise RuntimeError(f"All models failed: {last_err}")
 
 
 # ----------------------------------------------------------------- direction + milestones (Phase 2)
-DIRECTION_SYSTEM = """You turn a founder's situation into a tight INITIAL DIRECTION, never a long report.
-Be concrete, use their own numbers, and name the single highest-leverage move. Be honest about the odds.
-No fluff, no em-dashes (use commas), no markdown.
+DIRECTION_SYSTEM = """You turn a founder's situation into a tight DECISION PACKAGE, never a long report.
+You have their situation model, the engine's uncertainty map and their real past outcomes. Be concrete,
+use their own numbers, name the single highest-leverage move, be honest about the odds, and make ONE
+clear call. No fluff, no em-dashes (use commas), no markdown.
 
 Return STRICT JSON only, nothing else:
 {
+ "decision": "the single clear call you are making for them, one sentence starting with a verb",
  "goal": "one sentence with a real number and a timeframe",
  "blockers": ["short blocker", "..."],
  "highest_leverage": "the one move that moves the needle most, one line",
  "success_probability": 70,
  "probability_rationale": "one honest line explaining that number",
  "risks": ["short risk", "..."],
- "missing_info": ["what would sharpen this most", "..."]
+ "missing_info": ["what would sharpen this most", "..."],
+ "trade_offs": ["Choosing this means accepting or giving up X", "..."],
+ "first_moves": ["a concrete execution step with a timeframe, 48 hours to 14 days", "..."],
+ "learning_loop": {
+   "signals": ["a measurable signal that shows this is working or failing", "..."],
+   "assumptions_to_test": ["an assumption that, if wrong, changes this recommendation", "..."]
+ }
 }
 success_probability is an integer 0 to 100, a ROUGH estimate from only what you know, never a promise.
-blockers, risks and missing_info each have 2 to 5 short items."""
+blockers, risks and missing_info each have 2 to 5 short items. trade_offs and first_moves each have
+2 to 4 items. learning_loop.signals has 2 to 4 items, learning_loop.assumptions_to_test has 2 to 3."""
 
-REFINE_SYSTEM = """You are REVISING an existing INITIAL DIRECTION using the founder's feedback.
+REFINE_SYSTEM = """You are REVISING an existing DECISION PACKAGE using the founder's feedback.
 Keep what they liked, change what they flagged, stay concrete and honest. No em-dashes, no markdown.
 Return the SAME JSON schema as before, fully updated:
-{"goal": "...", "blockers": ["..."], "highest_leverage": "...", "success_probability": 70,
- "probability_rationale": "...", "risks": ["..."], "missing_info": ["..."]}"""
+{"decision": "...", "goal": "...", "blockers": ["..."], "highest_leverage": "...",
+ "success_probability": 70, "probability_rationale": "...", "risks": ["..."], "missing_info": ["..."],
+ "trade_offs": ["..."], "first_moves": ["..."],
+ "learning_loop": {"signals": ["..."], "assumptions_to_test": ["..."]}}"""
 
 MILESTONE_SYSTEM = """You convert an APPROVED direction into 4 to 10 MEASURABLE milestones that take the
 founder from today to the goal. EVERY milestone must be measurable, with a concrete metric and a deadline.
@@ -280,7 +449,9 @@ def _build_direction(raw):
     except Exception:
         prob = 60
     prob = max(0, min(100, prob))
+    ll = raw.get("learning_loop") if isinstance(raw.get("learning_loop"), dict) else {}
     return {
+        "decision": _clean(str(raw.get("decision", ""))) or "",
         "goal": _clean(str(raw.get("goal", ""))) or "",
         "blockers": _norm_str_list(raw.get("blockers")),
         "highest_leverage": _clean(str(raw.get("highest_leverage", ""))) or "",
@@ -288,6 +459,10 @@ def _build_direction(raw):
         "probability_rationale": _clean(str(raw.get("probability_rationale", ""))) or "",
         "risks": _norm_str_list(raw.get("risks")),
         "missing_info": _norm_str_list(raw.get("missing_info")),
+        "trade_offs": _norm_str_list(raw.get("trade_offs"), 4),
+        "first_moves": _norm_str_list(raw.get("first_moves"), 4),
+        "learning_loop": {"signals": _norm_str_list(ll.get("signals"), 4),
+                          "assumptions_to_test": _norm_str_list(ll.get("assumptions_to_test"), 3)},
     }
 
 
@@ -496,7 +671,11 @@ def _iso(v):
 
 def _view(user, j):
     model = _merge_model(_empty_model(), j.get("model") or {})
-    conf = _confidence(model)
+    completeness = _confidence(model)
+    reasoning = j.get("reasoning") or None
+    dconf = _decision_confidence(reasoning)
+    conf = dconf if dconf is not None else completeness
+    sufficient = bool((reasoning or {}).get("sufficient"))
     return {
         "id": j["id"],
         "stage": j.get("stage", "clarity"),
@@ -508,13 +687,17 @@ def _view(user, j):
         "field_labels": FIELD_LABELS,
         "field_order": FIELD_ORDER,
         "confidence": conf,
+        "confidence_source": "reasoning" if dconf is not None else "completeness",
+        "completeness": completeness,
         "confidence_band": _confidence_band(conf),
-        "ready_for_direction": conf >= READY_THRESHOLD,
+        "ready_for_direction": sufficient or conf >= READY_THRESHOLD,
+        "reasoning": _public_reasoning(reasoning),
         "direction": j.get("direction") or None,
         "has_direction": bool(j.get("direction")),
         "milestones": [{"id": m.get("id"), "order": m.get("order"), "title": m.get("title", ""),
                         "success_metric": m.get("success_metric", ""), "target": m.get("target", ""),
-                        "deadline": m.get("deadline", ""), "status": m.get("status", "not_started")}
+                        "deadline": m.get("deadline", ""), "status": m.get("status", "not_started"),
+                        "result": m.get("result", "")}
                        for m in (j.get("milestones") or [])],
         "progress_pct": _milestone_progress(j.get("milestones") or []),
         "team": _team_view(j),
@@ -555,6 +738,7 @@ class FeedbackIn(BaseModel):
 
 class MilestoneStatusIn(BaseModel):
     status: str
+    result: str | None = Field(default=None, max_length=500)
 
 
 # ----------------------------------------------------------------- endpoints
@@ -572,15 +756,18 @@ def start(body: StartIn, user: dict = Depends(current_user)):
     objective = body.objective.strip()
 
     def produce():
-        reply, new_model, model_name, usage = journey_turn(objective, _empty_model(), [], objective)
-        return (reply, new_model), usage, model_name
+        reply, new_model, reasoning, model_name, usage = journey_turn(
+            objective, _empty_model(), [], objective,
+            prev_reasoning=None, learning=_learning_digest(user["id"], j))
+        return (reply, new_model, reasoning), usage, model_name
 
-    (reply, new_model), credits_after, cost = _run_billed(user, produce)
+    (reply, new_model, reasoning), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(_empty_model(), new_model)
     msgs = [{"role": "user", "text": objective, "at": now_utc()},
             {"role": "assistant", "text": reply, "at": now_utc()}]
     journeys_col.update_one({"id": j["id"]}, {"$set": {
-        "objective": objective, "model": merged, "messages": msgs, "updated_at": now_utc()}})
+        "objective": objective, "model": merged, "messages": msgs,
+        "reasoning": reasoning, "updated_at": now_utc()}})
     j = journeys_col.find_one({"id": j["id"]})
     user["credits"] = credits_after
     out = _view(user, j)
@@ -597,17 +784,21 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
     transcript = j.get("messages", [])
     objective = j.get("objective", "")
     current_model = j.get("model") or _empty_model()
+    prev_reasoning = j.get("reasoning") or None
 
     def produce():
-        reply, new_model, model_name, usage = journey_turn(objective, current_model, transcript, msg)
-        return (reply, new_model), usage, model_name
+        reply, new_model, reasoning, model_name, usage = journey_turn(
+            objective, current_model, transcript, msg,
+            prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j))
+        return (reply, new_model, reasoning), usage, model_name
 
-    (reply, new_model), credits_after, cost = _run_billed(user, produce)
+    (reply, new_model, reasoning), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(current_model, new_model)
     new_msgs = transcript + [{"role": "user", "text": msg, "at": now_utc()},
                              {"role": "assistant", "text": reply, "at": now_utc()}]
     journeys_col.update_one({"id": j["id"]}, {"$set": {
-        "model": merged, "messages": new_msgs, "updated_at": now_utc()}})
+        "model": merged, "messages": new_msgs,
+        "reasoning": reasoning or prev_reasoning, "updated_at": now_utc()}})
     j = journeys_col.find_one({"id": j["id"]})
     user["credits"] = credits_after
     out = _view(user, j)
@@ -619,7 +810,7 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
 def reset(user: dict = Depends(current_user)):
     journeys_col.update_one({"user_id": user["id"]}, {"$set": {
         "stage": "clarity", "objective": "", "model": _empty_model(),
-        "messages": [], "direction": None, "milestones": [],
+        "messages": [], "reasoning": None, "direction": None, "milestones": [],
         "team": None, "team_offer_dismissed": False, "updated_at": now_utc()}}, upsert=False)
     return _view(user, _get_or_create(user["id"]))
 
@@ -635,9 +826,15 @@ def make_direction(user: dict = Depends(current_user)):
     model = j.get("model") or _empty_model()
 
     def produce():
+        reasoning = j.get("reasoning") or {}
+        learning = _learning_digest(user["id"], j)
         prompt = (f"FOUNDER MODEL (everything understood so far):\n{json.dumps(model, ensure_ascii=False)}\n\n"
-                  f"Their stated objective: {j.get('objective', '')}\n\nProduce the initial direction now.")
-        raw, model_name, usage = _llm_json(DIRECTION_SYSTEM, prompt)
+                  f"ENGINE REASONING STATE (uncertainty 0-100 per dimension, assumptions, hidden desire):\n"
+                  f"{json.dumps(reasoning, ensure_ascii=False)}\n\n"
+                  + (f"THEIR REAL PAST OUTCOMES (build on what worked, avoid what failed):\n{learning}\n\n"
+                     if learning else "")
+                  + f"Their stated objective: {j.get('objective', '')}\n\nProduce the decision package now.")
+        raw, model_name, usage = _llm_json(DIRECTION_SYSTEM, prompt, max_tokens=2000)
         return _build_direction(raw), usage, model_name
 
     direction, credits_after, cost = _run_billed(user, produce)
@@ -660,10 +857,12 @@ def refine_direction_ep(body: FeedbackIn, user: dict = Depends(current_user)):
     current = j.get("direction")
 
     def produce():
+        learning = _learning_digest(user["id"], j)
         prompt = (f"CURRENT DIRECTION:\n{json.dumps(current, ensure_ascii=False)}\n\n"
                   f"FOUNDER MODEL:\n{json.dumps(model, ensure_ascii=False)}\n\n"
-                  f"FOUNDER FEEDBACK: {body.feedback.strip()}\n\nReturn the revised direction.")
-        raw, model_name, usage = _llm_json(REFINE_SYSTEM, prompt)
+                  + (f"THEIR REAL PAST OUTCOMES:\n{learning}\n\n" if learning else "")
+                  + f"FOUNDER FEEDBACK: {body.feedback.strip()}\n\nReturn the revised decision package.")
+        raw, model_name, usage = _llm_json(REFINE_SYSTEM, prompt, max_tokens=2000)
         return _build_direction(raw), usage, model_name
 
     direction, credits_after, cost = _run_billed(user, produce)
@@ -707,7 +906,8 @@ def approve_direction(user: dict = Depends(current_user)):
 
 @router.post("/milestones/{milestone_id}/status")
 def set_milestone_status(milestone_id: str, body: MilestoneStatusIn, user: dict = Depends(current_user)):
-    """Update a single milestone's status (free). Drives progress_pct (goal -> progress tracker)."""
+    """Update a single milestone's status (free). Drives progress_pct (goal -> progress tracker).
+    Optional `result` (what actually happened) feeds the Layer-2 learning flywheel."""
     status = (body.status or "").strip()
     if status not in MILESTONE_STATUSES:
         raise HTTPException(422, f"status must be one of {', '.join(MILESTONE_STATUSES)}")
@@ -717,6 +917,10 @@ def set_milestone_status(milestone_id: str, body: MilestoneStatusIn, user: dict 
     for m in ms:
         if m.get("id") == milestone_id:
             m["status"] = status
+            result = (body.result or "").strip()
+            if result:
+                m["result"] = _clean(result)
+                m["result_at"] = now_utc()
             found = True
             break
     if not found:

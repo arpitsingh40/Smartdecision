@@ -40,6 +40,8 @@ export default function AuthPage() {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [signupCredits, setSignupCredits] = useState(null);
+  // Layer 3 virality: referred signups carry ?ref=<code>, both sides earn bonus credits
+  const [refCode] = useState(() => new URLSearchParams(window.location.search).get('ref') || '');
 
   useEffect(() => {
     api.get('/config').then(r => setSignupCredits(r.data?.signup_credits)).catch(() => {});
@@ -51,7 +53,9 @@ export default function AuthPage() {
     setBusy(true);
     try {
       const path = mode === 'login' ? '/auth/login' : '/auth/signup';
-      const payload = mode === 'login' ? { email, password } : { email, password, name };
+      const payload = mode === 'login'
+        ? { email, password }
+        : { email, password, name, ...(refCode ? { ref: refCode } : {}) };
       const r = await api.post(path, payload);
       login(r.data.token, r.data.user);
     } catch (err) {
@@ -182,6 +186,12 @@ export default function AuthPage() {
                   <span>Pick up the thread you left.</span>
                 )}
               </p>
+
+              {refCode && isSignup ? (
+                <div className="relative mb-4 rounded-xl border border-emerald-300/60 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="referral-banner">
+                  A founder invited you. You will both get bonus credits when you sign up.
+                </div>
+              ) : null}
 
               <form onSubmit={submit} className="relative space-y-3">
                 {isSignup && (

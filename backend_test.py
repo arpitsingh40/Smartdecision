@@ -1,620 +1,560 @@
-#!/usr/bin/env python3
-"""
-Backend test for Founder Journey Phase 2 endpoints.
-Tests: /api/journey/direction, /direction/refine, /direction/approve, /milestones/{id}/status
+"""Backend test for SmartDecigen 3-layer batch build (Layer 1, 2, 3).
 
-STRICT LLM BUDGET: <= 5 LLM-spending calls total
+CRITICAL: ANTHROPIC_API_KEY is a PLACEHOLDER (environment was reset).
+NO LLM call can succeed. Every LLM endpoint must return 502 AND fully refund credits.
+LLM budget is ZERO.
+
+Test scenarios:
+(A) Journey view shape: fresh signup -> GET /api/journey
+(B) 502+refund: POST /api/journey/start -> 502 and credits UNCHANGED (full refund)
+(C) Milestone result capture: seed journey doc, test milestone status updates
+(D) Referral: GET /api/referral, signup with ref code, invalid ref silently ignored
+(E) Decision Cards: share direction, public GET, opinions, delete
+(F) POST /api/share/direction for fresh user with no direction -> 400
 """
-import requests
-import json
-import time
+import os
 import sys
+import json
+import uuid
+import requests
+from datetime import datetime, timezone
+from pymongo import MongoClient
 
-# Base URL from frontend/.env
-BASE_URL = "https://founder-reasoning.preview.emergentagent.com/api"
+# Backend URL from frontend/.env
+BACKEND_URL = "https://a60d8ec6-5fe4-4fd9-b382-0edaea73b42b.preview.emergentagent.com/api"
 
-# Track LLM calls
-llm_call_count = 0
-max_llm_calls = 5
+# Test credentials from /app/memory/test_credentials.md
+FOUNDER_EMAIL = "ceo@smartdecigen.com"
+FOUNDER_PASSWORD = "FounderOS@2026"
+
+# MongoDB connection
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+mongo = MongoClient(MONGO_URL)
+db = mongo["test_database"]
+users_col = db.users
+journeys_col = db.journeys
+
+def now_utc():
+    return datetime.now(timezone.utc)
 
 def log(msg):
     print(f"[TEST] {msg}")
 
-def signup_fresh_user():
-    """Create a fresh signup user (50 credits)."""
-    email = f"journey_phase2_{int(time.time())}@cloudkitchen.com"
-    password = "TestJourney@2026"
-    
-    resp = requests.post(f"{BASE_URL}/auth/signup", json={
-        "email": email,
-        "password": password,
-        "name": "Pune Kitchen Owner"
-    })
-    
-    if resp.status_code != 200:
-        log(f"❌ Signup failed: {resp.status_code} {resp.text}")
-        sys.exit(1)
-    
-    data = resp.json()
-    token = data["token"]
-    credits = data["user"]["credits"]
-    
-    log(f"✅ Fresh signup: {email}, credits={credits}")
-    
-    # Save credentials to test_credentials.md
-    with open("/app/memory/test_credentials.md", "a") as f:
-        f.write(f"\n## Journey Phase 2 Test User\n")
-        f.write(f"- Email: {email}\n")
-        f.write(f"- Password: {password}\n")
-        f.write(f"- Created: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-    
-    return token, email, credits
+def signup_user(email, password, name="", ref=""):
+    """Create a fresh user account."""
+    payload = {"email": email, "password": password, "name": name}
+    if ref:
+        payload["ref"] = ref
+    r = requests.post(f"{BACKEND_URL}/auth/signup", json=payload)
+    return r
 
-def get_credits(token):
-    """Get current credit balance."""
-    resp = requests.get(f"{BASE_URL}/journey", headers={"Authorization": f"Bearer {token}"})
-    if resp.status_code == 200:
-        return resp.json().get("credits", 0)
+def login_user(email, password):
+    """Login and return token."""
+    r = requests.post(f"{BACKEND_URL}/auth/login", json={"email": email, "password": password})
+    if r.status_code == 200:
+        return r.json()["token"]
     return None
 
-def test_setup(token):
-    """SETUP (2 LLM): start journey + message."""
-    global llm_call_count
-    
-    log("\n=== SETUP PHASE (2 LLM calls) ===")
-    
-    # LLM CALL #1: POST /api/journey/start
-    log("LLM CALL #1: POST /api/journey/start")
-    credits_before = get_credits(token)
-    
-    resp = requests.post(f"{BASE_URL}/journey/start", 
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "objective": "Grow my Pune cloud kitchen from 6L to 25L monthly in 12 months, I run all ops myself, no marketing, no SOPs, cash is tight."
-        })
-    
-    if resp.status_code != 200:
-        log(f"❌ /journey/start failed: {resp.status_code} {resp.text}")
-        return False
-    
-    data = resp.json()
-    llm_call_count += 1
-    credits_after = data.get("credits", 0)
-    cost = data.get("cost", 0)
-    
-    log(f"✅ Journey started: cost={cost}, credits {credits_before} -> {credits_after}")
-    log(f"   Stage: {data.get('stage')}, Started: {data.get('started')}, Confidence: {data.get('confidence')}")
-    
-    # LLM CALL #2: POST /api/journey/message
-    log("\nLLM CALL #2: POST /api/journey/message")
-    credits_before = credits_after
-    
-    resp = requests.post(f"{BASE_URL}/journey/message",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "message": "I do about 700 orders a month at ~350 average order value, mostly on Swiggy and Zomato, and I'm scared to spend on ads."
-        })
-    
-    if resp.status_code != 200:
-        log(f"❌ /journey/message failed: {resp.status_code} {resp.text}")
-        return False
-    
-    data = resp.json()
-    llm_call_count += 1
-    credits_after = data.get("credits", 0)
-    cost = data.get("cost", 0)
-    
-    log(f"✅ Message sent: cost={cost}, credits {credits_before} -> {credits_after}")
-    log(f"   Confidence: {data.get('confidence')}, Messages: {len(data.get('messages', []))}")
-    
-    log(f"\n📊 LLM calls used: {llm_call_count}/{max_llm_calls}")
-    return True
+def get_user_credits(token):
+    """Get current user credits."""
+    r = requests.get(f"{BACKEND_URL}/auth/me", headers={"Authorization": f"Bearer {token}"})
+    if r.status_code == 200:
+        return r.json()["credits"]
+    return None
 
-def test_direction(token):
-    """DIRECTION (1 LLM): POST /api/journey/direction."""
-    global llm_call_count
+# ============================================================================
+# TEST (A): Journey view shape
+# ============================================================================
+def test_a_journey_view_shape():
+    log("=" * 80)
+    log("TEST (A): Journey view shape - fresh signup -> GET /api/journey")
+    log("=" * 80)
     
-    log("\n=== DIRECTION PHASE (1 LLM call) ===")
-    log("LLM CALL #3: POST /api/journey/direction")
+    # Fresh signup (100 credits)
+    email = f"journey_test_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email, "Test@2026", name="Journey Tester")
+    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
+    data = r.json()
+    token = data["token"]
+    user_data = data["user"]
+    assert user_data["credits"] == 100, f"Expected 100 credits, got {user_data['credits']}"
+    log(f"✓ Fresh signup: {email}, credits={user_data['credits']}")
     
-    credits_before = get_credits(token)
+    # GET /api/journey
+    r = requests.get(f"{BACKEND_URL}/journey", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, f"GET /journey failed: {r.status_code} {r.text}"
+    j = r.json()
     
-    resp = requests.post(f"{BASE_URL}/journey/direction",
-        headers={"Authorization": f"Bearer {token}"})
+    # CRITICAL ASSERTIONS
+    assert j["reasoning"] is None, f"Expected reasoning=null, got {j['reasoning']}"
+    assert j["confidence"] == 0, f"Expected confidence=0, got {j['confidence']}"
+    assert j["confidence_source"] == "completeness", f"Expected confidence_source='completeness', got {j['confidence_source']}"
+    assert j["completeness"] == 0, f"Expected completeness=0, got {j['completeness']}"
+    assert j["ready_for_direction"] is False, f"Expected ready_for_direction=false, got {j['ready_for_direction']}"
+    assert j["started"] is False, f"Expected started=false, got {j['started']}"
     
-    if resp.status_code != 200:
-        log(f"❌ /journey/direction failed: {resp.status_code} {resp.text}")
-        return False, None
-    
-    data = resp.json()
-    llm_call_count += 1
-    credits_after = data.get("credits", 0)
-    cost = data.get("cost", 0)
-    
-    log(f"✅ Direction created: cost={cost}, credits {credits_before} -> {credits_after}")
-    
-    # Validate response structure
-    direction = data.get("direction")
-    if not direction:
-        log(f"❌ No direction in response")
-        return False, None
-    
-    # Check all required fields
-    required_fields = ["goal", "blockers", "highest_leverage", "success_probability", 
-                      "probability_rationale", "risks", "missing_info"]
-    
-    missing = [f for f in required_fields if f not in direction]
-    if missing:
-        log(f"❌ Missing fields in direction: {missing}")
-        return False, None
-    
-    # Validate field types and values
-    goal = direction.get("goal", "")
-    blockers = direction.get("blockers", [])
-    highest_leverage = direction.get("highest_leverage", "")
-    success_probability = direction.get("success_probability")
-    probability_rationale = direction.get("probability_rationale", "")
-    risks = direction.get("risks", [])
-    missing_info = direction.get("missing_info", [])
-    
-    log(f"   Goal: {goal[:80]}...")
-    log(f"   Blockers: {len(blockers)} items")
-    log(f"   Highest leverage: {highest_leverage[:60]}...")
-    log(f"   Success probability: {success_probability}%")
-    log(f"   Probability rationale: {probability_rationale[:60]}...")
-    log(f"   Risks: {len(risks)} items")
-    log(f"   Missing info: {len(missing_info)} items")
-    
-    # Assertions
-    errors = []
-    
-    if not goal:
-        errors.append("goal is empty")
-    
-    if not isinstance(blockers, list) or len(blockers) < 2 or len(blockers) > 5:
-        errors.append(f"blockers must be list of 2-5 items, got {len(blockers)}")
-    
-    if not highest_leverage:
-        errors.append("highest_leverage is empty")
-    
-    if not isinstance(success_probability, int) or success_probability < 0 or success_probability > 100:
-        errors.append(f"success_probability must be int 0-100, got {success_probability}")
-    
-    if not probability_rationale:
-        errors.append("probability_rationale is empty")
-    
-    if not isinstance(risks, list) or len(risks) < 2 or len(risks) > 5:
-        errors.append(f"risks must be list of 2-5 items, got {len(risks)}")
-    
-    if not isinstance(missing_info, list) or len(missing_info) < 2 or len(missing_info) > 5:
-        errors.append(f"missing_info must be list of 2-5 items, got {len(missing_info)}")
-    
-    # Check stage and has_direction
-    stage = data.get("stage")
-    has_direction = data.get("has_direction")
-    
-    if stage != "refine":
-        errors.append(f"stage should be 'refine', got '{stage}'")
-    
-    if not has_direction:
-        errors.append("has_direction should be true")
-    
-    # Check cost >= 1
-    if cost < 1:
-        errors.append(f"cost should be >= 1, got {cost}")
-    
-    # Check credits dropped
-    if credits_after >= credits_before:
-        errors.append(f"credits should have dropped, {credits_before} -> {credits_after}")
-    
-    if errors:
-        log(f"❌ Direction validation errors:")
-        for err in errors:
-            log(f"   - {err}")
-        return False, None
-    
-    log(f"✅ All direction assertions passed")
-    log(f"\n📊 LLM calls used: {llm_call_count}/{max_llm_calls}")
-    
-    return True, data
+    log(f"✓ GET /api/journey -> 200 with reasoning=null, confidence=0, confidence_source='completeness', completeness=0, ready_for_direction=false, started=false")
+    log(f"  Full response keys: {list(j.keys())}")
+    log("")
+    return token, email
 
-def test_refine(token):
-    """REFINE (1 LLM): POST /api/journey/direction/refine."""
-    global llm_call_count
+# ============================================================================
+# TEST (B): 502+refund guarantee
+# ============================================================================
+def test_b_502_refund():
+    log("=" * 80)
+    log("TEST (B): 502+refund - LLM endpoints return 502 and FULLY refund credits")
+    log("=" * 80)
     
-    log("\n=== REFINE PHASE (1 LLM call) ===")
-    log("LLM CALL #4: POST /api/journey/direction/refine")
+    # Fresh signup
+    email = f"refund_test_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email, "Test@2026")
+    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
+    token = r.json()["token"]
+    credits_before = r.json()["user"]["credits"]
+    assert credits_before == 100, f"Expected 100 credits, got {credits_before}"
+    log(f"✓ Fresh signup: {email}, credits={credits_before}")
     
-    credits_before = get_credits(token)
+    # TEST B1: POST /api/journey/start with objective -> 502 and credits UNCHANGED
+    log("TEST B1: POST /api/journey/start -> 502 and credits UNCHANGED (full refund)")
+    r = requests.post(f"{BACKEND_URL}/journey/start", 
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"objective": "Grow my bakery to 12L"})
+    assert r.status_code == 502, f"Expected 502, got {r.status_code} {r.text}"
+    log(f"✓ POST /api/journey/start -> 502 (expected, ANTHROPIC_API_KEY is placeholder)")
     
-    resp = requests.post(f"{BASE_URL}/journey/direction/refine",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "feedback": "Margins are tighter than you think, closer to 12 percent, and I genuinely cannot hire for at least 3 months."
-        })
+    # Check credits UNCHANGED
+    credits_after = get_user_credits(token)
+    assert credits_after == credits_before, f"REFUND FAILED: credits before={credits_before}, after={credits_after}"
+    log(f"✓ Credits UNCHANGED: {credits_before} -> {credits_after} (full refund guarantee working)")
     
-    if resp.status_code != 200:
-        log(f"❌ /journey/direction/refine failed: {resp.status_code} {resp.text}")
-        return False, None
+    # TEST B2: POST /api/journey/message before start -> 400
+    log("TEST B2: POST /api/journey/message before start -> 400")
+    r = requests.post(f"{BACKEND_URL}/journey/message",
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"message": "test message"})
+    assert r.status_code == 400, f"Expected 400, got {r.status_code} {r.text}"
+    log(f"✓ POST /api/journey/message before start -> 400")
     
-    data = resp.json()
-    llm_call_count += 1
-    credits_after = data.get("credits", 0)
-    cost = data.get("cost", 0)
-    
-    log(f"✅ Direction refined: cost={cost}, credits {credits_before} -> {credits_after}")
-    
-    # Validate response
-    direction = data.get("direction")
-    if not direction:
-        log(f"❌ No direction in response")
-        return False, None
-    
-    # Check all required fields still present
-    required_fields = ["goal", "blockers", "highest_leverage", "success_probability", 
-                      "probability_rationale", "risks", "missing_info"]
-    
-    missing = [f for f in required_fields if f not in direction]
-    if missing:
-        log(f"❌ Missing fields after refine: {missing}")
-        return False, None
-    
-    # Check stage stays "refine"
-    stage = data.get("stage")
-    if stage != "refine":
-        log(f"❌ Stage should stay 'refine', got '{stage}'")
-        return False, None
-    
-    # Check credits dropped again
-    if credits_after >= credits_before:
-        log(f"❌ Credits should have dropped, {credits_before} -> {credits_after}")
-        return False, None
-    
-    log(f"✅ All refine assertions passed")
-    log(f"   Stage: {stage}, Cost: {cost}")
-    log(f"\n📊 LLM calls used: {llm_call_count}/{max_llm_calls}")
-    
-    return True, data
+    # TEST B3: POST /api/journey/start with empty objective -> 422
+    log("TEST B3: POST /api/journey/start with empty objective -> 422")
+    r = requests.post(f"{BACKEND_URL}/journey/start",
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"objective": ""})
+    assert r.status_code == 422, f"Expected 422, got {r.status_code} {r.text}"
+    log(f"✓ POST /api/journey/start with empty objective -> 422")
+    log("")
 
-def test_approve(token):
-    """APPROVE (1 LLM): POST /api/journey/direction/approve."""
-    global llm_call_count
+# ============================================================================
+# TEST (C): Milestone result capture
+# ============================================================================
+def test_c_milestone_result():
+    log("=" * 80)
+    log("TEST (C): Milestone result capture - seed journey doc, test milestone status")
+    log("=" * 80)
     
-    log("\n=== APPROVE PHASE (1 LLM call) ===")
-    log("LLM CALL #5: POST /api/journey/direction/approve")
+    # Fresh signup
+    email = f"milestone_test_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email, "Test@2026")
+    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
+    token = r.json()["token"]
+    user_id = r.json()["user"]["id"]
+    log(f"✓ Fresh signup: {email}, user_id={user_id}")
     
-    credits_before = get_credits(token)
+    # Seed a journey doc directly in Mongo with milestones
+    journey_id = str(uuid.uuid4())
+    milestone_id = "m1"
+    journey_doc = {
+        "id": journey_id,
+        "user_id": user_id,
+        "stage": "milestones",
+        "objective": "Test objective",
+        "model": {},
+        "messages": [{"role": "user", "text": "test", "at": now_utc()}],
+        "milestones": [{
+            "id": milestone_id,
+            "order": 1,
+            "title": "Test milestone",
+            "success_metric": "",
+            "target": "",
+            "deadline": "",
+            "status": "not_started"
+        }],
+        "created_at": now_utc(),
+        "updated_at": now_utc()
+    }
     
-    resp = requests.post(f"{BASE_URL}/journey/direction/approve",
-        headers={"Authorization": f"Bearer {token}"})
+    # Check if user already has a journey (unique index on user_id)
+    existing = journeys_col.find_one({"user_id": user_id})
+    if existing:
+        log(f"  User already has journey, updating with $set")
+        journeys_col.update_one({"user_id": user_id}, {"$set": journey_doc})
+    else:
+        log(f"  Inserting new journey doc")
+        journeys_col.insert_one(journey_doc)
+    log(f"✓ Seeded journey doc with milestone_id={milestone_id}")
     
-    if resp.status_code != 200:
-        log(f"❌ /journey/direction/approve failed: {resp.status_code} {resp.text}")
-        return False, None
+    # TEST C1: POST /api/journey/milestones/{id}/status with status='done' and result
+    log("TEST C1: POST milestone status='done' with result")
+    r = requests.post(f"{BACKEND_URL}/journey/milestones/{milestone_id}/status",
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"status": "done", "result": "Hired 2 reps"})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    j = r.json()
+    milestone = next((m for m in j["milestones"] if m["id"] == milestone_id), None)
+    assert milestone is not None, "Milestone not found in response"
+    assert milestone["result"] == "Hired 2 reps", f"Expected result='Hired 2 reps', got {milestone['result']}"
+    assert milestone["status"] == "done", f"Expected status='done', got {milestone['status']}"
+    assert j["progress_pct"] == 100, f"Expected progress_pct=100, got {j['progress_pct']}"
+    log(f"✓ Milestone status='done', result='Hired 2 reps', progress_pct=100")
     
-    data = resp.json()
-    llm_call_count += 1
-    credits_after = data.get("credits", 0)
-    cost = data.get("cost", 0)
+    # TEST C2: POST status='in_progress' (no result field) -> result PRESERVED
+    log("TEST C2: POST status='in_progress' (no result) -> result PRESERVED")
+    r = requests.post(f"{BACKEND_URL}/journey/milestones/{milestone_id}/status",
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"status": "in_progress"})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    j = r.json()
+    milestone = next((m for m in j["milestones"] if m["id"] == milestone_id), None)
+    assert milestone["result"] == "Hired 2 reps", f"Result NOT preserved: got {milestone['result']}"
+    assert milestone["status"] == "in_progress", f"Expected status='in_progress', got {milestone['status']}"
+    assert j["progress_pct"] == 0, f"Expected progress_pct=0, got {j['progress_pct']}"
+    log(f"✓ Result PRESERVED: 'Hired 2 reps', status='in_progress', progress_pct=0")
     
-    log(f"✅ Direction approved: cost={cost}, credits {credits_before} -> {credits_after}")
+    # TEST C3: POST status='bogus' -> 422
+    log("TEST C3: POST status='bogus' -> 422")
+    r = requests.post(f"{BACKEND_URL}/journey/milestones/{milestone_id}/status",
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"status": "bogus"})
+    assert r.status_code == 422, f"Expected 422, got {r.status_code} {r.text}"
+    log(f"✓ Invalid status -> 422")
     
-    # Validate milestones
-    milestones = data.get("milestones", [])
-    if not milestones:
-        log(f"❌ No milestones in response")
-        return False, None
+    # TEST C4: Unknown milestone id -> 404
+    log("TEST C4: Unknown milestone id -> 404")
+    r = requests.post(f"{BACKEND_URL}/journey/milestones/unknown-id/status",
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"status": "done"})
+    assert r.status_code == 404, f"Expected 404, got {r.status_code} {r.text}"
+    log(f"✓ Unknown milestone id -> 404")
     
-    milestone_count = len(milestones)
-    log(f"   Milestones: {milestone_count} items")
-    
-    # Check milestone count (4-10)
-    if milestone_count < 4 or milestone_count > 10:
-        log(f"❌ Milestone count should be 4-10, got {milestone_count}")
-        return False, None
-    
-    # Validate each milestone structure
-    required_milestone_fields = ["id", "order", "title", "success_metric", "target", "deadline", "status"]
-    
-    for i, m in enumerate(milestones):
-        missing = [f for f in required_milestone_fields if f not in m]
-        if missing:
-            log(f"❌ Milestone {i+1} missing fields: {missing}")
-            return False, None
-        
-        # Check status is "not_started"
-        if m.get("status") != "not_started":
-            log(f"❌ Milestone {i+1} status should be 'not_started', got '{m.get('status')}'")
-            return False, None
-        
-        log(f"   M{i+1}: {m.get('title')[:50]}... (status={m.get('status')})")
-    
-    # Check stage is "milestones"
-    stage = data.get("stage")
-    if stage != "milestones":
-        log(f"❌ Stage should be 'milestones', got '{stage}'")
-        return False, None
-    
-    # Check unlocks.milestones is true
-    unlocks = data.get("unlocks", {})
-    if not unlocks.get("milestones"):
-        log(f"❌ unlocks.milestones should be true")
-        return False, None
-    
-    # Check progress_pct is 0
-    progress_pct = data.get("progress_pct", -1)
-    if progress_pct != 0:
-        log(f"❌ progress_pct should be 0, got {progress_pct}")
-        return False, None
-    
-    # Check cost >= 1
-    if cost < 1:
-        log(f"❌ cost should be >= 1, got {cost}")
-        return False, None
-    
-    log(f"✅ All approve assertions passed")
-    log(f"   Stage: {stage}, Unlocks.milestones: {unlocks.get('milestones')}, Progress: {progress_pct}%")
-    log(f"\n📊 LLM calls used: {llm_call_count}/{max_llm_calls}")
-    
-    return True, data
+    # TEST C5: result of 501 chars -> 422
+    log("TEST C5: result of 501 chars -> 422")
+    long_result = "x" * 501
+    r = requests.post(f"{BACKEND_URL}/journey/milestones/{milestone_id}/status",
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"status": "done", "result": long_result})
+    assert r.status_code == 422, f"Expected 422, got {r.status_code} {r.text}"
+    log(f"✓ result of 501 chars -> 422")
+    log("")
 
-def test_free_milestone_status(token, milestones):
-    """FREE TESTS: milestone status updates."""
-    log("\n=== FREE TESTS: Milestone Status (0 LLM) ===")
+# ============================================================================
+# TEST (D): Referral
+# ============================================================================
+def test_d_referral():
+    log("=" * 80)
+    log("TEST (D): Referral - stable code, signup with ref, invalid ref ignored")
+    log("=" * 80)
     
-    if not milestones or len(milestones) == 0:
-        log(f"❌ No milestones to test")
-        return False
+    # User1: GET /api/referral
+    email1 = f"referrer_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email1, "Test@2026")
+    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
+    token1 = r.json()["token"]
+    user1_id = r.json()["user"]["id"]
+    log(f"✓ User1 signup: {email1}")
     
-    first_milestone = milestones[0]
-    milestone_id = first_milestone.get("id")
-    total_milestones = len(milestones)
+    # GET /api/referral
+    r = requests.get(f"{BACKEND_URL}/referral", headers={"Authorization": f"Bearer {token1}"})
+    assert r.status_code == 200, f"GET /referral failed: {r.status_code} {r.text}"
+    ref_data = r.json()
+    code = ref_data["code"]
+    assert len(code) == 8, f"Expected 8-char code, got {len(code)}"
+    assert ref_data["path"] == f"/auth?ref={code}", f"Expected path=/auth?ref={code}, got {ref_data['path']}"
+    assert ref_data["invited_count"] == 0, f"Expected invited_count=0, got {ref_data['invited_count']}"
+    assert ref_data["credits_earned"] == 0, f"Expected credits_earned=0, got {ref_data['credits_earned']}"
+    assert ref_data["bonus"] == 25, f"Expected bonus=25, got {ref_data['bonus']}"
+    log(f"✓ GET /api/referral -> code={code}, invited_count=0, credits_earned=0, bonus=25")
     
-    log(f"Testing with milestone: {first_milestone.get('title')[:50]}...")
+    # Call again -> SAME code (stable)
+    r = requests.get(f"{BACKEND_URL}/referral", headers={"Authorization": f"Bearer {token1}"})
+    assert r.status_code == 200, f"GET /referral failed: {r.status_code} {r.text}"
+    code2 = r.json()["code"]
+    assert code2 == code, f"Code NOT stable: first={code}, second={code2}"
+    log(f"✓ GET /api/referral again -> SAME code (stable)")
     
-    # TEST 1: Set status to "done"
-    log("\nTEST 1: POST /milestones/{id}/status with status='done'")
+    # User2: Signup with ref code
+    email2 = f"referred_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email2, "Test@2026", ref=code)
+    assert r.status_code == 200, f"Signup with ref failed: {r.status_code} {r.text}"
+    user2_credits = r.json()["user"]["credits"]
+    assert user2_credits == 125, f"Expected 125 credits (100+25), got {user2_credits}"
+    log(f"✓ User2 signup with ref={code} -> credits=125 (100+25 bonus)")
     
-    resp = requests.post(f"{BASE_URL}/journey/milestones/{milestone_id}/status",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"status": "done"})
+    # User1: Check credits increased by 25
+    user1_credits = get_user_credits(token1)
+    assert user1_credits == 125, f"Expected 125 credits (100+25), got {user1_credits}"
+    log(f"✓ User1 credits increased by 25 -> {user1_credits}")
     
-    if resp.status_code != 200:
-        log(f"❌ Failed: {resp.status_code} {resp.text}")
-        return False
+    # User1: GET /api/referral -> invited_count=1, credits_earned=25
+    r = requests.get(f"{BACKEND_URL}/referral", headers={"Authorization": f"Bearer {token1}"})
+    assert r.status_code == 200, f"GET /referral failed: {r.status_code} {r.text}"
+    ref_data = r.json()
+    assert ref_data["invited_count"] == 1, f"Expected invited_count=1, got {ref_data['invited_count']}"
+    assert ref_data["credits_earned"] == 25, f"Expected credits_earned=25, got {ref_data['credits_earned']}"
+    log(f"✓ GET /api/referral -> invited_count=1, credits_earned=25")
     
-    data = resp.json()
-    progress_pct = data.get("progress_pct", 0)
-    expected_progress = round(100 / total_milestones)
-    
-    # Find the milestone in response
-    updated_milestone = None
-    for m in data.get("milestones", []):
-        if m.get("id") == milestone_id:
-            updated_milestone = m
-            break
-    
-    if not updated_milestone:
-        log(f"❌ Milestone not found in response")
-        return False
-    
-    if updated_milestone.get("status") != "done":
-        log(f"❌ Milestone status should be 'done', got '{updated_milestone.get('status')}'")
-        return False
-    
-    if progress_pct <= 0:
-        log(f"❌ progress_pct should be > 0, got {progress_pct}")
-        return False
-    
-    log(f"✅ Status set to 'done': progress_pct={progress_pct}% (expected ~{expected_progress}%)")
-    
-    # TEST 2: Set status to "in_progress"
-    log("\nTEST 2: POST /milestones/{id}/status with status='in_progress'")
-    
-    resp = requests.post(f"{BASE_URL}/journey/milestones/{milestone_id}/status",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"status": "in_progress"})
-    
-    if resp.status_code != 200:
-        log(f"❌ Failed: {resp.status_code} {resp.text}")
-        return False
-    
-    data = resp.json()
-    progress_pct = data.get("progress_pct", -1)
-    
-    # Find the milestone
-    updated_milestone = None
-    for m in data.get("milestones", []):
-        if m.get("id") == milestone_id:
-            updated_milestone = m
-            break
-    
-    if updated_milestone.get("status") != "in_progress":
-        log(f"❌ Milestone status should be 'in_progress', got '{updated_milestone.get('status')}'")
-        return False
-    
-    if progress_pct != 0:
-        log(f"❌ progress_pct should be 0 (no done milestones), got {progress_pct}")
-        return False
-    
-    log(f"✅ Status set to 'in_progress': progress_pct={progress_pct}%")
-    
-    # TEST 3: Invalid status "bogus"
-    log("\nTEST 3: POST /milestones/{id}/status with status='bogus' (should 422)")
-    
-    resp = requests.post(f"{BASE_URL}/journey/milestones/{milestone_id}/status",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"status": "bogus"})
-    
-    if resp.status_code != 422:
-        log(f"❌ Should return 422, got {resp.status_code}")
-        return False
-    
-    log(f"✅ Invalid status correctly rejected with 422")
-    
-    # TEST 4: Non-existent milestone ID
-    log("\nTEST 4: POST /milestones/does-not-exist/status (should 404)")
-    
-    resp = requests.post(f"{BASE_URL}/journey/milestones/does-not-exist/status",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"status": "done"})
-    
-    if resp.status_code != 404:
-        log(f"❌ Should return 404, got {resp.status_code}")
-        return False
-    
-    log(f"✅ Non-existent milestone correctly rejected with 404")
-    
-    log(f"\n✅ All free milestone status tests passed")
-    return True
+    # User3: Signup with invalid ref code -> 200 and credits=100 (invalid ref silently ignored)
+    email3 = f"invalid_ref_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email3, "Test@2026", ref="garbagecode")
+    assert r.status_code == 200, f"Signup with invalid ref failed: {r.status_code} {r.text}"
+    user3_credits = r.json()["user"]["credits"]
+    assert user3_credits == 100, f"Expected 100 credits (invalid ref ignored), got {user3_credits}"
+    log(f"✓ User3 signup with ref='garbagecode' -> 200, credits=100 (invalid ref silently ignored, signup never blocked)")
+    log("")
 
-def test_free_fresh_user_validations():
-    """FREE TESTS: Fresh user without journey started."""
-    log("\n=== FREE TESTS: Fresh User Validations (0 LLM) ===")
+# ============================================================================
+# TEST (E): Decision Cards
+# ============================================================================
+def test_e_decision_cards():
+    log("=" * 80)
+    log("TEST (E): Decision Cards - share, public GET, opinions, delete")
+    log("=" * 80)
     
-    # Create a separate fresh user
-    email = f"journey_fresh_{int(time.time())}@test.com"
-    password = "TestFresh@2026"
+    # Setup: Create user with direction (seed journey doc with direction)
+    email = f"card_owner_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email, "Test@2026", name="Card Owner")
+    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
+    token = r.json()["token"]
+    user_id = r.json()["user"]["id"]
+    log(f"✓ Card owner signup: {email}, user_id={user_id}")
     
-    resp = requests.post(f"{BASE_URL}/auth/signup", json={
-        "email": email,
-        "password": password,
-        "name": "Fresh User"
-    })
+    # Seed journey doc with direction
+    journey_id = str(uuid.uuid4())
+    direction = {
+        "decision": "Decline low-margin walk-ins",
+        "goal": "12L monthly in 12 months",
+        "highest_leverage": "Fix pricing",
+        "success_probability": 60,
+        "probability_rationale": "rough",
+        "risks": ["r1", "r2"],
+        "missing_info": [],
+        "blockers": ["b1"],
+        "trade_offs": ["Give up quick cash"],
+        "first_moves": ["Call 5 customers in 48h"],
+        "learning_loop": {
+            "signals": ["weekly margin"],
+            "assumptions_to_test": ["demand exists"]
+        }
+    }
+    journey_doc = {
+        "id": journey_id,
+        "user_id": user_id,
+        "stage": "milestones",
+        "objective": "Grow my bakery to 12L",
+        "model": {},
+        "messages": [{"role": "user", "text": "test", "at": now_utc()}],
+        "direction": direction,
+        "milestones": [],
+        "created_at": now_utc(),
+        "updated_at": now_utc()
+    }
+    existing = journeys_col.find_one({"user_id": user_id})
+    if existing:
+        journeys_col.update_one({"user_id": user_id}, {"$set": journey_doc})
+    else:
+        journeys_col.insert_one(journey_doc)
+    log(f"✓ Seeded journey doc with direction")
     
-    if resp.status_code != 200:
-        log(f"❌ Fresh user signup failed: {resp.status_code}")
-        return False
+    # TEST E1: POST /api/share/direction -> 200 with share_id
+    log("TEST E1: POST /api/share/direction -> 200 with share_id")
+    r = requests.post(f"{BACKEND_URL}/share/direction", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    share_data = r.json()
+    share_id = share_data["share_id"]
+    assert len(share_id) == 10, f"Expected 10-char share_id, got {len(share_id)}"
+    assert share_data["path"] == f"/d/{share_id}", f"Expected path=/d/{share_id}, got {share_data['path']}"
+    log(f"✓ POST /api/share/direction -> share_id={share_id}, path={share_data['path']}")
     
-    token = resp.json()["token"]
-    log(f"✅ Created fresh user: {email}")
+    # POST again -> SAME share_id (stable link)
+    r = requests.post(f"{BACKEND_URL}/share/direction", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    share_id2 = r.json()["share_id"]
+    assert share_id2 == share_id, f"Share ID NOT stable: first={share_id}, second={share_id2}"
+    log(f"✓ POST /api/share/direction again -> SAME share_id (stable link)")
     
-    # TEST 1: POST /direction without journey started (should 400)
-    log("\nTEST 1: POST /journey/direction without journey started (should 400)")
+    # TEST E2: GET /api/share/{share_id} WITH NO AUTH HEADER -> 200
+    log("TEST E2: GET /api/share/{share_id} public (no auth) -> 200")
+    r = requests.get(f"{BACKEND_URL}/share/{share_id}")
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    card = r.json()
     
-    resp = requests.post(f"{BASE_URL}/journey/direction",
-        headers={"Authorization": f"Bearer {token}"})
+    # Check founder_name (first name only)
+    assert "founder_name" in card, "Missing founder_name"
+    assert card["founder_name"] == "Card", f"Expected first name 'Card', got {card['founder_name']}"
+    log(f"✓ founder_name={card['founder_name']} (first name only)")
     
-    if resp.status_code != 400:
-        log(f"❌ Should return 400, got {resp.status_code}")
-        return False
+    # Check card contains required fields
+    assert "card" in card, "Missing card"
+    c = card["card"]
+    assert c["decision"] == "Decline low-margin walk-ins", f"decision mismatch"
+    assert c["goal"] == "12L monthly in 12 months", f"goal mismatch"
+    assert c["trade_offs"] == ["Give up quick cash"], f"trade_offs mismatch"
+    assert c["first_moves"] == ["Call 5 customers in 48h"], f"first_moves mismatch"
+    assert c["success_probability"] == 60, f"success_probability mismatch"
+    assert len(c["risks"]) <= 3, f"risks should be max 3, got {len(c['risks'])}"
+    log(f"✓ Card contains decision/goal/trade_offs/first_moves/success_probability/risks")
     
-    log(f"✅ Correctly rejected with 400")
+    # Privacy check: response must NOT contain keys: model, messages, objective, hidden_desire
+    forbidden_keys = ["model", "messages", "objective", "hidden_desire"]
+    for key in forbidden_keys:
+        assert key not in card, f"PRIVACY LEAK: response contains forbidden key '{key}'"
+        assert key not in c, f"PRIVACY LEAK: card contains forbidden key '{key}'"
+    log(f"✓ Privacy check: NO model/messages/objective/hidden_desire in response")
     
-    # TEST 2: POST /direction/refine without journey started (should 400)
-    log("\nTEST 2: POST /journey/direction/refine without journey started (should 400)")
+    # Call public GET twice -> views increments
+    views1 = card["views"]
+    r = requests.get(f"{BACKEND_URL}/share/{share_id}")
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    views2 = r.json()["views"]
+    assert views2 > views1, f"Views did NOT increment: {views1} -> {views2}"
+    log(f"✓ Views incremented: {views1} -> {views2}")
     
-    resp = requests.post(f"{BASE_URL}/journey/direction/refine",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"feedback": "test"})
+    # TEST E3: POST /api/share/{share_id}/opinion by card OWNER -> 400
+    log("TEST E3: POST opinion by card OWNER -> 400")
+    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
+                     headers={"Authorization": f"Bearer {token}"},
+                     json={"text": "My own opinion"})
+    assert r.status_code == 400, f"Expected 400, got {r.status_code} {r.text}"
+    log(f"✓ Owner cannot leave opinion on own card -> 400")
     
-    if resp.status_code != 400:
-        log(f"❌ Should return 400, got {resp.status_code}")
-        return False
+    # TEST E4: POST opinion by SECOND signed-in user -> 200
+    log("TEST E4: POST opinion by second user -> 200")
+    email2 = f"opinion_user_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email2, "Test@2026", name="Opinion User")
+    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
+    token2 = r.json()["token"]
+    log(f"✓ Second user signup: {email2}")
     
-    log(f"✅ Correctly rejected with 400")
+    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
+                     headers={"Authorization": f"Bearer {token2}"},
+                     json={"text": "Solid call, but test pricing first"})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    opinions = r.json()["opinions"]
+    assert len(opinions) == 1, f"Expected 1 opinion, got {len(opinions)}"
+    assert opinions[0]["text"] == "Solid call, but test pricing first", f"Opinion text mismatch"
+    log(f"✓ Opinion added: {opinions[0]['text']}")
     
-    # TEST 3: POST /direction/approve without journey started (should 400)
-    log("\nTEST 3: POST /journey/direction/approve without journey started (should 400)")
+    # Same second user posts again with different text -> opinions STILL length 1 (replaced)
+    log("TEST E5: Same user posts again -> opinion REPLACED (not appended)")
+    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
+                     headers={"Authorization": f"Bearer {token2}"},
+                     json={"text": "Actually, I changed my mind"})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    opinions = r.json()["opinions"]
+    assert len(opinions) == 1, f"Expected 1 opinion (replaced), got {len(opinions)}"
+    assert opinions[0]["text"] == "Actually, I changed my mind", f"Opinion NOT replaced"
+    log(f"✓ Opinion replaced: {opinions[0]['text']}")
     
-    resp = requests.post(f"{BASE_URL}/journey/direction/approve",
-        headers={"Authorization": f"Bearer {token}"})
+    # TEST E6: No auth opinion -> 401
+    log("TEST E6: No auth opinion -> 401")
+    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
+                     json={"text": "Anonymous opinion"})
+    assert r.status_code == 401, f"Expected 401, got {r.status_code} {r.text}"
+    log(f"✓ No auth opinion -> 401")
     
-    if resp.status_code != 400:
-        log(f"❌ Should return 400, got {resp.status_code}")
-        return False
+    # TEST E7: Empty text -> 422
+    log("TEST E7: Empty text -> 422")
+    r = requests.post(f"{BACKEND_URL}/share/{share_id}/opinion",
+                     headers={"Authorization": f"Bearer {token2}"},
+                     json={"text": ""})
+    assert r.status_code == 422, f"Expected 422, got {r.status_code} {r.text}"
+    log(f"✓ Empty text -> 422")
     
-    log(f"✅ Correctly rejected with 400")
+    # TEST E8: Opinion on unknown card id -> 404
+    log("TEST E8: Opinion on unknown card id -> 404")
+    r = requests.post(f"{BACKEND_URL}/share/unknownid/opinion",
+                     headers={"Authorization": f"Bearer {token2}"},
+                     json={"text": "test"})
+    assert r.status_code == 404, f"Expected 404, got {r.status_code} {r.text}"
+    log(f"✓ Opinion on unknown card -> 404")
     
-    log(f"\n✅ All fresh user validation tests passed")
-    return True
+    # TEST E9: DELETE by second user -> 404
+    log("TEST E9: DELETE by second user -> 404")
+    r = requests.delete(f"{BACKEND_URL}/share/{share_id}",
+                       headers={"Authorization": f"Bearer {token2}"})
+    assert r.status_code == 404, f"Expected 404, got {r.status_code} {r.text}"
+    log(f"✓ DELETE by non-owner -> 404")
+    
+    # TEST E10: DELETE by owner -> 200
+    log("TEST E10: DELETE by owner -> 200")
+    r = requests.delete(f"{BACKEND_URL}/share/{share_id}",
+                       headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code} {r.text}"
+    assert r.json()["removed"] is True, f"Expected removed=true"
+    log(f"✓ DELETE by owner -> 200, removed=true")
+    
+    # TEST E11: Public GET after delete -> 404
+    log("TEST E11: Public GET after delete -> 404")
+    r = requests.get(f"{BACKEND_URL}/share/{share_id}")
+    assert r.status_code == 404, f"Expected 404, got {r.status_code} {r.text}"
+    log(f"✓ Public GET after delete -> 404")
+    log("")
 
-def test_free_refine_validation(token):
-    """FREE TEST: POST /direction/refine with empty feedback (should 422)."""
-    log("\n=== FREE TEST: Refine Validation (0 LLM) ===")
-    log("TEST: POST /journey/direction/refine with empty feedback (should 422)")
+# ============================================================================
+# TEST (F): POST /api/share/direction for fresh user with no direction -> 400
+# ============================================================================
+def test_f_share_no_direction():
+    log("=" * 80)
+    log("TEST (F): POST /api/share/direction for fresh user with no direction -> 400")
+    log("=" * 80)
     
-    resp = requests.post(f"{BASE_URL}/journey/direction/refine",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"feedback": ""})
+    # Fresh signup
+    email = f"no_direction_{uuid.uuid4().hex[:8]}@test.com"
+    r = signup_user(email, "Test@2026")
+    assert r.status_code == 200, f"Signup failed: {r.status_code} {r.text}"
+    token = r.json()["token"]
+    log(f"✓ Fresh signup: {email}")
     
-    if resp.status_code != 422:
-        log(f"❌ Should return 422, got {resp.status_code}")
-        return False
-    
-    log(f"✅ Empty feedback correctly rejected with 422")
-    return True
+    # POST /api/share/direction -> 400
+    r = requests.post(f"{BACKEND_URL}/share/direction", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 400, f"Expected 400, got {r.status_code} {r.text}"
+    log(f"✓ POST /api/share/direction with no direction -> 400")
+    log("")
 
+# ============================================================================
+# MAIN
+# ============================================================================
 def main():
     log("=" * 80)
-    log("FOUNDER JOURNEY PHASE 2 BACKEND TEST")
-    log("LLM BUDGET: <= 5 calls")
+    log("SmartDecigen Backend Test - 3-Layer Batch Build (Layer 1, 2, 3)")
+    log("CRITICAL: ANTHROPIC_API_KEY is PLACEHOLDER -> LLM budget is ZERO")
+    log("All LLM endpoints must return 502 AND fully refund credits")
     log("=" * 80)
+    log("")
     
-    # Create fresh user
-    token, email, initial_credits = signup_fresh_user()
-    log(f"Initial credits: {initial_credits}")
-    
-    # SETUP (2 LLM)
-    if not test_setup(token):
-        log("\n❌ SETUP FAILED")
-        sys.exit(1)
-    
-    # DIRECTION (1 LLM)
-    success, direction_data = test_direction(token)
-    if not success:
-        log("\n❌ DIRECTION FAILED")
-        sys.exit(1)
-    
-    # REFINE (1 LLM)
-    success, refine_data = test_refine(token)
-    if not success:
-        log("\n❌ REFINE FAILED")
-        sys.exit(1)
-    
-    # APPROVE (1 LLM)
-    success, approve_data = test_approve(token)
-    if not success:
-        log("\n❌ APPROVE FAILED")
-        sys.exit(1)
-    
-    # Get milestones for free tests
-    milestones = approve_data.get("milestones", [])
-    
-    # FREE TESTS: Milestone status
-    if not test_free_milestone_status(token, milestones):
-        log("\n❌ FREE MILESTONE STATUS TESTS FAILED")
-        sys.exit(1)
-    
-    # FREE TESTS: Fresh user validations
-    if not test_free_fresh_user_validations():
-        log("\n❌ FREE FRESH USER TESTS FAILED")
-        sys.exit(1)
-    
-    # FREE TEST: Refine validation
-    if not test_free_refine_validation(token):
-        log("\n❌ FREE REFINE VALIDATION TEST FAILED")
-        sys.exit(1)
-    
-    # Final summary
-    log("\n" + "=" * 80)
-    log("FINAL SUMMARY")
-    log("=" * 80)
-    
-    final_credits = get_credits(token)
-    credits_used = initial_credits - final_credits
-    
-    log(f"✅ ALL TESTS PASSED")
-    log(f"📊 Total LLM calls: {llm_call_count}/{max_llm_calls}")
-    log(f"💰 Credits: {initial_credits} -> {final_credits} (used {credits_used})")
-    log(f"👤 Test user: {email}")
-    
-    # Check for 502 errors (would have failed earlier, but confirm)
-    log(f"✅ NO 502 errors occurred (live Anthropic key working)")
-    
-    log("\n" + "=" * 80)
-    log("TEST COMPLETE")
-    log("=" * 80)
+    try:
+        # Run all tests
+        test_a_journey_view_shape()
+        test_b_502_refund()
+        test_c_milestone_result()
+        test_d_referral()
+        test_e_decision_cards()
+        test_f_share_no_direction()
+        
+        log("=" * 80)
+        log("ALL TESTS PASSED ✓")
+        log("=" * 80)
+        return 0
+    except AssertionError as e:
+        log(f"TEST FAILED: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    except Exception as e:
+        log(f"TEST ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

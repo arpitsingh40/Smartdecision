@@ -27,6 +27,7 @@ from decision_brain import router as brain_router, ensure_brain_startup
 from organizations import router as org_router, ensure_org_startup
 from founder_profile import router as founder_router
 from journey import router as journey_router, ensure_journey_startup
+from share import router as share_router, referral_router, ensure_share_startup
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -75,6 +76,7 @@ class SignupIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     name: str = ""
+    ref: str = ""  # optional referral code (Layer 3 virality): both sides get REFERRAL_BONUS credits
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -125,6 +127,20 @@ def signup(body: SignupIn, request: Request):
     users_col.insert_one(user)
     record_ledger(user["id"], "free_grant", SIGNUP_CREDITS, reason="signup")
     inc_stats({"credits_issued_free": SIGNUP_CREDITS})
+    # Layer 3 virality: referred signup -> both sides earn the bonus (invalid codes are ignored, never block signup)
+    ref = (body.ref or "").strip()
+    if ref:
+        referrer = users_col.find_one({"referral_code": ref}, {"id": 1, "email": 1})
+        if referrer and referrer["id"] != user["id"]:
+            bonus = int(os.environ.get("REFERRAL_BONUS", "25"))
+            users_col.update_one({"id": user["id"]}, {
+                "$set": {"referred_by": referrer["id"]},
+                "$inc": {"credits": bonus, "credits_issued_free": bonus}})
+            users_col.update_one({"id": referrer["id"]}, {"$inc": {"credits": bonus, "credits_issued_free": bonus}})
+            record_ledger(user["id"], "referral_bonus", bonus, reason="signed up with a referral")
+            record_ledger(referrer["id"], "referral_bonus", bonus, reason=f"invited {user['email']}")
+            inc_stats({"credits_issued_free": 2 * bonus})
+            user["credits"] += bonus
     return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False}}
 
 @api.post("/auth/login")
@@ -523,6 +539,8 @@ app.include_router(brain_router)
 app.include_router(org_router)
 app.include_router(founder_router)
 app.include_router(journey_router)
+app.include_router(share_router)
+app.include_router(referral_router)
 
 @app.on_event("startup")
 def _startup():
@@ -530,6 +548,7 @@ def _startup():
     ensure_org_startup()  # idempotent: org-layer indexes
     ensure_brain_startup()  # idempotent: decision-ledger indexes
     ensure_journey_startup()  # idempotent: founder-journey indexes
+    ensure_share_startup()  # idempotent: virality-layer indexes (decision cards + referrals)
 
 app.add_middleware(
     CORSMiddleware,

@@ -7,7 +7,7 @@ import requests
 import sys
 
 # Backend URL from frontend/.env
-BASE_URL = "https://founder-strategy-3.preview.emergentagent.com/api"
+BASE_URL = "https://founder-reasoning.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 DEMO_EMAIL = "demo@smartdecigen.com"

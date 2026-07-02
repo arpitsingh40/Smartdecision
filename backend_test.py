@@ -11,7 +11,7 @@ import time
 import sys
 
 # Base URL from frontend/.env
-BASE_URL = "https://founder-strategy-3.preview.emergentagent.com/api"
+BASE_URL = "https://founder-reasoning.preview.emergentagent.com/api"
 
 # Track LLM calls
 llm_call_count = 0

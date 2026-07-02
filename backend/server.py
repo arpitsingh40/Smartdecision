@@ -28,6 +28,7 @@ from organizations import router as org_router, ensure_org_startup
 from founder_profile import router as founder_router
 from journey import router as journey_router, ensure_journey_startup
 from share import router as share_router, referral_router, ensure_share_startup
+from benchmarks import ensure_benchmarks_startup
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -549,6 +550,7 @@ def _startup():
     ensure_brain_startup()  # idempotent: decision-ledger indexes
     ensure_journey_startup()  # idempotent: founder-journey indexes
     ensure_share_startup()  # idempotent: virality-layer indexes (decision cards + referrals)
+    ensure_benchmarks_startup()  # idempotent: cross-founder benchmark indexes
 
 app.add_middleware(
     CORSMiddleware,

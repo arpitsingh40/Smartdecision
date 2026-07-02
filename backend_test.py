@@ -1,435 +1,450 @@
-#!/usr/bin/env python3
+"""Backend testing for Sprint 2a: Brain reasoning port + cross-founder benchmarks.
+
+Test plan:
+1. LLM#1 - BENCHMARK AGGREGATION: Fresh signup -> journey/start -> verify Mongo benchmarks aggregation
+2. LLM#2 - BRAIN REASONING PORT: Fresh signup -> brain/ask -> verify reasoning structure
+3. FREE - HISTORY CLEAN: GET brain/decisions -> verify no reasoning/strategic_alignment keys
+4. FREE - UNIT TESTS: Python unit tests for benchmarks.py functions
+
+Total LLM budget: <= 3 calls (2 planned + 1 spare)
 """
-Backend test for SmartDecigen Layer 1-3 batch build (LIVE ANTHROPIC KEY).
-STRICT LLM BUDGET: <= 4 calls total (3 planned + 1 spare for genuine retry).
-"""
-import requests
-import json
-import uuid
 import sys
-from datetime import datetime
+import os
+import json
+import requests
+from datetime import datetime, timezone
+from pymongo import MongoClient
 
-BASE_URL = "https://founder-reasoning.preview.emergentagent.com/api"
+# Add backend to path for unit tests
+sys.path.insert(0, '/app/backend')
 
-# Track LLM calls globally
-LLM_CALLS_USED = 0
-MAX_LLM_CALLS = 4
+# Backend URL from frontend/.env
+BACKEND_URL = "https://founder-reasoning.preview.emergentagent.com/api"
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+# MongoDB connection
+MONGO_URL = "mongodb://localhost:27017"
+DB_NAME = "test_database"
 
-def assert_eq(actual, expected, msg):
-    if actual != expected:
-        raise AssertionError(f"{msg}: expected {expected}, got {actual}")
+def get_mongo():
+    """Get MongoDB client and database."""
+    client = MongoClient(MONGO_URL)
+    return client, client[DB_NAME]
 
-def assert_in(item, container, msg):
-    if item not in container:
-        raise AssertionError(f"{msg}: {item} not in {container}")
-
-def assert_true(condition, msg):
-    if not condition:
-        raise AssertionError(f"{msg}: condition is False")
-
-def assert_range(value, min_val, max_val, msg):
-    if not (min_val <= value <= max_val):
-        raise AssertionError(f"{msg}: {value} not in range [{min_val}, {max_val}]")
-
-def fresh_signup():
-    """Create a fresh user account with SIGNUP_CREDITS (50)."""
-    email = f"journey_live_{uuid.uuid4().hex[:8]}@test.com"
-    password = "TestPass123!"
-    resp = requests.post(f"{BASE_URL}/auth/signup", json={
-        "email": email,
-        "password": password,
-        "name": "Test User"
-    })
-    assert_eq(resp.status_code, 200, "Signup failed")
+def signup_user(email):
+    """Create a fresh user account."""
+    url = f"{BACKEND_URL}/auth/signup"
+    payload = {"email": email, "password": "TestPass123!", "name": "Test User"}
+    resp = requests.post(url, json=payload)
+    assert resp.status_code == 200, f"Signup failed: {resp.status_code} {resp.text}"
     data = resp.json()
-    token = data["token"]
-    user = data["user"]
-    log(f"✓ Fresh signup: {email}, credits={user['credits']}")
-    return token, user
+    return data["token"], data["user"]["id"]
 
-def test_layer1_live_loop():
-    """
-    LIVE TEST: Full Layer-1 Decision Intelligence Engine loop with REAL ANTHROPIC KEY.
-    LLM BUDGET: 3 calls (start, message, direction).
-    """
-    global LLM_CALLS_USED
+def test_benchmark_aggregation():
+    """LLM#1 - BENCHMARK AGGREGATION ACROSS FOUNDERS.
     
-    log("\n=== LAYER 1: DECISION INTELLIGENCE ENGINE (LIVE) ===")
+    Fresh signup A -> POST /api/journey/start with cloud kitchen objective -> 200.
+    Then inspect Mongo: at least one cloud-kitchen metric doc should have count=2 
+    with TWO DISTINCT uid values (two founders aggregated, no double count).
+    """
+    print("\n" + "="*80)
+    print("TEST 1: LLM#1 - BENCHMARK AGGREGATION ACROSS FOUNDERS")
+    print("="*80)
     
     # Fresh signup
-    token, user = fresh_signup()
+    email = f"benchmark_test_{int(datetime.now().timestamp())}@cloudkitchen.com"
+    token, user_id = signup_user(email)
+    print(f"✓ Fresh signup: {email}")
+    
+    # POST /api/journey/start with cloud kitchen objective
+    url = f"{BACKEND_URL}/journey/start"
     headers = {"Authorization": f"Bearer {token}"}
-    initial_credits = user["credits"]
-    assert_eq(initial_credits, 50, "SIGNUP_CREDITS should be 50")
+    objective = "I run a cloud kitchen in Mumbai doing 900 orders a month at 320 rupees average order value and want to hit 15L monthly revenue in a year."
+    payload = {"objective": objective}
     
-    # LLM CALL #1: POST /api/journey/start
-    log("\n--- LLM CALL #1: POST /api/journey/start ---")
-    objective = "Grow my Jaipur boutique hotel from 40% to 75% occupancy in 9 months, I depend fully on OTAs and their 22% commission is killing me."
-    resp = requests.post(f"{BASE_URL}/journey/start", headers=headers, json={"objective": objective})
-    assert_eq(resp.status_code, 200, "journey/start should return 200")
-    LLM_CALLS_USED += 1
-    log(f"✓ LLM CALL #{LLM_CALLS_USED} completed (journey/start)")
+    print(f"→ POST /api/journey/start with cloud kitchen objective...")
+    resp = requests.post(url, json=payload, headers=headers)
+    assert resp.status_code == 200, f"Journey start failed: {resp.status_code} {resp.text}"
+    data = resp.json()
+    print(f"✓ 200 response, cost={data.get('cost')}, credits={data.get('credits')}")
     
-    turn1 = resp.json()
+    # Inspect MongoDB benchmarks collection
+    mongo_client, db = get_mongo()
+    benchmarks_col = db.benchmarks
     
-    # CRITICAL ASSERTIONS FOR TURN 1
-    log("\n--- Turn 1 Assertions ---")
+    print("\n→ Inspecting MongoDB benchmarks collection...")
+    cloud_kitchen_docs = list(benchmarks_col.find({"industry": "cloud-kitchen"}))
     
-    # 1. reasoning is an object
-    assert_true(isinstance(turn1.get("reasoning"), dict), "reasoning must be an object")
-    reasoning = turn1["reasoning"]
-    log(f"✓ reasoning is an object")
+    print(f"\nFound {len(cloud_kitchen_docs)} cloud-kitchen benchmark docs:")
+    for doc in cloud_kitchen_docs:
+        metric = doc.get("metric")
+        count = doc.get("count", 0)
+        samples = doc.get("samples", [])
+        uid_values = [s.get("uid") for s in samples]
+        distinct_uids = len(set(uid_values))
+        
+        print(f"  - metric: {metric}, count: {count}, distinct UIDs: {distinct_uids}")
+        
+        # Check for at least one metric with count >= 2 and TWO DISTINCT uids
+        if count >= 2 and distinct_uids >= 2:
+            print(f"    ✓ PASS: {metric} has count={count} with {distinct_uids} distinct UIDs (aggregation working)")
+            # Verify the UIDs are actually different
+            print(f"    UIDs: {uid_values[:5]}")  # Show first 5
+    
+    # Report all (industry, metric, count) rows
+    print("\n→ All benchmark rows (industry, metric, count):")
+    all_benchmarks = list(benchmarks_col.find({}, {"industry": 1, "metric": 1, "count": 1, "_id": 0}))
+    for b in all_benchmarks:
+        print(f"  ({b.get('industry')}, {b.get('metric')}, {b.get('count')})")
+    
+    # Verify at least one cloud-kitchen metric has count >= 2
+    has_aggregation = any(
+        doc.get("count", 0) >= 2 and len(set(s.get("uid") for s in doc.get("samples", []))) >= 2
+        for doc in cloud_kitchen_docs
+    )
+    
+    assert has_aggregation, "FAIL: No cloud-kitchen metric has count >= 2 with distinct UIDs"
+    print("\n✅ TEST 1 PASSED: Benchmark aggregation working (count >= 2, distinct UIDs)")
+    
+    mongo_client.close()
+    return token, user_id
+
+def test_brain_reasoning_port(token=None, user_id=None):
+    """LLM#2 - BRAIN REASONING PORT.
+    
+    Fresh signup B -> POST /api/brain/ask with cloud kitchen question -> 200.
+    Assert ALL:
+    - response HAS 'reasoning' object
+    - reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire)
+    - reasoning has NO 'hidden_desire' key at all
+    - biggest_uncertainty + question_target among the 9
+    - question_rationale non-empty
+    - sufficient is bool
+    - dim_order (9 items) + dim_labels present
+    - assumptions_detected is a list
+    - decision_type valid
+    - response does NOT contain 'strategic_alignment'
+    - existing contract intact: next_action, hook, key_takeaway, mode, sharpening_question, decision_id, session_id, cost >= 1
+    """
+    print("\n" + "="*80)
+    print("TEST 2: LLM#2 - BRAIN REASONING PORT")
+    print("="*80)
+    
+    # Fresh signup if not provided
+    if not token:
+        email = f"brain_test_{int(datetime.now().timestamp())}@cloudkitchen.com"
+        token, user_id = signup_user(email)
+        print(f"✓ Fresh signup: {email}")
+    else:
+        print(f"✓ Using existing user: {user_id}")
+    
+    # POST /api/brain/ask
+    url = f"{BACKEND_URL}/brain/ask"
+    headers = {"Authorization": f"Bearer {token}"}
+    question = "Should I spend 50000 rupees a month on Swiggy ads to grow my cloud kitchen orders, margins are thin?"
+    payload = {"question": question}
+    
+    print(f"→ POST /api/brain/ask with question...")
+    resp = requests.post(url, json=payload, headers=headers)
+    assert resp.status_code == 200, f"Brain ask failed: {resp.status_code} {resp.text}"
+    data = resp.json()
+    
+    print(f"✓ 200 response, cost={data.get('cost')}, mode={data.get('mode')}")
+    
+    # CRITICAL ASSERTIONS
+    print("\n→ Verifying reasoning structure...")
+    
+    # 1. Response HAS 'reasoning' object
+    assert "reasoning" in data, "FAIL: response does NOT contain 'reasoning' key"
+    reasoning = data["reasoning"]
+    assert isinstance(reasoning, dict), "FAIL: reasoning is not a dict"
+    print("  ✓ response HAS 'reasoning' object")
     
     # 2. reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire)
-    uncertainty = reasoning.get("uncertainty", {})
-    assert_eq(len(uncertainty), 9, "reasoning.uncertainty must have EXACTLY 9 keys (hidden_desire stripped)")
-    assert_true("hidden_desire" not in uncertainty, "hidden_desire must NOT be in public uncertainty map")
-    log(f"✓ reasoning.uncertainty has EXACTLY 9 keys (hidden_desire stripped)")
-    log(f"  Keys: {list(uncertainty.keys())}")
+    assert "uncertainty" in reasoning, "FAIL: reasoning does NOT contain 'uncertainty'"
+    uncertainty = reasoning["uncertainty"]
+    assert isinstance(uncertainty, dict), "FAIL: uncertainty is not a dict"
+    unc_keys = list(uncertainty.keys())
+    print(f"  → uncertainty keys ({len(unc_keys)}): {unc_keys}")
+    assert len(unc_keys) == 9, f"FAIL: uncertainty has {len(unc_keys)} keys, expected EXACTLY 9"
+    assert "hidden_desire" not in unc_keys, "FAIL: uncertainty contains 'hidden_desire' (should be stripped)"
+    print("  ✓ reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire)")
     
-    # 3. Every dim has int score 0..100 + note
-    for dim, val in uncertainty.items():
-        assert_true(isinstance(val, dict), f"{dim} must be a dict")
-        assert_true(isinstance(val.get("score"), int), f"{dim}.score must be int")
-        assert_range(val["score"], 0, 100, f"{dim}.score must be 0-100")
-        assert_true(isinstance(val.get("note"), str), f"{dim}.note must be str")
-    log(f"✓ Every dim has int score 0..100 + note")
+    # 3. reasoning has NO 'hidden_desire' key at all
+    assert "hidden_desire" not in reasoning, "FAIL: reasoning contains 'hidden_desire' key (should be stripped)"
+    print("  ✓ reasoning has NO 'hidden_desire' key at all")
     
-    # Log exact scores for reporting
-    log("\n  Turn 1 Uncertainty Scores:")
-    for dim, val in uncertainty.items():
-        log(f"    {dim}: {val['score']} - {val['note'][:50]}...")
-    
-    # 4. biggest_uncertainty and question_target are among the 9 dims
+    # 4. biggest_uncertainty + question_target among the 9
     biggest = reasoning.get("biggest_uncertainty")
     question_target = reasoning.get("question_target")
-    assert_in(biggest, uncertainty, "biggest_uncertainty must be one of the 9 dims")
-    assert_in(question_target, uncertainty, "question_target must be one of the 9 dims")
-    log(f"✓ biggest_uncertainty={biggest}, question_target={question_target} (both in 9 dims)")
+    assert biggest in unc_keys, f"FAIL: biggest_uncertainty '{biggest}' not in uncertainty keys"
+    assert question_target in unc_keys, f"FAIL: question_target '{question_target}' not in uncertainty keys"
+    print(f"  ✓ biggest_uncertainty='{biggest}' + question_target='{question_target}' among the 9")
     
     # 5. question_rationale non-empty
     question_rationale = reasoning.get("question_rationale", "")
-    assert_true(len(question_rationale) > 0, "question_rationale must be non-empty")
-    log(f"✓ question_rationale non-empty: '{question_rationale[:60]}...'")
+    assert isinstance(question_rationale, str) and len(question_rationale) > 0, "FAIL: question_rationale is empty"
+    print(f"  ✓ question_rationale non-empty (len={len(question_rationale)})")
     
-    # 6. sufficient is boolean
+    # 6. sufficient is bool
     sufficient = reasoning.get("sufficient")
-    assert_true(isinstance(sufficient, bool), "sufficient must be boolean")
-    log(f"✓ sufficient is boolean: {sufficient}")
+    assert isinstance(sufficient, bool), f"FAIL: sufficient is not bool, got {type(sufficient)}"
+    print(f"  ✓ sufficient is bool ({sufficient})")
     
-    # 7. assumptions_detected is list
-    assumptions = reasoning.get("assumptions_detected", [])
-    assert_true(isinstance(assumptions, list), "assumptions_detected must be list")
-    log(f"✓ assumptions_detected is list with {len(assumptions)} items")
-    
-    # 8. decision_type in allowed values
-    decision_type = reasoning.get("decision_type")
-    allowed_types = ["idea", "validation", "execution", "scaling", "crisis", "other"]
-    assert_in(decision_type, allowed_types, "decision_type must be in allowed values")
-    log(f"✓ decision_type={decision_type} (valid)")
-    
-    # 9. reversible is true/false/null
-    reversible = reasoning.get("reversible")
-    assert_true(reversible in [True, False, None], "reversible must be true/false/null")
-    log(f"✓ reversible={reversible}")
-    
-    # 10. expert_lenses is list
-    expert_lenses = reasoning.get("expert_lenses", [])
-    assert_true(isinstance(expert_lenses, list), "expert_lenses must be list")
-    log(f"✓ expert_lenses is list: {expert_lenses}")
-    
-    # 11. dim_order (9) + dim_labels present
+    # 7. dim_order (9 items) + dim_labels present
     dim_order = reasoning.get("dim_order", [])
     dim_labels = reasoning.get("dim_labels", {})
-    assert_eq(len(dim_order), 9, "dim_order must have 9 items")
-    assert_true(len(dim_labels) >= 9, "dim_labels must have at least 9 items")
-    log(f"✓ dim_order has 9 items, dim_labels present")
+    assert isinstance(dim_order, list) and len(dim_order) == 9, f"FAIL: dim_order has {len(dim_order)} items, expected 9"
+    assert isinstance(dim_labels, dict) and len(dim_labels) >= 9, f"FAIL: dim_labels has {len(dim_labels)} items, expected >= 9"
+    print(f"  ✓ dim_order has 9 items, dim_labels present")
     
-    # 12. confidence int > 0
-    confidence = turn1.get("confidence")
-    assert_true(isinstance(confidence, int), "confidence must be int")
-    assert_true(confidence > 0, "confidence must be > 0")
-    log(f"✓ confidence={confidence} (int > 0)")
+    # 8. assumptions_detected is a list
+    assumptions = reasoning.get("assumptions_detected")
+    assert isinstance(assumptions, list), f"FAIL: assumptions_detected is not a list, got {type(assumptions)}"
+    print(f"  ✓ assumptions_detected is a list (len={len(assumptions)})")
     
-    # 13. confidence_source == "reasoning"
-    confidence_source = turn1.get("confidence_source")
-    assert_eq(confidence_source, "reasoning", "confidence_source must be 'reasoning'")
-    log(f"✓ confidence_source='reasoning'")
+    # 9. decision_type valid
+    decision_type = reasoning.get("decision_type")
+    valid_types = ["idea", "validation", "execution", "scaling", "crisis", "other"]
+    assert decision_type in valid_types, f"FAIL: decision_type '{decision_type}' not in {valid_types}"
+    print(f"  ✓ decision_type='{decision_type}' (valid)")
     
-    # 14. cost >= 1
-    cost1 = turn1.get("cost")
-    assert_true(cost1 >= 1, "cost must be >= 1")
-    log(f"✓ cost={cost1} (>= 1)")
+    # 10. response does NOT contain 'strategic_alignment'
+    assert "strategic_alignment" not in data, "FAIL: response contains 'strategic_alignment' (should be stripped)"
+    print("  ✓ response does NOT contain 'strategic_alignment'")
     
-    # 15. credits dropped from 50
-    credits_after_turn1 = turn1.get("credits")
-    assert_true(credits_after_turn1 < 50, "credits must have dropped from 50")
-    log(f"✓ credits dropped: 50 -> {credits_after_turn1}")
+    # 11. existing contract intact
+    assert "next_action" in data and data["next_action"], "FAIL: next_action missing or empty"
+    assert "hook" in data and data["hook"], "FAIL: hook missing or empty"
+    assert "key_takeaway" in data and data["key_takeaway"], "FAIL: key_takeaway missing or empty"
+    assert "mode" in data and data["mode"] in ["answer", "decide", "plan"], f"FAIL: mode '{data.get('mode')}' invalid"
+    assert "sharpening_question" in data, "FAIL: sharpening_question missing"
+    assert "decision_id" in data and data["decision_id"], "FAIL: decision_id missing or empty"
+    assert "session_id" in data and data["session_id"], "FAIL: session_id missing or empty"
+    assert "cost" in data and data["cost"] >= 1, f"FAIL: cost {data.get('cost')} < 1"
+    print(f"  ✓ existing contract intact: next_action, hook, key_takeaway, mode={data['mode']}, decision_id, session_id, cost={data['cost']}")
     
-    # LLM CALL #2: POST /api/journey/message
-    log("\n--- LLM CALL #2: POST /api/journey/message ---")
-    message = "I get 900 room-nights a month, ADR 4200, direct bookings are only 8%, I have 6 staff, 3L cash buffer, and honestly I do not know digital marketing at all."
-    resp = requests.post(f"{BASE_URL}/journey/message", headers=headers, json={"message": message})
-    assert_eq(resp.status_code, 200, "journey/message should return 200")
-    LLM_CALLS_USED += 1
-    log(f"✓ LLM CALL #{LLM_CALLS_USED} completed (journey/message)")
+    print("\n✅ TEST 2 PASSED: Brain reasoning port working correctly")
     
-    turn2 = resp.json()
-    
-    # CRITICAL ASSERTIONS FOR TURN 2
-    log("\n--- Turn 2 Assertions ---")
-    
-    # 1. confidence CHANGED vs turn 1 (any direction)
-    confidence2 = turn2.get("confidence")
-    assert_true(confidence2 != confidence, "confidence must have CHANGED from turn 1")
-    log(f"✓ confidence CHANGED: {confidence} -> {confidence2}")
-    
-    # 2. reasoning updated (at least one uncertainty dim score differs)
-    reasoning2 = turn2.get("reasoning", {})
-    uncertainty2 = reasoning2.get("uncertainty", {})
-    changed_dims = []
-    for dim in uncertainty:
-        if dim in uncertainty2:
-            if uncertainty[dim]["score"] != uncertainty2[dim]["score"]:
-                changed_dims.append(dim)
-    assert_true(len(changed_dims) > 0, "At least one uncertainty dim score must differ from turn 1")
-    log(f"✓ Uncertainty map updated: {len(changed_dims)} dims changed: {changed_dims}")
-    
-    # Log turn 2 scores
-    log("\n  Turn 2 Uncertainty Scores:")
-    for dim, val in uncertainty2.items():
-        log(f"    {dim}: {val['score']} (was {uncertainty.get(dim, {}).get('score', 'N/A')})")
-    
-    # 3. messages length 4 (2 from start + 2 from message)
-    messages = turn2.get("messages", [])
-    assert_eq(len(messages), 4, "messages must have length 4")
-    log(f"✓ messages length=4")
-    
-    # 4. credits dropped again
-    credits_after_turn2 = turn2.get("credits")
-    assert_true(credits_after_turn2 < credits_after_turn1, "credits must have dropped again")
-    cost2 = turn2.get("cost")
-    log(f"✓ credits dropped again: {credits_after_turn1} -> {credits_after_turn2} (cost={cost2})")
-    
-    # LLM CALL #3: POST /api/journey/direction
-    log("\n--- LLM CALL #3: POST /api/journey/direction ---")
-    resp = requests.post(f"{BASE_URL}/journey/direction", headers=headers)
-    assert_eq(resp.status_code, 200, "journey/direction should return 200")
-    LLM_CALLS_USED += 1
-    log(f"✓ LLM CALL #{LLM_CALLS_USED} completed (journey/direction)")
-    
-    turn3 = resp.json()
-    
-    # CRITICAL ASSERTIONS FOR TURN 3
-    log("\n--- Turn 3 (Direction) Assertions ---")
-    
-    direction = turn3.get("direction")
-    assert_true(isinstance(direction, dict), "direction must be an object")
-    log(f"✓ direction is an object")
-    
-    # 1. decision (non-empty string)
-    decision = direction.get("decision", "")
-    assert_true(len(decision) > 0, "direction.decision must be non-empty")
-    log(f"✓ decision: '{decision[:80]}...'")
-    
-    # 2. goal
-    goal = direction.get("goal", "")
-    assert_true(len(goal) > 0, "direction.goal must be non-empty")
-    log(f"✓ goal: '{goal[:80]}...'")
-    
-    # 3. blockers (2-5)
-    blockers = direction.get("blockers", [])
-    assert_range(len(blockers), 2, 5, "direction.blockers must have 2-5 items")
-    log(f"✓ blockers: {len(blockers)} items")
-    
-    # 4. highest_leverage
-    highest_leverage = direction.get("highest_leverage", "")
-    assert_true(len(highest_leverage) > 0, "direction.highest_leverage must be non-empty")
-    log(f"✓ highest_leverage: '{highest_leverage[:80]}...'")
-    
-    # 5. success_probability (int 0-100)
-    success_probability = direction.get("success_probability")
-    assert_true(isinstance(success_probability, int), "success_probability must be int")
-    assert_range(success_probability, 0, 100, "success_probability must be 0-100")
-    log(f"✓ success_probability: {success_probability}")
-    
-    # 6. probability_rationale
-    probability_rationale = direction.get("probability_rationale", "")
-    assert_true(len(probability_rationale) > 0, "probability_rationale must be non-empty")
-    log(f"✓ probability_rationale: '{probability_rationale[:80]}...'")
-    
-    # 7. risks (2-5)
-    risks = direction.get("risks", [])
-    assert_range(len(risks), 2, 5, "direction.risks must have 2-5 items")
-    log(f"✓ risks: {len(risks)} items")
-    
-    # 8. missing_info (2-5)
-    missing_info = direction.get("missing_info", [])
-    assert_range(len(missing_info), 2, 5, "direction.missing_info must have 2-5 items")
-    log(f"✓ missing_info: {len(missing_info)} items")
-    
-    # 9. trade_offs (2-4 non-empty)
-    trade_offs = direction.get("trade_offs", [])
-    assert_range(len(trade_offs), 2, 4, "direction.trade_offs must have 2-4 items")
-    for i, to in enumerate(trade_offs):
-        assert_true(len(to) > 0, f"trade_offs[{i}] must be non-empty")
-    log(f"✓ trade_offs: {len(trade_offs)} items (all non-empty)")
-    
-    # 10. first_moves (2-4 non-empty)
-    first_moves = direction.get("first_moves", [])
-    assert_range(len(first_moves), 2, 4, "direction.first_moves must have 2-4 items")
-    for i, fm in enumerate(first_moves):
-        assert_true(len(fm) > 0, f"first_moves[{i}] must be non-empty")
-    log(f"✓ first_moves: {len(first_moves)} items (all non-empty)")
-    
-    # 11. learning_loop.signals (2-4)
-    learning_loop = direction.get("learning_loop", {})
-    signals = learning_loop.get("signals", [])
-    assert_range(len(signals), 2, 4, "learning_loop.signals must have 2-4 items")
-    log(f"✓ learning_loop.signals: {len(signals)} items")
-    
-    # 12. learning_loop.assumptions_to_test (2-3)
-    assumptions_to_test = learning_loop.get("assumptions_to_test", [])
-    assert_range(len(assumptions_to_test), 2, 3, "learning_loop.assumptions_to_test must have 2-3 items")
-    log(f"✓ learning_loop.assumptions_to_test: {len(assumptions_to_test)} items")
-    
-    # 13. stage == "refine"
-    stage = turn3.get("stage")
-    assert_eq(stage, "refine", "stage must be 'refine'")
-    log(f"✓ stage='refine'")
-    
-    # 14. has_direction == true
-    has_direction = turn3.get("has_direction")
-    assert_eq(has_direction, True, "has_direction must be true")
-    log(f"✓ has_direction=true")
-    
-    # 15. cost >= 1, credits dropped
-    cost3 = turn3.get("cost")
-    assert_true(cost3 >= 1, "cost must be >= 1")
-    credits_after_turn3 = turn3.get("credits")
-    assert_true(credits_after_turn3 < credits_after_turn2, "credits must have dropped")
-    log(f"✓ cost={cost3}, credits: {credits_after_turn2} -> {credits_after_turn3}")
-    
-    log("\n✅ LAYER 1 LIVE LOOP: ALL ASSERTIONS PASSED")
-    log(f"   Total LLM calls used: {LLM_CALLS_USED}/{MAX_LLM_CALLS}")
-    log(f"   Credits used: {initial_credits - credits_after_turn3} (50 -> {credits_after_turn3})")
-    
-    return token, direction, turn3
+    return token, user_id, data["decision_id"]
 
-def test_layer3_share_and_reset(token, direction, journey_view):
-    """
-    FREE TESTS: Share direction, public GET, reset.
-    NO LLM CALLS.
-    """
-    global LLM_CALLS_USED
+def test_history_clean(token, user_id, decision_id):
+    """FREE - HISTORY CLEAN.
     
-    log("\n=== LAYER 3: VIRALITY (FREE) ===")
+    GET /api/brain/decisions for user -> rows do NOT contain keys 'reasoning' nor 'strategic_alignment'.
+    Then check Mongo decisions doc for that decision_id: it DOES contain 'reasoning' (stored server-side).
+    """
+    print("\n" + "="*80)
+    print("TEST 3: FREE - HISTORY CLEAN")
+    print("="*80)
+    
+    # GET /api/brain/decisions
+    url = f"{BACKEND_URL}/brain/decisions"
     headers = {"Authorization": f"Bearer {token}"}
     
-    # FREE: POST /api/share/direction
-    log("\n--- FREE: POST /api/share/direction ---")
-    resp = requests.post(f"{BASE_URL}/share/direction", headers=headers)
-    assert_eq(resp.status_code, 200, "share/direction should return 200")
-    share_data = resp.json()
+    print(f"→ GET /api/brain/decisions...")
+    resp = requests.get(url, headers=headers)
+    assert resp.status_code == 200, f"Get decisions failed: {resp.status_code} {resp.text}"
+    data = resp.json()
     
-    share_id = share_data.get("share_id")
-    path = share_data.get("path")
-    assert_true(len(share_id) > 0, "share_id must be non-empty")
-    assert_eq(path, f"/d/{share_id}", "path must be /d/<share_id>")
-    log(f"✓ share_id={share_id}, path={path}")
+    decisions = data.get("decisions", [])
+    print(f"✓ 200 response, {len(decisions)} decisions returned")
     
-    # FREE: Public GET /api/share/{id} (NO AUTH)
-    log("\n--- FREE: Public GET /api/share/{id} (no auth) ---")
-    resp = requests.get(f"{BASE_URL}/share/{share_id}")
-    assert_eq(resp.status_code, 200, "public share GET should return 200")
-    card_data = resp.json()
+    # Verify NO decision contains 'reasoning' or 'strategic_alignment'
+    for i, dec in enumerate(decisions):
+        assert "reasoning" not in dec, f"FAIL: decision {i} contains 'reasoning' key (should be stripped from history)"
+        assert "strategic_alignment" not in dec, f"FAIL: decision {i} contains 'strategic_alignment' key (should be stripped)"
     
-    card = card_data.get("card", {})
+    print(f"  ✓ All {len(decisions)} decisions do NOT contain 'reasoning' or 'strategic_alignment' keys")
     
-    # 1. card.decision == direction.decision
-    card_decision = card.get("decision", "")
-    assert_eq(card_decision, direction.get("decision"), "card.decision must match direction.decision")
-    log(f"✓ card.decision matches direction.decision")
+    # Check Mongo: decision doc DOES contain 'reasoning'
+    mongo_client, db = get_mongo()
+    decisions_col = db.decisions
     
-    # 2. card.confidence is int
-    card_confidence = card.get("confidence")
-    assert_true(isinstance(card_confidence, int), "card.confidence must be int")
-    log(f"✓ card.confidence={card_confidence} (int)")
+    print(f"\n→ Checking MongoDB decisions collection for decision_id={decision_id}...")
+    mongo_doc = decisions_col.find_one({"id": decision_id})
+    assert mongo_doc is not None, f"FAIL: decision {decision_id} not found in MongoDB"
     
-    # 3. card.trade_offs and card.first_moves present
-    assert_true("trade_offs" in card, "card must have trade_offs")
-    assert_true("first_moves" in card, "card must have first_moves")
-    log(f"✓ card.trade_offs and card.first_moves present")
+    assert "reasoning" in mongo_doc, "FAIL: MongoDB decision doc does NOT contain 'reasoning' (should be stored server-side)"
+    reasoning = mongo_doc["reasoning"]
+    assert reasoning is not None, "FAIL: MongoDB decision doc has reasoning=None"
+    print(f"  ✓ MongoDB decision doc DOES contain 'reasoning' (stored server-side, may include hidden_desire)")
     
-    # 4. Privacy check: NO model/messages/objective/hidden_desire
-    assert_true("model" not in card_data, "card must NOT contain 'model'")
-    assert_true("messages" not in card_data, "card must NOT contain 'messages'")
-    assert_true("objective" not in card_data, "card must NOT contain 'objective'")
-    assert_true("hidden_desire" not in card_data, "card must NOT contain 'hidden_desire'")
-    log(f"✓ Privacy check: NO model/messages/objective/hidden_desire in response")
+    # Check if hidden_desire is present in the stored reasoning
+    if isinstance(reasoning, dict) and "hidden_desire" in reasoning:
+        print(f"  ✓ MongoDB reasoning contains 'hidden_desire' (full trace stored server-side)")
     
-    # FREE: POST /api/journey/reset
-    log("\n--- FREE: POST /api/journey/reset ---")
-    resp = requests.post(f"{BASE_URL}/journey/reset", headers=headers)
-    assert_eq(resp.status_code, 200, "journey/reset should return 200")
-    reset_data = resp.json()
+    print("\n✅ TEST 3 PASSED: History clean (reasoning stripped from API, stored in Mongo)")
     
-    # 1. reasoning null
-    reset_reasoning = reset_data.get("reasoning")
-    assert_eq(reset_reasoning, None, "reasoning must be null after reset")
-    log(f"✓ reasoning=null")
+    mongo_client.close()
+
+def test_unit_tests():
+    """FREE - UNIT TESTS (python, no HTTP).
     
-    # 2. confidence 0
-    reset_confidence = reset_data.get("confidence")
-    assert_eq(reset_confidence, 0, "confidence must be 0 after reset")
-    log(f"✓ confidence=0")
+    sys.path.insert(0,'/app/backend'); from benchmarks import ingest_facts, benchmark_digest, normalize_facts, _uid_hash.
     
-    # 3. confidence_source "completeness"
-    reset_confidence_source = reset_data.get("confidence_source")
-    assert_eq(reset_confidence_source, "completeness", "confidence_source must be 'completeness' after reset")
-    log(f"✓ confidence_source='completeness'")
+    Call ingest_facts('unit-test-user','cloud-kitchen',[{'metric':'monthly-orders','value':500,'unit':'orders'}], now) 
+    then AGAIN with value 600: the monthly-orders doc count must increase by exactly 1 total across both calls 
+    (replace, not double count) and the sample for _uid_hash('unit-test-user') must show value 600.
     
-    # 4. started false
-    reset_started = reset_data.get("started")
-    assert_eq(reset_started, False, "started must be false after reset")
-    log(f"✓ started=false")
+    benchmark_digest('cloud-kitchen') must contain 'monthly-orders' with the correct n and the phrase 'EARLY SIGNAL' while n<5.
     
-    log("\n✅ LAYER 3 SHARE & RESET: ALL ASSERTIONS PASSED")
-    log(f"   Total LLM calls used: {LLM_CALLS_USED}/{MAX_LLM_CALLS} (no additional calls)")
+    normalize_facts({}) -> ("", []); normalize_facts({'industry':'X','facts':[{'metric':'','value':'abc'}]}) -> industry normalized, facts empty.
+    
+    CLEANUP after: pull the 'unit-test-user' sample from the monthly-orders doc and decrement its count so real data stays clean.
+    """
+    print("\n" + "="*80)
+    print("TEST 4: FREE - UNIT TESTS (benchmarks.py)")
+    print("="*80)
+    
+    from benchmarks import ingest_facts, benchmark_digest, normalize_facts, _uid_hash
+    
+    mongo_client, db = get_mongo()
+    benchmarks_col = db.benchmarks
+    
+    test_user = "unit-test-user"
+    test_uid = _uid_hash(test_user)
+    industry = "cloud-kitchen"
+    metric = "monthly-orders"
+    now = datetime.now(timezone.utc)
+    
+    print(f"→ Testing ingest_facts with user='{test_user}', uid_hash='{test_uid}'...")
+    
+    # Get initial count
+    doc_before = benchmarks_col.find_one({"industry": industry, "metric": metric})
+    count_before = doc_before.get("count", 0) if doc_before else 0
+    print(f"  Initial count for {metric}: {count_before}")
+    
+    # Call ingest_facts with value 500
+    print(f"  → ingest_facts(value=500)...")
+    written1 = ingest_facts(test_user, industry, [{"metric": metric, "value": 500, "unit": "orders"}], now)
+    assert written1 == 1, f"FAIL: ingest_facts returned {written1}, expected 1"
+    
+    doc_after1 = benchmarks_col.find_one({"industry": industry, "metric": metric})
+    count_after1 = doc_after1.get("count", 0)
+    samples_after1 = doc_after1.get("samples", [])
+    test_sample1 = next((s for s in samples_after1 if s.get("uid") == test_uid), None)
+    
+    assert test_sample1 is not None, f"FAIL: test user sample not found after first ingest"
+    assert test_sample1.get("value") == 500, f"FAIL: test sample value is {test_sample1.get('value')}, expected 500"
+    print(f"  ✓ After first ingest: count={count_after1}, test sample value=500")
+    
+    # Call ingest_facts AGAIN with value 600 (should REPLACE, not double count)
+    print(f"  → ingest_facts(value=600) - should REPLACE, not double count...")
+    written2 = ingest_facts(test_user, industry, [{"metric": metric, "value": 600, "unit": "orders"}], now)
+    assert written2 == 1, f"FAIL: ingest_facts returned {written2}, expected 1"
+    
+    doc_after2 = benchmarks_col.find_one({"industry": industry, "metric": metric})
+    count_after2 = doc_after2.get("count", 0)
+    samples_after2 = doc_after2.get("samples", [])
+    test_sample2 = next((s for s in samples_after2 if s.get("uid") == test_uid), None)
+    
+    # Count should increase by exactly 1 total (not 2)
+    count_increase = count_after2 - count_before
+    assert count_increase == 1, f"FAIL: count increased by {count_increase}, expected exactly 1 (replace, not double count)"
+    assert test_sample2 is not None, f"FAIL: test user sample not found after second ingest"
+    assert test_sample2.get("value") == 600, f"FAIL: test sample value is {test_sample2.get('value')}, expected 600 (replaced)"
+    print(f"  ✓ After second ingest: count={count_after2} (increased by {count_increase}), test sample value=600 (REPLACED)")
+    
+    # Test benchmark_digest
+    print(f"\n→ Testing benchmark_digest('{industry}')...")
+    digest = benchmark_digest(industry)
+    assert isinstance(digest, str) and len(digest) > 0, "FAIL: benchmark_digest returned empty string"
+    assert metric in digest, f"FAIL: digest does not contain '{metric}'"
+    
+    # Check for 'EARLY SIGNAL' phrase when n < 5
+    if count_after2 < 5:
+        assert "EARLY SIGNAL" in digest, f"FAIL: digest does not contain 'EARLY SIGNAL' when n={count_after2} < 5"
+        print(f"  ✓ digest contains '{metric}' with n={count_after2} and phrase 'EARLY SIGNAL' (n < 5)")
+    else:
+        print(f"  ✓ digest contains '{metric}' with n={count_after2}")
+    
+    print(f"\n  Digest preview:\n{digest[:500]}...")
+    
+    # Test normalize_facts
+    print(f"\n→ Testing normalize_facts...")
+    
+    # Empty dict
+    ind1, facts1 = normalize_facts({})
+    assert ind1 == "" and facts1 == [], f"FAIL: normalize_facts({{}}) returned ({ind1}, {facts1}), expected ('', [])"
+    print(f"  ✓ normalize_facts({{}}) -> ('', [])")
+    
+    # Invalid facts
+    ind2, facts2 = normalize_facts({"industry": "X", "facts": [{"metric": "", "value": "abc"}]})
+    assert ind2 == "x", f"FAIL: industry not normalized, got '{ind2}'"
+    assert facts2 == [], f"FAIL: facts not empty, got {facts2}"
+    print(f"  ✓ normalize_facts({{industry:'X', facts:[{{metric:'', value:'abc'}}]}}) -> ('{ind2}', [])")
+    
+    # Valid facts
+    ind3, facts3 = normalize_facts({"industry": "Cloud Kitchen", "facts": [{"metric": "monthly-orders", "value": 700, "unit": "orders"}]})
+    assert ind3 == "cloud-kitchen", f"FAIL: industry not normalized, got '{ind3}'"
+    assert len(facts3) == 1, f"FAIL: facts length {len(facts3)}, expected 1"
+    assert facts3[0]["metric"] == "monthly-orders", f"FAIL: metric not normalized"
+    assert facts3[0]["value"] == 700, f"FAIL: value not preserved"
+    print(f"  ✓ normalize_facts({{industry:'Cloud Kitchen', facts:[...]}}) -> ('{ind3}', [{facts3[0]}])")
+    
+    # CLEANUP: remove the test user sample
+    print(f"\n→ CLEANUP: removing test user sample from {metric} doc...")
+    doc_cleanup = benchmarks_col.find_one({"industry": industry, "metric": metric})
+    if doc_cleanup:
+        samples_cleanup = [s for s in doc_cleanup.get("samples", []) if s.get("uid") != test_uid]
+        new_count = len(samples_cleanup)
+        benchmarks_col.update_one(
+            {"id": doc_cleanup["id"]},
+            {"$set": {"samples": samples_cleanup, "count": new_count}}
+        )
+        print(f"  ✓ Removed test sample, count: {count_after2} -> {new_count}")
+    
+    print("\n✅ TEST 4 PASSED: All unit tests passed, cleanup complete")
+    
+    mongo_client.close()
 
 def main():
+    """Run all tests."""
+    print("\n" + "="*80)
+    print("BACKEND TESTING: Sprint 2a Brain reasoning port + cross-founder benchmarks")
+    print("="*80)
+    print(f"Backend URL: {BACKEND_URL}")
+    print(f"MongoDB: {MONGO_URL}/{DB_NAME}")
+    print(f"LLM Budget: <= 3 calls (2 planned + 1 spare)")
+    
+    llm_calls = 0
+    
     try:
-        log("=" * 80)
-        log("SMARTDECIGEN BACKEND TEST - LAYER 1-3 BATCH BUILD (LIVE)")
-        log("STRICT LLM BUDGET: <= 4 calls total")
-        log("=" * 80)
+        # TEST 1: LLM#1 - Benchmark aggregation (1 LLM call)
+        token1, user_id1 = test_benchmark_aggregation()
+        llm_calls += 1
+        print(f"\n→ LLM calls used: {llm_calls}/3")
         
-        # Test Layer 1 (3 LLM calls)
-        token, direction, journey_view = test_layer1_live_loop()
+        # TEST 2: LLM#2 - Brain reasoning port (1 LLM call)
+        token2, user_id2, decision_id = test_brain_reasoning_port()
+        llm_calls += 1
+        print(f"\n→ LLM calls used: {llm_calls}/3")
         
-        # Test Layer 3 (0 LLM calls)
-        test_layer3_share_and_reset(token, direction, journey_view)
+        # TEST 3: FREE - History clean (0 LLM calls)
+        test_history_clean(token2, user_id2, decision_id)
         
-        log("\n" + "=" * 80)
-        log("✅ ALL TESTS PASSED")
-        log(f"   Total LLM calls used: {LLM_CALLS_USED}/{MAX_LLM_CALLS}")
-        log("=" * 80)
+        # TEST 4: FREE - Unit tests (0 LLM calls)
+        test_unit_tests()
         
-        return 0
+        # SUMMARY
+        print("\n" + "="*80)
+        print("✅ ALL TESTS PASSED")
+        print("="*80)
+        print(f"Total LLM calls: {llm_calls}/3 (within budget)")
+        print("\nSummary:")
+        print("  ✅ TEST 1: Benchmark aggregation working (count >= 2, distinct UIDs)")
+        print("  ✅ TEST 2: Brain reasoning port working (9 keys, no hidden_desire, all assertions)")
+        print("  ✅ TEST 3: History clean (reasoning stripped from API, stored in Mongo)")
+        print("  ✅ TEST 4: Unit tests passed (ingest_facts, benchmark_digest, normalize_facts)")
         
     except AssertionError as e:
-        log(f"\n❌ TEST FAILED: {e}")
-        log(f"   LLM calls used before failure: {LLM_CALLS_USED}/{MAX_LLM_CALLS}")
-        return 1
+        print(f"\n❌ TEST FAILED: {e}")
+        sys.exit(1)
     except Exception as e:
-        log(f"\n❌ UNEXPECTED ERROR: {e}")
+        print(f"\n❌ UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
-        log(f"   LLM calls used before error: {LLM_CALLS_USED}/{MAX_LLM_CALLS}")
-        return 1
+        sys.exit(1)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

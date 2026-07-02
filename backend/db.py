@@ -28,3 +28,4 @@ decisions_col = db.decisions           # every brain decision (history, executio
 plans_col = db.org_plans               # Layer 6: founder-ratified objective cascades (autonomous planning)
 journeys_col = db.journeys             # chat-first founder journey: live understanding model + stage + unlocks
 shares_col = db.shares                 # public Decision Cards (virality layer): share links, views, second opinions
+benchmarks_col = db.benchmarks         # evolving cross-founder aggregates: (industry, metric) -> samples/stats

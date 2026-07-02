@@ -22,6 +22,7 @@ from db import users_col, journeys_col, decisions_col, members_col
 from security import current_user, now_utc
 from ledger import record_ledger, inc_stats
 from engine import client, _extract_json, PRIMARY_MODEL, FALLBACK_MODEL
+from benchmarks import normalize_facts, ingest_facts, benchmark_digest
 
 log = logging.getLogger("journey")
 router = APIRouter(prefix="/api/journey")
@@ -289,6 +290,10 @@ IF THEY LACK A RESOURCE (no SOP, no persona, no sales process, no financial mode
 
 STYLE: tight, no wall of text, no em-dashes (use commas), no markdown headers or bullet lists in the reply.
 
+USE PLATFORM BENCHMARKS: when a REAL PLATFORM BENCHMARKS block is present, prefer that real founder data over generic knowledge for your give-before-you-ask value, and ALWAYS cite it honestly with its sample size ("founders on this platform report..., n=3, early signal"). Never present an early signal as an established statistic.
+
+HARVEST BENCHMARK FACTS: whenever the founder states a REAL number about their business (revenue, orders, margin, occupancy, ticket size, team size, CAC, conversion...), record it in benchmark_facts with a reusable snake_case metric name and their industry. ONLY numbers they explicitly stated, never your own estimates. Empty list when none.
+
 OUTPUT: return STRICT JSON only, nothing before or after it:
 {
  "reply": "your chat message (acknowledge + one useful thing + ONE question, or the sufficient-offer)",
@@ -318,6 +323,10 @@ OUTPUT: return STRICT JSON only, nothing before or after it:
    "question_rationale": "why this question has the highest expected value right now, one line",
    "sufficient": false,
    "sufficiency_reason": "one line on why more questions would, or would not, still pay"
+ },
+ "benchmark_facts": {
+   "industry": "short lowercase industry label, 1-3 words (e.g. 'cloud kitchen', 'boutique hotel'), or '' if unknown",
+   "facts": [{"metric": "snake_case_metric_name_with_unit_hint (e.g. monthly_revenue_inr, direct_booking_pct, avg_order_value_inr)", "value": 123, "unit": "inr|pct|orders|rooms|people|..."}]
  }
 }
 RULES FOR "model": fill EVERY field you can infer from the WHOLE conversation so far and carry forward everything you already knew (never blank out something you previously learned). Use "" for unknown strings and [] for unknown lists. "resources" maps a resource name to what they have, for example {"sop": "none", "crm": "HubSpot", "financials": "basic P&L"}.
@@ -325,9 +334,9 @@ RULES FOR "reasoning": every score must reflect your honest current uncertainty.
 """
 
 
-def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning=""):
+def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block=""):
     """ONE LLM call = the full reasoning sweep + reply.
-    Returns (reply:str, new_model:dict, reasoning:dict|None, model_name:str, usage:dict)."""
+    Returns (reply:str, new_model:dict, reasoning:dict|None, bench_raw:dict|None, model_name:str, usage:dict)."""
     model_json = json.dumps(model or _empty_model(), ensure_ascii=False)
     convo = "\n".join(
         f"{'FOUNDER' if m.get('role') == 'user' else 'YOU'}: {m.get('text', '')}"
@@ -341,10 +350,11 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
         + (f"YOUR PREVIOUS UNCERTAINTY MAP (0=known, 100=unknown): {prev_map}\n\n" if prev_map else "")
         + (f"WHAT THIS FOUNDER HAS ACTUALLY DONE BEFORE (real outcomes from their ledger, build on what "
            f"worked, never re-suggest what failed):\n{learning}\n\n" if learning else "")
+        + (f"{benchmarks_block}\n\n" if benchmarks_block else "")
         + f"CONVERSATION SO FAR:\n{convo or '(none yet, this is the opening turn)'}\n\n"
         f"LATEST FROM THE FOUNDER: {latest_user_msg}\n\n"
         f"Run your full reasoning sweep now, then respond exactly as specified and return the updated "
-        f"model and reasoning."
+        f"model, reasoning and benchmark_facts."
     )
     system_blocks = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
     last_err = None
@@ -359,9 +369,10 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
                 raise ValueError("empty reply")
             new_model = out.get("model") if isinstance(out.get("model"), dict) else {}
             reasoning = _normalize_reasoning(out.get("reasoning"))
+            bench_raw = out.get("benchmark_facts") if isinstance(out.get("benchmark_facts"), dict) else None
             usage = {"input_tokens": int(getattr(r.usage, "input_tokens", 0) or 0),
                      "output_tokens": int(getattr(r.usage, "output_tokens", 0) or 0)}
-            return reply, new_model, reasoning, model_name, usage
+            return reply, new_model, reasoning, bench_raw, model_name, usage
         except Exception as e:
             last_err = e
     raise RuntimeError(f"All models failed: {last_err}")
@@ -756,18 +767,23 @@ def start(body: StartIn, user: dict = Depends(current_user)):
     objective = body.objective.strip()
 
     def produce():
-        reply, new_model, reasoning, model_name, usage = journey_turn(
+        reply, new_model, reasoning, bench_raw, model_name, usage = journey_turn(
             objective, _empty_model(), [], objective,
-            prev_reasoning=None, learning=_learning_digest(user["id"], j))
-        return (reply, new_model, reasoning), usage, model_name
+            prev_reasoning=None, learning=_learning_digest(user["id"], j),
+            benchmarks_block=benchmark_digest(j.get("industry") or ""))
+        return (reply, new_model, reasoning, bench_raw), usage, model_name
 
-    (reply, new_model, reasoning), credits_after, cost = _run_billed(user, produce)
+    (reply, new_model, reasoning, bench_raw), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(_empty_model(), new_model)
     msgs = [{"role": "user", "text": objective, "at": now_utc()},
             {"role": "assistant", "text": reply, "at": now_utc()}]
-    journeys_col.update_one({"id": j["id"]}, {"$set": {
-        "objective": objective, "model": merged, "messages": msgs,
-        "reasoning": reasoning, "updated_at": now_utc()}})
+    industry, facts = normalize_facts(bench_raw)
+    updates = {"objective": objective, "model": merged, "messages": msgs,
+               "reasoning": reasoning, "updated_at": now_utc()}
+    if industry:
+        updates["industry"] = industry
+    journeys_col.update_one({"id": j["id"]}, {"$set": updates})
+    ingest_facts(user["id"], industry or j.get("industry", ""), facts, now_utc())
     j = journeys_col.find_one({"id": j["id"]})
     user["credits"] = credits_after
     out = _view(user, j)
@@ -787,18 +803,23 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
     prev_reasoning = j.get("reasoning") or None
 
     def produce():
-        reply, new_model, reasoning, model_name, usage = journey_turn(
+        reply, new_model, reasoning, bench_raw, model_name, usage = journey_turn(
             objective, current_model, transcript, msg,
-            prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j))
-        return (reply, new_model, reasoning), usage, model_name
+            prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j),
+            benchmarks_block=benchmark_digest(j.get("industry") or ""))
+        return (reply, new_model, reasoning, bench_raw), usage, model_name
 
-    (reply, new_model, reasoning), credits_after, cost = _run_billed(user, produce)
+    (reply, new_model, reasoning, bench_raw), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(current_model, new_model)
     new_msgs = transcript + [{"role": "user", "text": msg, "at": now_utc()},
                              {"role": "assistant", "text": reply, "at": now_utc()}]
-    journeys_col.update_one({"id": j["id"]}, {"$set": {
-        "model": merged, "messages": new_msgs,
-        "reasoning": reasoning or prev_reasoning, "updated_at": now_utc()}})
+    industry, facts = normalize_facts(bench_raw)
+    updates = {"model": merged, "messages": new_msgs,
+               "reasoning": reasoning or prev_reasoning, "updated_at": now_utc()}
+    if industry:
+        updates["industry"] = industry
+    journeys_col.update_one({"id": j["id"]}, {"$set": updates})
+    ingest_facts(user["id"], industry or j.get("industry", ""), facts, now_utc())
     j = journeys_col.find_one({"id": j["id"]})
     user["credits"] = credits_after
     out = _view(user, j)
@@ -828,11 +849,13 @@ def make_direction(user: dict = Depends(current_user)):
     def produce():
         reasoning = j.get("reasoning") or {}
         learning = _learning_digest(user["id"], j)
+        bench = benchmark_digest(j.get("industry") or "")
         prompt = (f"FOUNDER MODEL (everything understood so far):\n{json.dumps(model, ensure_ascii=False)}\n\n"
                   f"ENGINE REASONING STATE (uncertainty 0-100 per dimension, assumptions, hidden desire):\n"
                   f"{json.dumps(reasoning, ensure_ascii=False)}\n\n"
                   + (f"THEIR REAL PAST OUTCOMES (build on what worked, avoid what failed):\n{learning}\n\n"
                      if learning else "")
+                  + (f"{bench}\n\n" if bench else "")
                   + f"Their stated objective: {j.get('objective', '')}\n\nProduce the decision package now.")
         raw, model_name, usage = _llm_json(DIRECTION_SYSTEM, prompt, max_tokens=2000)
         return _build_direction(raw), usage, model_name

@@ -23,6 +23,34 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Sprint 2a: Decision Brain /ask ported to the reasoning engine (reasoning sweep in same LLM call: 10-dim uncertainty, assumptions, decision_type, reversible, sharpening_question = highest-EV unknown, sufficient) + public reasoning (hidden_desire stripped) in response; stored in decision doc; stripped from GET /decisions"
+    implemented: true
+    working: true
+    file: "/app/backend/decision_brain.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW. decision_brain.py SYSTEM gains REASONING SWEEP (same 10 dims as journey), COMMIT-THEN-SHARPEN tightened (sharpening_question must attack the most uncertain decision-critical dimension), USE PLATFORM BENCHMARKS + HARVEST BENCHMARK FACTS rules; JSON gains reasoning{...} + benchmark_facts{industry, facts[]}. brain_answer: +benchmarks_block param, max_tokens 2200->2600. _answer_and_log: pops reasoning (journey._normalize_reasoning) + benchmark_facts (normalize/ingest with org.industry -> journey.industry fallback); stores full reasoning (incl hidden_desire) on decision doc; response gains reasoning=_public_reasoning (hidden_desire stripped); GET /decisions projection now also excludes reasoning. Existing contract UNCHANGED: strategic_alignment still popped founder-only, goal_impact founder-only, next_action/hook always. BrainPage renders 'How the engine read this' strip (assumptions + biggest unknown + decision-type/reversible chips)."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL TESTS PASSED (2 LLM calls used, within budget of 3). TEST 2 (LLM CALL 2 - Brain reasoning port): Fresh signup -> POST /api/brain/ask with cloud kitchen Swiggy ads question -> 200, mode=decide, cost=4. CRITICAL ASSERTIONS ✓: response HAS 'reasoning' object ✓, reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire) ✓, uncertainty keys: ['goal', 'reality', 'constraints', 'risks', 'resources', 'knowledge_gap', 'assumptions', 'decision_impact', 'missing_info'] ✓, reasoning has NO 'hidden_desire' key at all ✓, biggest_uncertainty='missing_info' + question_target='reality' among the 9 ✓, question_rationale non-empty (len=171) ✓, sufficient is bool (False) ✓, dim_order has 9 items + dim_labels present ✓, assumptions_detected is a list (len=2) ✓, decision_type='execution' (valid) ✓, response does NOT contain 'strategic_alignment' ✓, existing contract intact: next_action, hook, key_takeaway, mode=decide, decision_id, session_id, cost=4 ✓. TEST 3 (FREE - History clean): GET /api/brain/decisions -> 200, 1 decision returned, ALL decisions do NOT contain 'reasoning' or 'strategic_alignment' keys ✓. MongoDB decision doc DOES contain 'reasoning' (stored server-side) ✓, MongoDB reasoning contains 'hidden_desire' (full trace stored server-side) ✓. Feature is production-ready."
+  - task: "Cross-founder benchmarks (evolving from day 1): benchmarks.py aggregation (one doc per industry+metric, one sample per founder w/ replace-not-double-count, honest n labeling <5 = EARLY SIGNAL) + harvest in journey turns (same LLM call emits benchmark_facts, industry stored on journey) + digest injected into journey turns, direction, and brain asks"
+    implemented: true
+    working: true
+    file: "/app/backend/benchmarks.py, /app/backend/journey.py, /app/backend/decision_brain.py, /app/backend/db.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW. benchmarks.py: normalize_facts (LLM blob -> industry + [{metric,value,unit}], keys normalized lowercase-hyphen), ingest_facts (per (industry,metric) doc: samples[{uid_hash,value,at}] capped 200, ONE sample per founder per metric, re-report REPLACES), benchmark_digest (top 8 metrics by count, median+range+n, n<5 labelled 'EARLY SIGNAL, small sample', '' when industry empty/unknown -> engine falls back to own knowledge), ensure_benchmarks_startup (unique industry+metric index). PRIVACY: only sha256-derived uid hash + numeric values, no names/text/org ids. journey.py: SYSTEM +USE PLATFORM BENCHMARKS +HARVEST BENCHMARK FACTS rules + benchmark_facts JSON field; journey_turn signature +benchmarks_block, returns bench_raw; /start + /message ingest facts + store journey.industry; direction prompt injects digest. SELF-VERIFIED LIVE (1 LLM): founder stated 700 orders/350 AOV/12% margin -> journey.industry='cloud-kitchen', 4 benchmark docs created (monthly-orders, avg-order-value-inr, net-margin-pct, monthly-revenue-inr), digest renders honest EARLY SIGNAL lines."
+      - working: true
+        agent: "testing"
+        comment: "PASS - ALL TESTS PASSED (2 LLM calls used, within budget of 3). TEST 1 (LLM CALL 1 - Benchmark aggregation): Fresh signup (benchmark_test_1782999697@cloudkitchen.com) -> POST /api/journey/start with cloud kitchen objective (900 orders/month, 320 rupees AOV, 15L revenue target) -> 200, cost=4, credits=46 ✓. MongoDB inspection: Found 5 cloud-kitchen benchmark docs. CRITICAL ASSERTIONS ✓: avg-order-value-inr has count=2 with 2 distinct UIDs ['3000cbba51c22ccd', '1cd7dc7438c18da3'] (aggregation working) ✓, monthly-orders has count=2 with 2 distinct UIDs (aggregation working) ✓, monthly-revenue-inr has count=2 with 2 distinct UIDs (aggregation working) ✓. All benchmark rows: (cloud-kitchen, monthly-orders, 2), (cloud-kitchen, avg-order-value-inr, 2), (cloud-kitchen, net-margin-pct, 1), (cloud-kitchen, monthly-revenue-inr, 2), (cloud-kitchen, target-monthly-revenue-inr, 1). TEST 4 (FREE - Unit tests): ingest_facts with 'unit-test-user' value 500 then 600 -> count increased by exactly 1 (replace, not double count) ✓, test sample value=600 (REPLACED) ✓. benchmark_digest('cloud-kitchen') contains 'monthly-orders' with n=3 and phrase 'EARLY SIGNAL' (n < 5) ✓. normalize_facts({}) -> ('', []) ✓, normalize_facts with invalid facts -> industry normalized, facts empty ✓, normalize_facts with valid facts -> ('cloud-kitchen', [{'metric': 'monthly-orders', 'value': 700.0, 'unit': 'orders'}]) ✓. Cleanup complete (test sample removed) ✓. Feature is production-ready."
   - task: "Layer 1 Decision Intelligence Engine: journey turn returns reasoning trace (10-dim uncertainty map, biggest_uncertainty, assumptions, decision_type, reversible, expert_lenses, question_target+rationale, sufficient stop-rule); confidence computed server-side from uncertainty map (can go down); hidden_desire stripped from public view; direction upgraded to Decision+Trade-offs+Execution+Learning"
     implemented: true
     working: true
@@ -1398,6 +1426,38 @@ agent_communication:
       (5) FREE POST /api/journey/reset -> 200, reasoning null, confidence 0, confidence_source completeness.
       Report exact reasoning payload seen on turn 1 (scores) and the direction keys. TOTAL LLM <= 4 (3 used + 1 spare
       ONLY if a retry is genuinely needed).
+  - agent: "main"
+    message: >
+      TEST (Sprint 2a Brain reasoning port + cross-founder benchmarks). LIVE Anthropic key. STRICT LLM
+      BUDGET <= 3 calls. DO NOT TOUCH /api/payments (Zoho LIVE, real money).
+      Context: a cloud-kitchen founder already seeded benchmarks (industry 'cloud-kitchen': monthly-orders,
+      avg-order-value-inr, net-margin-pct, monthly-revenue-inr, each n=1).
+      (1) LLM#1 BENCHMARK AGGREGATION: fresh signup #A -> POST /api/journey/start {objective:"I run a cloud
+          kitchen in Mumbai doing 900 orders a month at 320 rupees average order value and want to hit 15L
+          monthly revenue in a year."} -> 200. THEN inspect Mongo (mongodb://localhost:27017, db
+          test_database, collection benchmarks): at least one cloud-kitchen metric doc (e.g. monthly-orders
+          or avg-order-value-inr) now has count=2 with TWO DISTINCT uid hashes in samples (two founders
+          aggregated). Report every (industry, metric, count).
+      (2) LLM#2 BRAIN REASONING: same or another fresh user -> POST /api/brain/ask {question:"Should I
+          spend 50000 rupees a month on Swiggy ads to grow my cloud kitchen orders, margins are thin?"}
+          -> 200. Assert: response HAS 'reasoning' object with uncertainty of EXACTLY 9 keys (NO
+          hidden_desire), biggest_uncertainty + question_target among them, question_rationale non-empty,
+          sufficient bool, dim_order(9)+dim_labels; response does NOT contain 'strategic_alignment';
+          next_action + hook + key_takeaway non-empty as before (contract intact); sharpening_question is
+          string or null; decision_id + session_id present; cost>=1.
+      (3) FREE: GET /api/brain/decisions for that user -> rows do NOT contain keys 'reasoning' NOR
+          'strategic_alignment' (history stays clean). Mongo decisions doc for that decision_id DOES
+          contain 'reasoning' (stored server-side).
+      (4) FREE (python, no HTTP): sys.path /app/backend; from benchmarks import ingest_facts,
+          benchmark_digest, normalize_facts. Call ingest_facts('unit-test-user','cloud-kitchen',
+          [{'metric':'monthly-orders','value':500,'unit':'orders'}], datetime.now(timezone.utc)) TWICE with
+          values 500 then 600 -> the monthly-orders doc count increases by exactly 1 total (replace, not
+          double count) and the sample for that uid shows 600. Then benchmark_digest('cloud-kitchen')
+          contains 'monthly-orders' with n=3 (or the correct new n) and the phrase 'EARLY SIGNAL' while
+          n<5. normalize_facts garbage inputs ({}, {'industry':'X','facts':[{'metric':'','value':'abc'}]})
+          -> ("", []) / empty facts. CLEANUP: remove the 'unit-test-user' sample afterwards (pull uid hash)
+          so real data stays clean.
+      Report exact counts and keys seen. TOTAL LLM <= 3 (2 planned + 1 spare).
   - agent: "testing"
     message: >
       TESTING COMPLETE - ALL 3-LAYER BATCH BUILD TESTS PASSED (0 LLM calls, fully free).
@@ -1495,3 +1555,67 @@ agent_communication:
       - Share/reset free paths working correctly
       
       Feature is production-ready. NO ISSUES FOUND.
+
+  - agent: "testing"
+    message: >
+      TESTING COMPLETE - Sprint 2a ALL TESTS PASSED ✅ (2 LLM calls used, within budget of 3).
+      
+      TEST 1 (LLM#1 - BENCHMARK AGGREGATION ACROSS FOUNDERS) ✅:
+      - Fresh signup (benchmark_test_1782999697@cloudkitchen.com) -> POST /api/journey/start with cloud kitchen 
+        objective (900 orders/month, 320 rupees AOV, 15L revenue target) -> 200, cost=4, credits=46
+      - MongoDB inspection: Found 5 cloud-kitchen benchmark docs
+      - CRITICAL: avg-order-value-inr has count=2 with 2 DISTINCT UIDs ['3000cbba51c22ccd', '1cd7dc7438c18da3']
+      - CRITICAL: monthly-orders has count=2 with 2 DISTINCT UIDs (aggregation working, no double count)
+      - CRITICAL: monthly-revenue-inr has count=2 with 2 DISTINCT UIDs
+      - All benchmark rows: (cloud-kitchen, monthly-orders, 2), (cloud-kitchen, avg-order-value-inr, 2), 
+        (cloud-kitchen, net-margin-pct, 1), (cloud-kitchen, monthly-revenue-inr, 2), 
+        (cloud-kitchen, target-monthly-revenue-inr, 1)
+      
+      TEST 2 (LLM#2 - BRAIN REASONING PORT) ✅:
+      - Fresh signup (brain_test_1782999716@cloudkitchen.com) -> POST /api/brain/ask with question 
+        "Should I spend 50000 rupees a month on Swiggy ads to grow my cloud kitchen orders, margins are thin?"
+      - 200 response, cost=4, mode=decide
+      - CRITICAL ASSERTIONS ALL PASSED:
+        ✓ response HAS 'reasoning' object
+        ✓ reasoning.uncertainty has EXACTLY 9 keys (NO hidden_desire)
+        ✓ uncertainty keys: ['goal', 'reality', 'constraints', 'risks', 'resources', 'knowledge_gap', 
+          'assumptions', 'decision_impact', 'missing_info']
+        ✓ reasoning has NO 'hidden_desire' key at all
+        ✓ biggest_uncertainty='missing_info' + question_target='reality' among the 9
+        ✓ question_rationale non-empty (len=171)
+        ✓ sufficient is bool (False)
+        ✓ dim_order has 9 items + dim_labels present
+        ✓ assumptions_detected is a list (len=2)
+        ✓ decision_type='execution' (valid)
+        ✓ response does NOT contain 'strategic_alignment'
+        ✓ existing contract intact: next_action, hook, key_takeaway, mode=decide, decision_id, 
+          session_id, cost=4
+      
+      TEST 3 (FREE - HISTORY CLEAN) ✅:
+      - GET /api/brain/decisions -> 200, 1 decision returned
+      - CRITICAL: ALL decisions do NOT contain 'reasoning' or 'strategic_alignment' keys (stripped from API)
+      - MongoDB decision doc DOES contain 'reasoning' (stored server-side)
+      - MongoDB reasoning contains 'hidden_desire' (full trace stored server-side, never exposed to API)
+      
+      TEST 4 (FREE - UNIT TESTS benchmarks.py) ✅:
+      - ingest_facts with 'unit-test-user' value 500 then 600 -> count increased by exactly 1 
+        (replace, not double count) ✓
+      - test sample value=600 (REPLACED, not appended) ✓
+      - benchmark_digest('cloud-kitchen') contains 'monthly-orders' with n=3 and phrase 'EARLY SIGNAL' 
+        (n < 5) ✓
+      - normalize_facts({}) -> ('', []) ✓
+      - normalize_facts with invalid facts -> industry normalized, facts empty ✓
+      - normalize_facts with valid facts -> ('cloud-kitchen', [{'metric': 'monthly-orders', 
+        'value': 700.0, 'unit': 'orders'}]) ✓
+      - Cleanup complete (test sample removed from real data) ✓
+      
+      SUMMARY:
+      - Total LLM calls: 2/3 (within strict budget, 1 spare unused)
+      - All Sprint 2a features working correctly:
+        1. Benchmark aggregation: TWO DISTINCT founders aggregated (count=2, distinct UIDs verified)
+        2. Brain reasoning port: EXACTLY 9 keys (hidden_desire stripped), all contract requirements met
+        3. History clean: reasoning stripped from API, stored in Mongo with hidden_desire
+        4. Unit tests: ingest_facts (replace not double count), benchmark_digest (EARLY SIGNAL), 
+           normalize_facts (all cases)
+      
+      Both features are production-ready. NO ISSUES FOUND.

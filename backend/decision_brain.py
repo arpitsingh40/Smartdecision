@@ -24,8 +24,10 @@ from pymongo import ReturnDocument
 
 import doc_memory
 from engine import client, _extract_json
-from db import users_col, db, members_col, orgs_col, decisions_col
+from db import users_col, db, members_col, orgs_col, decisions_col, journeys_col
 from security import current_user
+from journey import _normalize_reasoning, _public_reasoning
+from benchmarks import normalize_facts, ingest_facts, benchmark_digest
 
 log = logging.getLogger("brain")
 router = APIRouter(prefix="/api/brain")
@@ -333,7 +335,13 @@ ALWAYS LAND A NEXT ACTION: every single turn ends with ONE concrete next action 
 
 STRONG HOOK: alongside the action, give ONE short, motivating line (hook) that makes them WANT to do it now, ties it to momentum and to where the company is heading, and makes the payoff easy to picture. Warm and human, never hype, no exclamation marks.
 
-COMMIT THEN SHARPEN: when the decision genuinely hinges on ONE missing fact, still deliver your best recommendation under a clearly stated assumption, then ask ONE sharp, connected question (sharpening_question) that digs toward the real lever, not a generic "anything else?". One question, only when it truly earns its place, otherwise null.
+COMMIT THEN SHARPEN: when the decision genuinely hinges on ONE missing fact, still deliver your best recommendation under a clearly stated assumption, then ask ONE sharp, connected question (sharpening_question) that digs toward the real lever, not a generic "anything else?". The question MUST attack the dimension your reasoning sweep found most uncertain AND most decision-critical (highest expected information gain). One question, only when it truly earns its place, otherwise null.
+
+REASONING SWEEP (do this silently on EVERY message, before writing anything): update a ten-dimension uncertainty map about THIS user's situation, each scored 0..100 (0 = fully understood, 100 = complete unknown), honest, may rise when new information exposes a problem: goal (what they really want), reality (facts on the ground), constraints (hard limits), risks, resources, knowledge_gap (what THEY cannot do), assumptions (unsupported beliefs they carry), hidden_desire (what they really want beneath the ask), decision_impact (stakes + reversibility of THIS decision), missing_info (facts nobody has). Detect their unsupported assumptions. Classify the decision (idea|validation|execution|scaling|crisis|other) and whether it is reversible. Note the 2-4 expert lenses you applied. If the decision-critical dimensions are already low-uncertainty, set sufficient=true and sharpening_question SHOULD be null.
+
+USE PLATFORM BENCHMARKS: when a REAL PLATFORM BENCHMARKS block is present, prefer that real founder data over generic knowledge, and ALWAYS cite it honestly with its sample size ("founders on this platform report..., n=3, early signal"). Never present an early signal as an established statistic.
+
+HARVEST BENCHMARK FACTS: whenever the user states a REAL number about the business (revenue, orders, margin, ticket size, headcount, conversion...), record it in benchmark_facts with a reusable snake_case metric name and the industry. ONLY numbers they explicitly stated, never your own estimates. Empty list when none.
 
 CONNECTED MEMORY: when SESSION_HISTORY is present, this is an ongoing conversation. Build on it, go one level deeper than last turn, never repeat what you already said, never re-ask what they already told you. It should feel like the same person who has been with them the whole way.
 
@@ -357,9 +365,26 @@ Return ONLY valid JSON, no markdown fences:
  "plan": ["plan mode ONLY: 4 to 8 ordered steps, each a full, concrete, useful line (who/what/rough number/timeframe where it helps)"] or null,
  "next_action": "ALWAYS present, never empty: ONE concrete next step for the next 24 to 48 hours, the easiest true first move. This is the hero of the reply.",
  "hook": "ALWAYS present, never empty: ONE short, motivating line that makes them want to do the next_action now and ties it to momentum. Warm, human, no exclamation marks.",
- "sharpening_question": "ONE connected question that would most sharpen this decision, or null when nothing genuinely needs it.",
+ "sharpening_question": "ONE connected question that would most sharpen this decision (it must attack the most uncertain decision-critical dimension from your reasoning sweep), or null when nothing genuinely needs it.",
  "citations": [{"doc": "document name", "chapter": "chapter title"}],
- "confidence": "high" | "medium" | "low"}"""
+ "confidence": "high" | "medium" | "low",
+ "reasoning": {
+   "uncertainty": {"goal": {"score": 0, "note": ""}, "reality": {"score": 0, "note": ""}, "constraints": {"score": 0, "note": ""}, "risks": {"score": 0, "note": ""}, "resources": {"score": 0, "note": ""}, "knowledge_gap": {"score": 0, "note": ""}, "assumptions": {"score": 0, "note": ""}, "hidden_desire": {"score": 0, "note": ""}, "decision_impact": {"score": 0, "note": ""}, "missing_info": {"score": 0, "note": ""}},
+   "biggest_uncertainty": "one of the ten dimension keys",
+   "assumptions_detected": ["an unsupported belief they are carrying"],
+   "hidden_desire": "what they seem to really want, one line, empty string if unknown",
+   "decision_type": "idea|validation|execution|scaling|crisis|other",
+   "reversible": true,
+   "expert_lenses": ["the 2-4 expert perspectives you applied"],
+   "question_target": "the dimension your sharpening_question attacks (or the biggest uncertainty when the question is null)",
+   "question_rationale": "why that unknown matters most for THIS decision, one line",
+   "sufficient": false,
+   "sufficiency_reason": "one line on whether more information would still change this decision"
+ },
+ "benchmark_facts": {
+   "industry": "short lowercase industry label, 1-3 words, or '' if unknown",
+   "facts": [{"metric": "snake_case_metric_name_with_unit_hint", "value": 123, "unit": "inr|pct|orders|people|..."}]
+ }}"""
 
 REQUIRED = ("mode", "answer")
 VALID_MODES = ("answer", "decide", "plan")
@@ -372,7 +397,7 @@ def _clean(s):
     return s
 
 
-def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = "", founder_block: str = "", industry_block: str = ""):
+def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = "", founder_block: str = "", industry_block: str = "", benchmarks_block: str = ""):
     """ONE LLM call. Returns (out_dict, model, usage)."""
     if passages:
         psg = "\n\n".join(f"[{p['doc']} -> {p['chapter']}] (score {p['score']})\n{p['text']}" for p in passages)
@@ -385,15 +410,16 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
     strat_section = f"{strategy_block}\n\n" if (strategy_block or "").strip() else ""
     founder_section = f"{founder_block}\n\n" if (founder_block or "").strip() else ""
     industry_section = f"{industry_block}\n\n" if (industry_block or "").strip() else ""
+    bench_section = f"{benchmarks_block}\n\n" if (benchmarks_block or "").strip() else ""
     learn_section = learning_block if (learning_block or "").strip() else ""
     hist_section = session_history if (session_history or "").strip() else ""
-    prompt = f"{docs_line}{role_line}\n{rules_block}{founder_section}{industry_section}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
+    prompt = f"{docs_line}{role_line}\n{rules_block}{founder_section}{industry_section}{bench_section}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
 
     system_blocks = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
     last_err = None
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            r = client().messages.create(model=model, max_tokens=2200, system=system_blocks,
+            r = client().messages.create(model=model, max_tokens=2600, system=system_blocks,
                                          messages=[{"role": "user", "content": prompt}])
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
             out = json.loads(_extract_json(txt))
@@ -605,6 +631,15 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
     learning_block = _org_learning_block(org, function)
     founder_block = _founder_profile_block(org) if is_owner else ""   # owner-only personality steering
     industry_block = _industry_block(org)                              # org-wide domain grounding
+    # evolving cross-founder benchmarks: org industry first, else the user's journey industry (solo)
+    bench_industry = (org.get("industry") if org else "") or ""
+    if not bench_industry:
+        try:
+            jdoc = journeys_col.find_one({"user_id": user["id"]}, {"industry": 1})
+            bench_industry = (jdoc or {}).get("industry", "") or ""
+        except Exception:
+            bench_industry = ""
+    benchmarks_block = benchmark_digest(bench_industry)
     reserve = BRAIN_RESERVE
     u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
                                       {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
@@ -615,7 +650,7 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
         history = _session_history(user["id"], session_id)
         out, model, usage = brain_answer(question, passages, doc_names, instructions,
                                          strategy_block, history, function, learning_block,
-                                         founder_block, industry_block)
+                                         founder_block, industry_block, benchmarks_block)
     except Exception as e:
         try:
             users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
@@ -636,6 +671,13 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
     # ---- Decision Ledger: persist; alignment is FOUNDER-ONLY (stripped from member response) ----
     alignment = _sanitize_alignment(out.pop("strategic_alignment", None))
     goal_impact = _goal_impact(alignment, org, is_owner)  # founder-only; None for members/solo
+    # ---- Decision Intelligence Engine (Sprint 2a): reasoning sweep + benchmark harvesting ----
+    reasoning = _normalize_reasoning(out.pop("reasoning", None))
+    bench_industry_out, bench_facts = normalize_facts(out.pop("benchmark_facts", None))
+    try:
+        ingest_facts(user["id"], bench_industry_out or bench_industry, bench_facts, now_utc())
+    except Exception as e:
+        log.warning(f"brain benchmark ingest failed: {e}")
     decision_id = str(uuid.uuid4())
     try:
         decisions_col.insert_one({
@@ -664,6 +706,7 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
             "result": None,
             "status": "open",
             "strategic_alignment": alignment,
+            "reasoning": reasoning,   # full trace incl. hidden_desire (never returned in history)
             # ---- Layer 0: immutable learning-loop stamps (write now, analyse later) ----
             "function": function,
             "revenue_proximity": _proximity(function),
@@ -678,6 +721,7 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
             "credits": u.get("credits", 0), "cost": actual,
             "tokens": usage["input_tokens"] + usage["output_tokens"],
             "sources_found": len(passages), "docs_in_kb": len(doc_names),
+            "reasoning": _public_reasoning(reasoning),
             **({"goal_impact": goal_impact} if goal_impact else {})}
 
 
@@ -691,7 +735,7 @@ def my_decisions(user: dict = Depends(current_user)):
     """A member's own decision history. Never exposes the founder-only alignment field."""
     rows = list(decisions_col.find(
         {"user_id": user["id"]},
-        {"_id": 0, "strategic_alignment": 0, "alignment_band": 0},
+        {"_id": 0, "strategic_alignment": 0, "alignment_band": 0, "reasoning": 0},
     ).sort("created_at", -1).limit(50))
     return {"decisions": rows}
 

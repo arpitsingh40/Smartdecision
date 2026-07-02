@@ -350,6 +350,34 @@ export default function BrainPage() {
                 )}
 
                 {/* GOAL IMPACT — founder-only (members never receive this) */}
+                {result.reasoning && (result.reasoning.assumptions_detected?.length || result.reasoning.question_rationale) ? (
+                  <div data-testid="brain-reasoning" className="rounded-xl border border-border/60 bg-secondary/30 px-4 py-3 space-y-2">
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                      How the engine read this
+                      {result.reasoning.decision_type && result.reasoning.decision_type !== 'other' ? (
+                        <span className="ml-2 normal-case tracking-normal rounded-full bg-secondary px-2 py-0.5">{result.reasoning.decision_type} problem</span>
+                      ) : null}
+                      {result.reasoning.reversible === false ? (
+                        <span className="ml-1.5 normal-case tracking-normal rounded-full bg-red-100 text-red-700 px-2 py-0.5">one-way door</span>
+                      ) : result.reasoning.reversible === true ? (
+                        <span className="ml-1.5 normal-case tracking-normal rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5">reversible</span>
+                      ) : null}
+                    </div>
+                    {result.reasoning.assumptions_detected?.length ? (
+                      <ul className="space-y-1">
+                        {result.reasoning.assumptions_detected.slice(0, 3).map((a, i) => (
+                          <li key={i} className="text-xs text-foreground/85 leading-snug">Assumption detected: {a}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {result.reasoning.question_rationale ? (
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        Biggest unknown: {result.reasoning.dim_labels?.[result.reasoning.question_target] || result.reasoning.question_target}. {result.reasoning.question_rationale}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {result.goal_impact && (
                   <div data-testid="brain-goal-impact"
                     className={`rounded-xl border px-4 py-3 ${

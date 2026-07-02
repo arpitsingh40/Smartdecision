@@ -260,3 +260,15 @@ $1 = 10 credits. Turn cost 5 credits (~$0.50/turn revenue vs ~$0.04 API cost). S
 **Frontend:** /app/frontend/src/pages/JourneyPage.js (new home at "/"), TopBar progressive nav + "Knowledge" (was Workspace/Brain at /brain), App.js routes "/"->JourneyPage and "/brain"->BrainPage.
 
 **Next phases:** P2 Initial Direction -> refine -> 4-10 measurable milestones; P3 in-chat artifact builders (SOP/ICP/persona) into a Knowledge area; P4 team-setup conversation; P5 invite/billing (company-paid chat-only members vs self-pay independents).
+
+---
+
+## CHANGELOG — Env restore (2nd fork wipe) + Strategy North Star session [2026-07]
+
+**ENV RESTORED AGAIN**: backend/.env + frontend/.env wiped on fork (backend crash-looping KeyError: MONGO_URL; DB completely fresh — all prior users/orgs gone). Recreated both (JWT_SECRET regenerated, DB_NAME=smartdecigen_db, REACT_APP_BACKEND_URL=https://founder-strategy-3.preview.emergentagent.com found via old test scripts). Founder ceo@smartdecigen.com / FounderOS@2026 auto-seeded on startup. User re-pasted ALL real keys:
+- ANTHROPIC_API_KEY **LIVE** (verified via 2-token haiku ping) — LLM calls cost real money, cap test budgets.
+- OPENAI_API_KEY stored (unused).
+- **SIGNUP_CREDITS changed 100 -> 50** (user's instruction); QUESTIONNAIRE_BONUS_CREDITS=100; all reserves + CREDITS_PER_1K_TOKENS=2 unchanged; model-pricing vars (USD_TO_INR, PRICE_OPUS/FABLE/HAIKU_IN/OUT) + DEBUG_SEED_TOKEN added for Founder OS cost estimates.
+- Zoho Payments set LIVE (ZOHO_TEST_MODE=false, account 60061771134) **BUT refresh token now returns invalid_code** — Zoho revoked it. OPEN ITEM: user must regenerate refresh token in Zoho API console (Self Client, scopes ZohoPay.payments.CREATE,ZohoPay.payments.READ); until then live checkout will fail. AuthPage credits line briefly showed em dash before /api/config fetch — cosmetic, not fixed.
+
+**STRATEGY SESSION (no code changes)**: Founder articulated the definitive strategy; agreed + captured in **/app/memory/strategy_north_star.md** (READ IT before any feature/pricing work). Core: compete on decision PROCESS not answers; positioning "AI Chief of Staff for founders"; mission Understand->Decide->Execute->**Learn**; 3-question feature rule; real product = reduce uncertainty in important decisions; kill credit-talk from UI (keep as internal metering), single Founder Plan Rs7,999/mo (founding cohort Rs3,999-4,999 locked), founders-only GTM with 20-50 founding customers, no ads. Product gap = 3 organs: (1) Decision Record + 30-day outcome loop [proof engine, build first, free], (2) Company Data Room [persistent memory], (3) Deep Research live web [needs Tavily/Perplexity key — engine has NO web access today]. Awaiting founder's pick (a-e in strategy doc).

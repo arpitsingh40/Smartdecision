@@ -19,7 +19,7 @@ from pymongo import MongoClient
 sys.path.insert(0, '/app/backend')
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://founder-reasoning.preview.emergentagent.com/api"
+BACKEND_URL = "https://founder-intel-4.preview.emergentagent.com/api"
 
 # MongoDB connection
 MONGO_URL = "mongodb://localhost:27017"

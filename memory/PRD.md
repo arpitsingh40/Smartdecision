@@ -265,7 +265,7 @@ $1 = 10 credits. Turn cost 5 credits (~$0.50/turn revenue vs ~$0.04 API cost). S
 
 ## CHANGELOG — Env restore (2nd fork wipe) + Strategy North Star session [2026-07]
 
-**ENV RESTORED AGAIN**: backend/.env + frontend/.env wiped on fork (backend crash-looping KeyError: MONGO_URL; DB completely fresh — all prior users/orgs gone). Recreated both (JWT_SECRET regenerated, DB_NAME=smartdecigen_db, REACT_APP_BACKEND_URL=https://founder-reasoning.preview.emergentagent.com found via old test scripts). Founder ceo@smartdecigen.com / FounderOS@2026 auto-seeded on startup. User re-pasted ALL real keys:
+**ENV RESTORED AGAIN**: backend/.env + frontend/.env wiped on fork (backend crash-looping KeyError: MONGO_URL; DB completely fresh — all prior users/orgs gone). Recreated both (JWT_SECRET regenerated, DB_NAME=smartdecigen_db, REACT_APP_BACKEND_URL=https://founder-intel-4.preview.emergentagent.com found via old test scripts). Founder ceo@smartdecigen.com / FounderOS@2026 auto-seeded on startup. User re-pasted ALL real keys:
 - ANTHROPIC_API_KEY **LIVE** (verified via 2-token haiku ping) — LLM calls cost real money, cap test budgets.
 - OPENAI_API_KEY stored (unused).
 - **SIGNUP_CREDITS changed 100 -> 50** (user's instruction); QUESTIONNAIRE_BONUS_CREDITS=100; all reserves + CREDITS_PER_1K_TOKENS=2 unchanged; model-pricing vars (USD_TO_INR, PRICE_OPUS/FABLE/HAIKU_IN/OUT) + DEBUG_SEED_TOKEN added for Founder OS cost estimates.

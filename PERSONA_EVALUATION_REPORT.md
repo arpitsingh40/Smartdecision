@@ -1,7 +1,7 @@
 # FOUNDER OS — FULL END-TO-END PERSONA EVALUATION REPORT
 
 **Test Date:** 2026-06-25  
-**Base URL:** https://founder-reasoning.preview.emergentagent.com/api  
+**Base URL:** https://founder-intel-4.preview.emergentagent.com/api  
 **LLM Budget:** 18 calls max  
 **LLM Calls Used:** 8 / 18 ✅ (well within budget)
 

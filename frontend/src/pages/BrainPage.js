@@ -58,6 +58,48 @@ export default function BrainPage() {
   const [savingRules, setSavingRules] = useState(false);
   const fileRef = useRef(null);
 
+  // ---- Organ 1: outcome reviews due + launch-KPI one-tap signals ----
+  const [reviewsDue, setReviewsDue] = useState([]);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewImpact, setReviewImpact] = useState('');
+  const [reviewNote, setReviewNote] = useState('');
+  const [kpiSent, setKpiSent] = useState({});
+
+  const loadReviews = useCallback(async () => {
+    try {
+      const r = await api.get('/brain/reviews/due');
+      setReviewsDue(r.data.due || []);
+    } catch (_e) { /* noop */ }
+  }, []);
+
+  useEffect(() => { loadReviews(); }, [loadReviews]);
+
+  const submitReview = useCallback(async (id, outcome) => {
+    if (reviewBusy) return;
+    setReviewBusy(true);
+    try {
+      const body = { outcome };
+      if (reviewNote.trim()) body.actual = reviewNote.trim();
+      const imp = parseInt(reviewImpact, 10);
+      if (!Number.isNaN(imp)) body.impact_inr = imp;
+      const r = await api.post(`/brain/decisions/${id}/review`, body);
+      const cal = r.data?.calibration;
+      toast.success(cal?.label ? `Outcome recorded. Calibration: ${cal.label}` : 'Outcome recorded.');
+      setReviewImpact(''); setReviewNote('');
+      loadReviews();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Could not record the outcome.');
+    } finally { setReviewBusy(false); }
+  }, [reviewBusy, reviewNote, reviewImpact, loadReviews]);
+
+  const sendKpi = useCallback(async (kind, value) => {
+    if (!result?.decision_id) return;
+    setKpiSent((s) => ({ ...s, [kind]: value }));
+    try {
+      await api.post('/kpi/signal', { kind, value, decision_id: result.decision_id });
+    } catch (_e) { /* noop */ }
+  }, [result]);
+
   const loadDocs = useCallback(async () => {
     try {
       const r = await api.get('/brain/documents');
@@ -96,7 +138,7 @@ export default function BrainPage() {
   const runAsk = useCallback(async (q, sid) => {
     if (!q.trim() || loading) return;
     setLoading(true);
-    setResult(null); setShowResult(false); setResultInput(''); setDueAt(null);
+    setResult(null); setShowResult(false); setResultInput(''); setDueAt(null); setKpiSent({});
     try {
       const r = await api.post('/brain/ask', { question: q.trim(), session_id: sid });
       setResult(r.data);
@@ -268,6 +310,60 @@ export default function BrainPage() {
               </div>
             </div>
 
+            {/* Organ 1: outcome reviews due — close the loop on past decisions */}
+            {reviewsDue.length > 0 && (
+              <div data-testid="brain-review-banner" className="mt-6 rounded-2xl border border-amber-300/70 bg-amber-50/60 p-4 sm:p-5 space-y-3">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-amber-800 flex items-center gap-1.5">
+                  <Clock size={12} /> Time to close the loop
+                  {reviewsDue.length > 1 ? (
+                    <span className="normal-case tracking-normal rounded-full bg-amber-100 px-2 py-0.5">{reviewsDue.length - 1} more waiting</span>
+                  ) : null}
+                </div>
+                <div>
+                  <p className="text-sm font-medium leading-snug">{reviewsDue[0].question}</p>
+                  {reviewsDue[0].predicted_outcome?.claim ? (
+                    <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                      The engine predicted: “{reviewsDue[0].predicted_outcome.claim}” ({reviewsDue[0].predicted_outcome.confidence}% confident).
+                      How did it actually go?
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    data-testid="review-impact-input"
+                    value={reviewImpact}
+                    onChange={(e) => setReviewImpact(e.target.value.replace(/[^0-9-]/g, ''))}
+                    placeholder="₹ impact (optional)"
+                    inputMode="numeric"
+                    className="w-36 rounded-xl border border-border/70 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <input
+                    data-testid="review-note-input"
+                    value={reviewNote}
+                    onChange={(e) => setReviewNote(e.target.value)}
+                    placeholder="What actually happened? (optional)"
+                    className="flex-1 min-w-[180px] rounded-xl border border-border/70 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button data-testid="review-worked-btn" size="sm" disabled={reviewBusy}
+                    onClick={() => submitReview(reviewsDue[0].id, 'worked')}
+                    className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
+                    It worked
+                  </Button>
+                  <Button data-testid="review-partly-btn" size="sm" variant="outline" disabled={reviewBusy}
+                    onClick={() => submitReview(reviewsDue[0].id, 'partly')} className="rounded-xl">
+                    Partly
+                  </Button>
+                  <Button data-testid="review-didnt-btn" size="sm" variant="outline" disabled={reviewBusy}
+                    onClick={() => submitReview(reviewsDue[0].id, 'didnt')}
+                    className="rounded-xl text-red-600 border-red-200 hover:bg-red-50">
+                    It didn’t
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* thinking state */}
             {loading && (
               <div data-testid="brain-thinking" className="mt-6 text-sm text-muted-foreground flex items-center gap-2" aria-live="polite">
@@ -349,6 +445,30 @@ export default function BrainPage() {
                   </div>
                 )}
 
+                {/* Organ 1: the checkable prediction + when NOT to follow this */}
+                {result.predicted_outcome?.claim && (
+                  <div data-testid="brain-prediction" className="rounded-xl border border-border/60 bg-secondary/30 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-1 flex items-center gap-1.5">
+                      <Clock size={12} /> If you follow this
+                      <span className="normal-case tracking-normal rounded-full bg-secondary px-2 py-0.5">
+                        {result.predicted_outcome.confidence}% confident
+                      </span>
+                    </div>
+                    <p className="text-sm leading-snug">{result.predicted_outcome.claim}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      We’ll check this together in {result.predicted_outcome.review_after_days} days. That’s how your track record gets built.
+                    </p>
+                  </div>
+                )}
+                {result.dont_follow_if && (
+                  <div data-testid="brain-dont-follow" className="rounded-xl border border-amber-300/70 bg-amber-50/50 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-amber-800 mb-1 flex items-center gap-1.5">
+                      <AlertCircle size={12} /> Don’t follow this if
+                    </div>
+                    <p className="text-sm leading-snug text-foreground/90">{result.dont_follow_if}</p>
+                  </div>
+                )}
+
                 {/* GOAL IMPACT — founder-only (members never receive this) */}
                 {result.reasoning && (result.reasoning.assumptions_detected?.length || result.reasoning.question_rationale) ? (
                   <div data-testid="brain-reasoning" className="rounded-xl border border-border/60 bg-secondary/30 px-4 py-3 space-y-2">
@@ -422,6 +542,38 @@ export default function BrainPage() {
                           {c.chapter ? <span className="opacity-60">→ {c.chapter}</span> : null}
                         </span>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Launch KPI one-tap signals (KPI 1 + KPI 2) */}
+                {result.decision_id && (
+                  <div data-testid="brain-kpi-chips" className="flex flex-col gap-1.5 pt-1">
+                    <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground">
+                      <span>Did this read your real problem right?</span>
+                      {kpiSent.problem_detection === undefined ? (
+                        <>
+                          <button data-testid="kpi-problem-yes" onClick={() => sendKpi('problem_detection', true)}
+                            className="rounded-full border border-border/70 px-2 py-0.5 hover:bg-secondary transition-colors">Yes</button>
+                          <button data-testid="kpi-problem-no" onClick={() => sendKpi('problem_detection', false)}
+                            className="rounded-full border border-border/70 px-2 py-0.5 hover:bg-secondary transition-colors">Not quite</button>
+                        </>
+                      ) : (
+                        <span className="text-emerald-600">Noted, thank you.</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground">
+                      <span>Did this change or improve your decision?</span>
+                      {kpiSent.decision_improvement === undefined ? (
+                        <>
+                          <button data-testid="kpi-improve-yes" onClick={() => sendKpi('decision_improvement', true)}
+                            className="rounded-full border border-border/70 px-2 py-0.5 hover:bg-secondary transition-colors">Yes</button>
+                          <button data-testid="kpi-improve-no" onClick={() => sendKpi('decision_improvement', false)}
+                            className="rounded-full border border-border/70 px-2 py-0.5 hover:bg-secondary transition-colors">No</button>
+                        </>
+                      ) : (
+                        <span className="text-emerald-600">Noted, thank you.</span>
+                      )}
                     </div>
                   </div>
                 )}

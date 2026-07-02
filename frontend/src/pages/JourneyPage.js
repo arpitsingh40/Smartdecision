@@ -340,6 +340,48 @@ export default function JourneyPage() {
         ) : null}
       </div>
 
+      {(journey.hypotheses || []).length ? (
+        <div className="pt-3 border-t border-border/60 space-y-2" data-testid="journey-hypotheses-panel">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+            <FlaskConical size={11} /> Current hypotheses
+          </div>
+          <div className="space-y-2">
+            {journey.hypotheses.map((h) => {
+              const ruledOut = h.status === 'ruled_out';
+              const leading = h.status === 'leading';
+              const evid = [
+                ...(h.evidence_for || []).map((e) => `+ ${e}`),
+                ...(h.evidence_against || []).map((e) => `- ${e}`),
+              ].join('\n');
+              return (
+                <div key={h.id} data-testid={`hypothesis-${h.id}`} title={evid}>
+                  <div className="flex items-start justify-between gap-2 text-[11px]">
+                    <span className={`leading-snug ${ruledOut ? 'line-through text-muted-foreground/60' : leading ? 'font-semibold text-foreground' : 'text-foreground/85'}`}>
+                      {h.statement}
+                    </span>
+                    <span className={`font-mono-plex shrink-0 ${ruledOut ? 'text-muted-foreground/60' : leading ? 'text-emerald-600 font-semibold' : 'text-muted-foreground'}`}>
+                      {h.probability}%
+                    </span>
+                  </div>
+                  <div className="h-1 w-full rounded-full bg-muted overflow-hidden mt-0.5">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${ruledOut ? 'bg-muted-foreground/30' : leading ? 'bg-emerald-500' : 'bg-primary/60'}`}
+                      style={{ width: `${h.probability}%` }}
+                    />
+                  </div>
+                  {ruledOut ? (
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mt-0.5">ruled out</div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-snug">
+            Each answer you give moves these probabilities. Hover one to see the evidence.
+          </p>
+        </div>
+      ) : null}
+
       {reasoning ? (
         <div className="pt-3 border-t border-border/60 space-y-3" data-testid="journey-reasoning-panel">
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">

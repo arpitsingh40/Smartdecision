@@ -9,6 +9,7 @@ No new third-party integration: it calls the same engine.client() (Anthropic) th
 rest of the app uses, with the user's own ANTHROPIC_API_KEY.
 """
 import os
+import re
 import uuid
 import json
 import math
@@ -293,11 +294,17 @@ DIAGNOSE BEFORE YOU PRESCRIBE (the SmartDeciGen difference, your highest law ear
 - Advice, market math, numbers and levers come LATER, once the model has real substance. Diagnose first, prescribe second. This is what separates you from a knowledgeable chatbot.
 
 LEAD THE ANALYSIS (you drive the process, and the founder must FEEL you driving):
-- You are NEVER a passive interviewer waiting for the founder to hand you direction. From the FIRST reply, take charge: name the concrete analytical structure you are running and what you are doing with their answers. Example shape: "Companies that reached that scale fit a small set of archetypes: infrastructure for a structural shift, a network-effect marketplace, a data monopoly, a category-defining platform, or a distribution-owning brand. I am going to work out which of these your situation can support, or whether none can, and each answer you give me eliminates some of them."
-- The structure must be REAL and specific to their goal (named archetypes, an elimination order, the hurdles the path must clear), never a listicle of platitudes. Declaring the method IS the gift on turn one: it proves you have a framework and know where you are taking them.
+- You are NEVER a passive interviewer waiting for the founder to hand you direction. From the FIRST reply, take charge of where this is going: say what you need to determine first and what their answer will eliminate. The founder must INFER that a rigorous method exists from the quality of your reasoning, never because you announce it. Do NOT say "I am running five archetypes" or name your framework; demonstrate it: "A company at that scale emerges through a small number of scalable models. Before we discuss ideas, I need to determine which of those models are actually available to you, and your answer will eliminate most of them."
+- The structure underneath must be REAL and specific to their goal (competing hypotheses, an elimination order, the hurdles the path must clear), never a listicle of platitudes. What you conclude, what you eliminate, and what you need next IS the proof of method.
 - ELIMINATE OUT LOUD: from the second turn on, every reply must state at least ONE concrete conclusion your sweep has produced this turn: a path now ruled out, a hurdle cleared or failed, a constraint that reshapes the space ("No capital advantage rules out the infrastructure archetypes, that leaves three"). The founder must feel the possibility space NARROWING every single turn. A summary of what they said is NOT a conclusion.
 - ASK AS AN ANALYST, NOT AN INTERVIEWER: pose your one question as the input your analysis needs next, and say what its answer will decide: "To separate the marketplace path from the data path, I need one thing: ...". Never a bare menu ("which is it?"), never an open "tell me more about yourself".
 - PROJECT THE PATH: where natural, add one short clause on where this is heading ("two answers from now I can tell you whether this is plausible") so the founder always feels you know the destination.
+
+COMPETING HYPOTHESES (your core reasoning discipline, held in the hypotheses state):
+- Maintain 2 to 5 competing hypotheses about what path or advantage this founder's situation actually supports. Each carries an honest probability; together they sum to 100.
+- EVERY founder answer updates the probabilities. Record in evidence_for / evidence_against the specific fact that moved each number. Probabilities that never move mean you are not reasoning.
+- A hypothesis at 5 or below is ruled out; say so out loud (this is your ELIMINATE OUT LOUD conclusion). Never resurrect one without naming the new evidence that revived it.
+- Your ONE question is the one whose answer most redistributes these probabilities, and question_rationale must say which hypotheses it separates.
 
 PREFER MULTI-PATH DIAGNOSTIC QUESTIONS:
 - Your one question should collapse as many unknowns as possible at once. A binary fork ("do you have an idea or not?") is weak when the situation actually has several fundamentally different paths.
@@ -342,6 +349,11 @@ OUTPUT: return STRICT JSON only, nothing before or after it:
    "sufficient": false,
    "sufficiency_reason": "one line on why more questions would, or would not, still pay"
  },
+ "hypotheses": [
+   {"id": "short_snake_slug", "statement": "a testable explanation of their viable path or advantage, one line",
+    "probability": 40, "evidence_for": ["the specific fact they gave that supports it"], "evidence_against": [],
+    "status": "active|leading|ruled_out"}
+ ],
  "benchmark_facts": {
    "industry": "short lowercase industry label, 1-3 words (e.g. 'cloud kitchen', 'boutique hotel'), or '' if unknown",
    "facts": [{"metric": "snake_case_metric_name_with_unit_hint (e.g. monthly_revenue_inr, direct_booking_pct, avg_order_value_inr)", "value": 123, "unit": "inr|pct|orders|rooms|people|..."}]
@@ -349,10 +361,11 @@ OUTPUT: return STRICT JSON only, nothing before or after it:
 }
 RULES FOR "model": fill EVERY field you can infer from the WHOLE conversation so far and carry forward everything you already knew (never blank out something you previously learned). Use "" for unknown strings and [] for unknown lists. "resources" maps a resource name to what they have, for example {"sop": "none", "crm": "HubSpot", "financials": "basic P&L"}.
 RULES FOR "reasoning": every score must reflect your honest current uncertainty. question_rationale must explain the expected VALUE of the question, not restate it.
+RULES FOR "hypotheses": carry forward the previous set with STABLE ids and UPDATE their probabilities with this turn's evidence; add a new hypothesis only when the founder reveals a genuinely new possible path; drop the whole set and restart only if the initial framing was wrong.
 """
 
 
-def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block=""):
+def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block="", prev_hypotheses=None):
     """ONE LLM call = the full reasoning sweep + reply.
     Returns (reply:str, new_model:dict, reasoning:dict|None, bench_raw:dict|None, model_name:str, usage:dict)."""
     model_json = json.dumps(model or _empty_model(), ensure_ascii=False)
@@ -366,6 +379,9 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
         f"FOUNDER'S TOP-LEVEL OBJECTIVE (their very first answer): {objective or '(not yet stated)'}\n\n"
         f"YOUR CURRENT MODEL OF THEM (extend it, keep everything that is already here):\n{model_json}\n\n"
         + (f"YOUR PREVIOUS UNCERTAINTY MAP (0=known, 100=unknown): {prev_map}\n\n" if prev_map else "")
+        + (f"YOUR CURRENT COMPETING HYPOTHESES (update EVERY probability with this turn's evidence and "
+           f"record what moved them; rule out at 5 or below):\n"
+           f"{json.dumps(prev_hypotheses, ensure_ascii=False)}\n\n" if prev_hypotheses else "")
         + (f"WHAT THIS FOUNDER HAS ACTUALLY DONE BEFORE (real outcomes from their ledger, build on what "
            f"worked, never re-suggest what failed):\n{learning}\n\n" if learning else "")
         + (f"{benchmarks_block}\n\n" if benchmarks_block else "")
@@ -378,7 +394,7 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
     last_err = None
     for model_name in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            r = client().messages.create(model=model_name, max_tokens=2600, system=system_blocks,
+            r = client().messages.create(model=model_name, max_tokens=3000, system=system_blocks,
                                          messages=[{"role": "user", "content": prompt}])
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
             out = json.loads(_extract_json(txt))
@@ -388,9 +404,10 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
             new_model = out.get("model") if isinstance(out.get("model"), dict) else {}
             reasoning = _normalize_reasoning(out.get("reasoning"))
             bench_raw = out.get("benchmark_facts") if isinstance(out.get("benchmark_facts"), dict) else None
+            hyp_raw = out.get("hypotheses")
             usage = {"input_tokens": int(getattr(r.usage, "input_tokens", 0) or 0),
                      "output_tokens": int(getattr(r.usage, "output_tokens", 0) or 0)}
-            return reply, new_model, reasoning, bench_raw, model_name, usage
+            return reply, new_model, reasoning, bench_raw, hyp_raw, model_name, usage
         except Exception as e:
             last_err = e
     raise RuntimeError(f"All models failed: {last_err}")
@@ -470,6 +487,60 @@ def _norm_str_list(v, cap=6):
     if not isinstance(v, list):
         return []
     return [_clean(str(x)) for x in v if str(x).strip()][:cap]
+
+
+# ----------------------------------------------------------------- competing hypotheses (state + code)
+def _slug(s):
+    s = re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")
+    return s[:40] or "hypothesis"
+
+
+def _normalize_hypotheses(raw, prev=None):
+    """Code-enforced hypothesis discipline (durable reasoning lives in STATE + CODE, the prompt
+    only sets behavior): coerce fields, force ruled_out to <=5, renormalize probabilities to sum
+    exactly 100, DERIVE status from the final numbers (<=5 ruled_out, >=70 leading, else active).
+    When the LLM omits or breaks the block, the previous set is carried forward unchanged."""
+    if not isinstance(raw, list) or not raw:
+        return prev or []
+    items, seen = [], set()
+    for h in raw[:6]:
+        if not isinstance(h, dict):
+            continue
+        stmt = _clean(str(h.get("statement", ""))).strip()[:220]
+        if not stmt:
+            continue
+        hid = _slug(str(h.get("id") or stmt))
+        if hid in seen:
+            continue
+        seen.add(hid)
+        try:
+            prob = max(0, min(100, int(round(float(h.get("probability", 0))))))
+        except Exception:
+            prob = 0
+        if str(h.get("status", "")).lower().strip() == "ruled_out":
+            prob = min(prob, 5)
+        items.append({"id": hid, "statement": stmt, "probability": prob,
+                      "evidence_for": _norm_str_list(h.get("evidence_for"), 3),
+                      "evidence_against": _norm_str_list(h.get("evidence_against"), 3)})
+    if not items:
+        return prev or []
+    total = sum(x["probability"] for x in items)
+    if total == 0:
+        # LLM gave no usable numbers: start from an equal prior instead of ruling everything out
+        eq = round(100 / len(items))
+        for x in items:
+            x["probability"] = eq
+        items[0]["probability"] += 100 - eq * len(items)
+    elif total != 100:
+        scaled = [round(x["probability"] * 100.0 / total) for x in items]
+        scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
+        for x, p in zip(items, scaled):
+            x["probability"] = max(0, min(100, p))
+    for x in items:
+        p = x["probability"]
+        x["status"] = "ruled_out" if p <= 5 else ("leading" if p >= 70 else "active")
+    items.sort(key=lambda x: -x["probability"])
+    return items
 
 
 def _build_direction(raw):
@@ -721,6 +792,7 @@ def _view(user, j):
         "confidence_band": _confidence_band(conf),
         "ready_for_direction": sufficient or conf >= READY_THRESHOLD,
         "reasoning": _public_reasoning(reasoning),
+        "hypotheses": j.get("hypotheses") or [],
         "direction": j.get("direction") or None,
         "has_direction": bool(j.get("direction")),
         "milestones": [{"id": m.get("id"), "order": m.get("order"), "title": m.get("title", ""),
@@ -785,19 +857,20 @@ def start(body: StartIn, user: dict = Depends(current_user)):
     objective = body.objective.strip()
 
     def produce():
-        reply, new_model, reasoning, bench_raw, model_name, usage = journey_turn(
+        reply, new_model, reasoning, bench_raw, hyp_raw, model_name, usage = journey_turn(
             objective, _empty_model(), [], objective,
             prev_reasoning=None, learning=_learning_digest(user["id"], j),
-            benchmarks_block=benchmark_digest(j.get("industry") or ""))
-        return (reply, new_model, reasoning, bench_raw), usage, model_name
+            benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=None)
+        return (reply, new_model, reasoning, bench_raw, hyp_raw), usage, model_name
 
-    (reply, new_model, reasoning, bench_raw), credits_after, cost = _run_billed(user, produce)
+    (reply, new_model, reasoning, bench_raw, hyp_raw), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(_empty_model(), new_model)
     msgs = [{"role": "user", "text": objective, "at": now_utc()},
             {"role": "assistant", "text": reply, "at": now_utc()}]
     industry, facts = normalize_facts(bench_raw)
     updates = {"objective": objective, "model": merged, "messages": msgs,
-               "reasoning": reasoning, "updated_at": now_utc()}
+               "reasoning": reasoning, "hypotheses": _normalize_hypotheses(hyp_raw, None),
+               "updated_at": now_utc()}
     if industry:
         updates["industry"] = industry
     journeys_col.update_one({"id": j["id"]}, {"$set": updates})
@@ -819,21 +892,24 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
     objective = j.get("objective", "")
     current_model = j.get("model") or _empty_model()
     prev_reasoning = j.get("reasoning") or None
+    prev_hyps = j.get("hypotheses") or []
 
     def produce():
-        reply, new_model, reasoning, bench_raw, model_name, usage = journey_turn(
+        reply, new_model, reasoning, bench_raw, hyp_raw, model_name, usage = journey_turn(
             objective, current_model, transcript, msg,
             prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j),
-            benchmarks_block=benchmark_digest(j.get("industry") or ""))
-        return (reply, new_model, reasoning, bench_raw), usage, model_name
+            benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=prev_hyps)
+        return (reply, new_model, reasoning, bench_raw, hyp_raw), usage, model_name
 
-    (reply, new_model, reasoning, bench_raw), credits_after, cost = _run_billed(user, produce)
+    (reply, new_model, reasoning, bench_raw, hyp_raw), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(current_model, new_model)
     new_msgs = transcript + [{"role": "user", "text": msg, "at": now_utc()},
                              {"role": "assistant", "text": reply, "at": now_utc()}]
     industry, facts = normalize_facts(bench_raw)
     updates = {"model": merged, "messages": new_msgs,
-               "reasoning": reasoning or prev_reasoning, "updated_at": now_utc()}
+               "reasoning": reasoning or prev_reasoning,
+               "hypotheses": _normalize_hypotheses(hyp_raw, prev_hyps),
+               "updated_at": now_utc()}
     if industry:
         updates["industry"] = industry
     journeys_col.update_one({"id": j["id"]}, {"$set": updates})
@@ -849,7 +925,7 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
 def reset(user: dict = Depends(current_user)):
     journeys_col.update_one({"user_id": user["id"]}, {"$set": {
         "stage": "clarity", "objective": "", "model": _empty_model(),
-        "messages": [], "reasoning": None, "direction": None, "milestones": [],
+        "messages": [], "reasoning": None, "hypotheses": [], "direction": None, "milestones": [],
         "team": None, "team_offer_dismissed": False, "updated_at": now_utc()}}, upsert=False)
     return _view(user, _get_or_create(user["id"]))
 
@@ -866,11 +942,14 @@ def make_direction(user: dict = Depends(current_user)):
 
     def produce():
         reasoning = j.get("reasoning") or {}
+        hyps = j.get("hypotheses") or []
         learning = _learning_digest(user["id"], j)
         bench = benchmark_digest(j.get("industry") or "")
         prompt = (f"FOUNDER MODEL (everything understood so far):\n{json.dumps(model, ensure_ascii=False)}\n\n"
                   f"ENGINE REASONING STATE (uncertainty 0-100 per dimension, assumptions, hidden desire):\n"
                   f"{json.dumps(reasoning, ensure_ascii=False)}\n\n"
+                  + (f"COMPETING HYPOTHESES (final state, probability 0-100; the leading one should anchor "
+                     f"your decision):\n{json.dumps(hyps, ensure_ascii=False)}\n\n" if hyps else "")
                   + (f"THEIR REAL PAST OUTCOMES (build on what worked, avoid what failed):\n{learning}\n\n"
                      if learning else "")
                   + (f"{bench}\n\n" if bench else "")

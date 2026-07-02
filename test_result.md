@@ -23,6 +23,17 @@
   indexes, pagination. NOTE: ANTHROPIC_API_KEY is a placeholder -> real LLM turns 502+refund.
 
 backend:
+  - task: "Hypothesis engine (state+code): journey JSON contract gains hypotheses[] (2-5 competing, probability sums to 100, evidence_for/against, status); _normalize_hypotheses code-enforces (ruled_out<=5, renormalize to 100, status derived from numbers, equal prior on all-zero, cap 6, dedupe, carry-forward when LLM omits); stored on journey doc, injected into next turn + direction prompt, exposed in _view, cleared on reset; prompt softened (framework INFERRED not announced)"
+    implemented: true
+    working: true
+    file: "/app/backend/journey.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "SELF-VERIFIED: 5/5 unit tests on _normalize_hypotheses (renorm to 100, ruled_out forced <=5, status from numbers with leading>=70, carry-forward on None/[]/broken, equal prior on all-zero, cap+dedupe). LIVE 2-turn test on '100 billion dollar startup': turn 1 = 5 hypotheses seeded 25/20/20/20/15 with evidence, NO framework announcement (softened rule works); turn 2 = tech hypothesis 20->55 w/ evidence_for/against, ambition-only RULED OUT at 5, question_rationale names which hypotheses the question separates. journey_turn signature +prev_hypotheses, max_tokens 2600->3000, callers /start + /message wired, direction prompt injects final hypotheses. UI screenshot verified (journey-hypotheses-panel: bars, leading bold, ruled_out strikethrough)."
   - task: "Proactive Analyst voice (founder 7.8/10 feedback): journey_turn SYSTEM gains LEAD THE ANALYSIS (declare named archetype framework turn 1, ELIMINATE OUT LOUD each turn, ASK AS AN ANALYST, PROJECT THE PATH); reply recipe 3-6 sentences"
     implemented: true
     working: true
@@ -553,9 +564,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Organ 1 Decision Record + outcome loop (reviews/due, review, ledger, impact_inr)"
-    - "Launch KPI instrumentation (/api/kpi/signal + /api/admin/launch-readiness)"
-    - "Release Gate harness (GET latest/history + validation; DO NOT re-run unless budgeted)"
+    - "Hypothesis engine free-path plumbing (view/reset/carry) + regression of journey free paths"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

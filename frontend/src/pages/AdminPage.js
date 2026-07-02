@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Users, Activity, Globe, Coins, Star } from 'lucide-react';
+import { ArrowLeft, Users, Activity, Globe, Coins, Star, Rocket, ShieldCheck, Target } from 'lucide-react';
 import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
+import { toast } from 'sonner';
 
 const fmt = (n) => (n ?? 0).toLocaleString('en-IN');
 const fmtDur = (s) => {
@@ -437,6 +438,121 @@ function FeedbackTab() {
   );
 }
 
+// ---------------------------------------------------------------- Launch readiness (5 KPIs + release gate)
+const pctOr = (p) => (p == null ? '—' : `${p}%`);
+const GATE_LABELS = { truth: 'Truth', reasoning: 'Reasoning', actionability: 'Actionability', impact: 'Impact' };
+
+function LaunchTab() {
+  const [d, setD] = useState(null);
+  const [gate, setGate] = useState(null);
+  const [starting, setStarting] = useState(false);
+
+  const load = useCallback(() => {
+    api.get('/admin/launch-readiness').then((r) => setD(r.data)).catch(() => {});
+    api.get('/admin/release-gate').then((r) => setGate(r.data)).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const latest = gate?.latest || null;
+  const runningNow = latest?.status === 'running';
+  useEffect(() => {
+    if (!runningNow) return undefined;
+    const id = setInterval(load, 6000);
+    return () => clearInterval(id);
+  }, [runningNow, load]);
+
+  const runGate = async () => {
+    if (starting || runningNow) return;
+    setStarting(true);
+    try {
+      await api.post('/admin/release-gate/run', {});
+      toast.success('Release gate started. 5 scenarios, a few minutes.');
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Could not start the run.');
+    } finally { setStarting(false); }
+  };
+
+  if (!d) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
+  const cal = d.kpi4_outcome?.calibration || {};
+  return (
+    <div data-testid="admin-launch">
+      <SectionTitle icon={Target}>The five launch KPIs</SectionTitle>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <Stat testId="kpi1-card" label="1 · Problem detection" value={pctOr(d.kpi1_problem_detection.pct)}
+          sub={`${fmt(d.kpi1_problem_detection.yes)} yes · ${fmt(d.kpi1_problem_detection.no)} no`} />
+        <Stat testId="kpi2-card" label="2 · Decision improvement" value={pctOr(d.kpi2_decision_improvement.pct)}
+          sub={`${fmt(d.kpi2_decision_improvement.yes)} yes · ${fmt(d.kpi2_decision_improvement.no)} no`} />
+        <Stat testId="kpi3-card" label="3 · Execution rate" value={pctOr(d.kpi3_execution.completion_pct)}
+          sub={`${fmt(d.kpi3_execution.done)} done / ${fmt(d.kpi3_execution.committed)} committed`} />
+        <Stat testId="kpi4-card" label="4 · Outcome improvement" value={pctOr(d.kpi4_outcome.positive_pct)}
+          sub={`₹${fmt(d.kpi4_outcome.impact_inr_total)} reported impact · n=${fmt(d.kpi4_outcome.n)}`} />
+        <Stat testId="kpi5-card" label="5 · Return rate" value={pctOr(d.kpi5_return.return_pct)}
+          sub={`${fmt(d.kpi5_return.active_7d)} active this week`} />
+      </div>
+      <div className="mt-3 text-xs text-muted-foreground" data-testid="kpi-calibration">
+        Prediction calibration: <span className="text-foreground">{cal.label || '—'}</span>
+        {cal.n ? ` · predicted ${cal.avg_predicted_confidence}% vs actual ${cal.actual_win_rate}% (n=${cal.n})` : ''}
+      </div>
+
+      <SectionTitle icon={ShieldCheck}>Release gate · Truth / Reasoning / Actionability / Impact</SectionTitle>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button data-testid="run-gate-btn" onClick={runGate} disabled={starting || runningNow}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-foreground text-background px-4 py-2 text-xs font-medium disabled:opacity-50 hover:opacity-90 transition-opacity">
+          <Rocket size={13} /> {runningNow ? 'Running…' : 'Run release gate (5 scenarios)'}
+        </button>
+        {latest && (
+          <span data-testid="gate-verdict" className={`text-xs font-medium rounded-full px-3 py-1 ${
+            latest.status === 'running' ? 'bg-amber-100 text-amber-800'
+            : latest.status === 'failed' ? 'bg-red-100 text-red-700'
+            : latest.overall?.pass ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+            {latest.status === 'running' ? `In progress · ${(latest.scenarios || []).length}/${latest.limit} scenarios done`
+              : latest.status === 'failed' ? 'Run failed'
+              : latest.overall?.pass ? 'PASS — ready to ship' : `FAIL — ${latest.overall?.scenarios_passed ?? 0}/${latest.overall?.scenarios ?? 0} scenarios passed`}
+          </span>
+        )}
+        {latest?.started_at && <span className="text-[11px] text-muted-foreground">last run {fmtDate(latest.started_at)}</span>}
+      </div>
+
+      {latest?.overall?.gate_avgs && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+          {Object.entries(GATE_LABELS).map(([k, label]) => {
+            const v = latest.overall.gate_avgs[k];
+            return <Stat key={k} testId={`gate-avg-${k}`} label={label} value={v != null ? `${v}/100` : '—'}
+              sub={v != null ? (v >= 70 ? 'passing' : 'below the bar') : ''} />;
+          })}
+        </div>
+      )}
+
+      {(latest?.scenarios || []).length > 0 && (
+        <div className="bg-white border border-border/70 rounded-xl overflow-x-auto mt-4">
+          <table className="w-full" data-testid="gate-scenarios-table">
+            <thead className="border-b border-border/60">
+              <tr><Th>Scenario</Th><Th right>Truth</Th><Th right>Reason</Th><Th right>Action</Th><Th right>Impact</Th><Th>Verdict</Th></tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {latest.scenarios.map((s) => (
+                <tr key={s.name} data-testid="gate-scenario-row" title={s.summary || ''}>
+                  <Td className="max-w-[220px]"><span className="block truncate">{s.name}</span></Td>
+                  {['truth', 'reasoning', 'actionability', 'impact'].map((g) => (
+                    <Td key={g} right mono className={s.gates?.[g]?.passed ? 'text-emerald-700' : 'text-red-600'}>
+                      {s.gates?.[g]?.score ?? '—'}
+                    </Td>
+                  ))}
+                  <Td className={s.passed ? 'text-emerald-700' : 'text-red-600'}>{s.passed ? 'pass' : 'fail'}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {latest?.scenarios?.length > 0 && (
+        <p className="text-[11px] text-muted-foreground mt-2">Hover a row for the judge’s one-line verdict. A release ships only when every scenario passes every gate.</p>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- page
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -444,6 +560,7 @@ const TABS = [
   { id: 'traffic', label: 'Traffic' },
   { id: 'usage', label: 'Usage' },
   { id: 'feedback', label: 'Feedback' },
+  { id: 'launch', label: 'Launch' },
 ];
 
 export default function AdminPage() {
@@ -476,6 +593,7 @@ export default function AdminPage() {
         {tab === 'traffic' && <TrafficTab />}
         {tab === 'usage' && <UsageTab />}
         {tab === 'feedback' && <FeedbackTab />}
+        {tab === 'launch' && <LaunchTab />}
       </main>
     </div>
   );

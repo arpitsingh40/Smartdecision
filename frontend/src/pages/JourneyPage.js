@@ -618,13 +618,14 @@ export default function JourneyPage() {
                         {m.status === 'done' && !m.result ? (
                           <div className="flex items-center gap-1.5 mt-1.5" data-testid={`milestone-result-input-${m.order}`}>
                             <input
+                              data-testid={`milestone-result-field-${m.order}`}
                               value={resultDrafts[m.id] || ''}
                               onChange={(e) => setResultDrafts((d) => ({ ...d, [m.id]: e.target.value }))}
                               placeholder="What actually happened? (feeds your engine)"
                               maxLength={500}
                               className="flex-1 text-xs rounded-lg border border-border/70 bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
                             />
-                            <Button size="sm" variant="outline" className="h-7 rounded-lg text-xs px-2" onClick={() => saveMilestoneResult(m)} disabled={!(resultDrafts[m.id] || '').trim()}>
+                            <Button size="sm" variant="outline" className="h-7 rounded-lg text-xs px-2" onClick={() => saveMilestoneResult(m)} disabled={!(resultDrafts[m.id] || '').trim()} data-testid={`milestone-result-save-${m.order}`}>
                               Save
                             </Button>
                           </div>

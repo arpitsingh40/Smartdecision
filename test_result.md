@@ -1619,3 +1619,51 @@ agent_communication:
            normalize_facts (all cases)
       
       Both features are production-ready. NO ISSUES FOUND.
+  - agent: "testing"
+    message: >
+      RETEST COMPLETE (July 2, 2026) - All 4 previously-reported issues RETESTED and PASSED:
+      
+      TEST 1 (Referral banner renders in fresh context): ✅ PASSED
+      - Created user A in fresh context (localStorage cleared, sdg_token=null verified)
+      - Got user A's referral code via GET /api/referral
+      - Opened SECOND fresh context (storage cleared again, no token)
+      - Navigated to /auth?ref={code}
+      - Referral banner (data-testid="referral-banner") IS visible
+      - Banner text contains "A founder invited you. You will both get bonus credits when you sign up."
+      - Screenshot captured: test1_referral_banner.png
+      
+      TEST 2 (Referral bonus applied): ✅ PASSED
+      - In same fresh context, signed up user B (test_73y8psfi@retest.com)
+      - User B credits via GET /api/auth/me: 75 (50 signup + 25 referral) ✓
+      - User A credits via GET /api/auth/me: 75 (50 signup + 25 referral bonus) ✓
+      - Both users received correct bonus amounts
+      
+      TEST 3 (Opinion flow by NON-owner): ✅ PASSED
+      - User B logged in (id: 773d9a9a-e9c8-48fa-aef6-124eb8969adf)
+      - Share card owner (id: b583d4ce-fd72-4322-817d-f972349a4048) - DIFFERENT user ✓
+      - Navigated to /d/c04f50d5c6
+      - Opinion textarea (data-testid="opinion-input") visible ✓
+      - Typed "Solid call, but validate pricing first" and clicked submit
+      - Opinion appears in list (data-testid="opinion-row") with user B's first name "Referred" ✓
+      - NO "own decision" error ✓
+      - Screenshot captured: test3_after_opinion.png
+      
+      TEST 4 (Milestone result input fillable): ✅ PASSED
+      - Setup: Injected milestone via MongoDB for user B (id: mm1, order: 1, title: "Test Milestone")
+      - CRITICAL FIX: journey.started computed from messages[] length (line 694 journey.py), 
+        NOT from MongoDB started field. Added messages[] to journey for UI to render.
+      - Logged in as user B, navigated to root
+      - Milestone status button (data-testid="milestone-status-1") visible ✓
+      - Clicked twice: not_started -> in_progress -> done ✓
+      - Result input field (data-testid="milestone-result-field-1") appeared and IS fillable ✓
+      - Filled with "Closed 3 deals" using playwright .fill() - value verified ✓
+      - Clicked save button (data-testid="milestone-result-save-1") ✓
+      - Result display (data-testid="milestone-result-1") renders "Outcome: Closed 3 deals" ✓
+      - Screenshots captured: test4_with_messages.png, test4_status_done.png, test4_result_saved.png
+      
+      SUMMARY:
+      - All 4 tests PASSED with exact values verified
+      - 0 LLM calls used (all tests free)
+      - Fresh context methodology working correctly (stale session issue resolved)
+      - All data-testid selectors working as expected
+      - No issues found, all features production-ready

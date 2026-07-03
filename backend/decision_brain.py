@@ -682,7 +682,7 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
         history = _session_history(user["id"], session_id)
         cog_block = ""
         try:
-            cog_block = cognition_block(user, question)
+            cog_block = cognition_block(user, question, include_company_state=True)
         except Exception as cog_err:
             log.warning(f"cognition block failed (non-fatal): {cog_err}")
         out, model, usage = brain_answer(question, passages, doc_names, instructions,

@@ -14,7 +14,7 @@ cognition_block() returns one string ready to inject into any engine prompt.
 """
 
 import logging
-from db import users_col, decisions_col
+from db import users_col, decisions_col, journeys_col
 from lenses import select_lenses
 
 log = logging.getLogger("cognition")
@@ -206,9 +206,62 @@ def past_decisions_block(user_id: str, text: str, category: str | None, limit: i
     )
 
 
+# --------------------------------------------------------------- L2 company state (journey model digest)
+def company_state_block(user_id: str) -> str:
+    """Compact digest of THIS USER'S OWN journey situation model, so the Brain answers
+    runway-aware and situation-aware without the founder retyping their business.
+    Self-data only (journeys are per-user), so there is no cross-user leakage risk.
+    Kept lean: ~300 tokens max, empty string when no journey exists."""
+    try:
+        j = journeys_col.find_one(
+            {"user_id": user_id},
+            {"_id": 0, "objective": 1, "model": 1, "confidence": 1, "hypotheses": 1,
+             "direction": 1, "milestones": 1})
+    except Exception as e:
+        log.warning(f"company_state lookup failed: {e}")
+        return ""
+    if not j or not (j.get("objective") or "").strip():
+        return ""
+    m = j.get("model") or {}
+
+    def _join(v, cap=4):
+        if isinstance(v, list):
+            return "; ".join(str(x) for x in v[:cap])
+        if isinstance(v, dict):
+            return "; ".join(f"{k}: {val}" for k, val in list(v.items())[:cap])
+        return str(v or "")
+
+    lines = [f"- Their goal: {str(j['objective'])[:250]}"]
+    for key, label in (("why_now", "Why now"), ("constraints", "Hard constraints"),
+                       ("blockers", "Blockers"), ("leverage", "Leverage points"),
+                       ("resources", "Resources"), ("timeline", "Timeline")):
+        v = _join(m.get(key))
+        if v.strip():
+            lines.append(f"- {label}: {v[:300]}")
+    hyps = [h for h in (j.get("hypotheses") or []) if isinstance(h, dict) and h.get("status") != "ruled_out"]
+    if hyps:
+        top = max(hyps, key=lambda h: h.get("probability", 0))
+        if top.get("statement"):
+            lines.append(f"- Current leading path hypothesis ({top.get('probability', 0)}%): {str(top['statement'])[:200]}")
+    d = j.get("direction") or {}
+    if isinstance(d, dict) and (d.get("decision") or "").strip():
+        lines.append(f"- Agreed direction: {str(d['decision'])[:250]}")
+    ms = [x for x in (j.get("milestones") or []) if isinstance(x, dict)]
+    if ms:
+        open_ms = [x.get("title", "") for x in ms if x.get("status") not in ("done", "dropped")][:3]
+        if open_ms:
+            lines.append(f"- Open milestones: {'; '.join(str(t)[:80] for t in open_ms)}")
+    return (
+        "THIS FOUNDER'S LIVE BUSINESS STATE (from your ongoing deep conversation with them; treat these facts "
+        "as known, do NOT re-ask for them, and check every recommendation against these constraints):\n"
+        + "\n".join(lines)
+    )
+
+
 # --------------------------------------------------------------- assembled block
 def cognition_block(user: dict, text: str, model: dict | None = None,
-                    include_identity: bool = True, include_memory: bool = True) -> str:
+                    include_identity: bool = True, include_memory: bool = True,
+                    include_company_state: bool = False) -> str:
     """One string with every cognition layer that applies to this turn. Lean by design:
     empty sections are omitted entirely so quiet turns stay cheap."""
     category = classify_decision(text)
@@ -218,6 +271,10 @@ def cognition_block(user: dict, text: str, model: dict | None = None,
         ib = identity_block(user)
         if ib:
             sections.append(ib)
+    if include_company_state and user:
+        cs = company_state_block(user["id"])
+        if cs:
+            sections.append(cs)
     if include_memory and user:
         pb = past_decisions_block(user["id"], text, category)
         if pb:

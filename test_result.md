@@ -1396,6 +1396,23 @@ agent_communication:
 agent_communication:
   - agent: "main"
     message: >
+      COGNITION CORE SHIPPED (single-stage build per founder's 'minimise phases' instruction). NEW: (1)
+      /app/backend/knowledge/ = 28 tree-memory book dossiers (V01-V20 decision science + V21-V28 brand/psych;
+      remaining 12+5 dossiers deferred, their applied knowledge lives in modules). (2) /app/backend/lenses.py =
+      38 book-derived reasoning modules w/ keyword triggers + select_lenses(text, model, boost_ids) pure selector,
+      max 3 lenses/turn (~600 tokens). (3) /app/backend/cognition.py = classify_decision() 9-category pure router
+      (verified 7/7), CATEGORIES with per-category reasoning algorithms + preferred lens ids, identity_block()
+      (name + questionnaire dream/capacity/advantage/potential -> mentor-who-knows-you instruction),
+      past_decisions_block() (keyword-relevant past decisions + outcomes from decisions_col), cognition_block()
+      assembler. WIRED: brain_answer() new cognition_block_text param (fed in _answer_and_log), journey_turn()
+      new cognition_block_text param (fed at /start + /message via _safe_cognition, memory layer off there since
+      journey has its own learning digest). Non-fatal try/except around all cognition calls. LIVE-VERIFIED (1
+      sonnet call, arjun@greenleaffoods.in): distributor take-it-or-leave-it question -> category=deal_negotiation,
+      4 sections injected; answer named the urgency lever (Voss), traced distributor incentives (Munger), option
+      value of pilot (Taleb), recalled the PREVIOUS Lulu decision as BATNA (L5 memory), scripted counter w/
+      counter-deadline. Cost 8 credits. Still exactly 1 LLM call/turn.
+  - agent: "main"
+    message: >
       FOUNDER PERSONA EVALUATION SESSION (Jul 2025 continuation). Env was fully reset: recreated backend/.env
       (all keys re-supplied by user incl. live ANTHROPIC + Zoho) + frontend/.env, reinstalled deps, DB was empty
       (admin auto-recreated). Ran full persona test as arjun@greenleaffoods.in / Founder2026! (journey 3 turns +

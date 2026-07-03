@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 import doc_memory
+from cognition import cognition_block
 from engine import client, _extract_json
 from db import users_col, db, members_col, orgs_col, decisions_col, journeys_col
 from security import current_user
@@ -424,7 +425,7 @@ def _sanitize_prediction(raw):
     return {"claim": claim.strip()[:400], "confidence": conf, "review_after_days": days}
 
 
-def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = "", founder_block: str = "", industry_block: str = "", benchmarks_block: str = ""):
+def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = "", founder_block: str = "", industry_block: str = "", benchmarks_block: str = "", cognition_block_text: str = ""):
     """ONE LLM call. Returns (out_dict, model, usage)."""
     if passages:
         psg = "\n\n".join(f"[{p['doc']} -> {p['chapter']}] (score {p['score']})\n{p['text']}" for p in passages)
@@ -440,7 +441,8 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
     bench_section = f"{benchmarks_block}\n\n" if (benchmarks_block or "").strip() else ""
     learn_section = learning_block if (learning_block or "").strip() else ""
     hist_section = session_history if (session_history or "").strip() else ""
-    prompt = f"{docs_line}{role_line}\n{rules_block}{founder_section}{industry_section}{bench_section}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
+    cog_section = f"{cognition_block_text}\n\n" if (cognition_block_text or "").strip() else ""
+    prompt = f"{docs_line}{role_line}\n{rules_block}{cog_section}{founder_section}{industry_section}{bench_section}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
 
     system_blocks = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
     last_err = None
@@ -678,9 +680,14 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
     try:
         passages, doc_map, doc_names = kb_retrieve(kb_ns, question)
         history = _session_history(user["id"], session_id)
+        cog_block = ""
+        try:
+            cog_block = cognition_block(user, question)
+        except Exception as cog_err:
+            log.warning(f"cognition block failed (non-fatal): {cog_err}")
         out, model, usage = brain_answer(question, passages, doc_names, instructions,
                                          strategy_block, history, function, learning_block,
-                                         founder_block, industry_block, benchmarks_block)
+                                         founder_block, industry_block, benchmarks_block, cog_block)
     except Exception as e:
         try:
             users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund

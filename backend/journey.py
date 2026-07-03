@@ -24,6 +24,17 @@ from security import current_user, now_utc
 from ledger import record_ledger, inc_stats
 from engine import client, _extract_json, PRIMARY_MODEL, FALLBACK_MODEL
 from benchmarks import normalize_facts, ingest_facts, benchmark_digest
+from cognition import cognition_block
+
+
+def _safe_cognition(user, text, model):
+    """Cognition layers for a journey turn: founder identity + decision algorithm + book lenses.
+    Memory layer excluded (journey already injects its own learning digest). Never fatal."""
+    try:
+        return cognition_block(user, text, model, include_memory=False)
+    except Exception as e:
+        logging.getLogger("journey").warning(f"cognition block failed (non-fatal): {e}")
+        return ""
 
 log = logging.getLogger("journey")
 router = APIRouter(prefix="/api/journey")
@@ -365,7 +376,7 @@ RULES FOR "hypotheses": carry forward the previous set with STABLE ids and UPDAT
 """
 
 
-def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block="", prev_hypotheses=None):
+def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block="", prev_hypotheses=None, cognition_block_text=""):
     """ONE LLM call = the full reasoning sweep + reply.
     Returns (reply:str, new_model:dict, reasoning:dict|None, bench_raw:dict|None, model_name:str, usage:dict)."""
     model_json = json.dumps(model or _empty_model(), ensure_ascii=False)
@@ -377,7 +388,8 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
     prev_map = ", ".join(f"{d}:{unc[d].get('score', 100)}" for d in REASONING_DIMS if d in unc)
     prompt = (
         f"FOUNDER'S TOP-LEVEL OBJECTIVE (their very first answer): {objective or '(not yet stated)'}\n\n"
-        f"YOUR CURRENT MODEL OF THEM (extend it, keep everything that is already here):\n{model_json}\n\n"
+        + (f"{cognition_block_text}\n\n" if (cognition_block_text or "").strip() else "")
+        + f"YOUR CURRENT MODEL OF THEM (extend it, keep everything that is already here):\n{model_json}\n\n"
         + (f"YOUR PREVIOUS UNCERTAINTY MAP (0=known, 100=unknown): {prev_map}\n\n" if prev_map else "")
         + (f"YOUR CURRENT COMPETING HYPOTHESES (update EVERY probability with this turn's evidence and "
            f"record what moved them; rule out at 5 or below):\n"
@@ -860,7 +872,8 @@ def start(body: StartIn, user: dict = Depends(current_user)):
         reply, new_model, reasoning, bench_raw, hyp_raw, model_name, usage = journey_turn(
             objective, _empty_model(), [], objective,
             prev_reasoning=None, learning=_learning_digest(user["id"], j),
-            benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=None)
+            benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=None,
+            cognition_block_text=_safe_cognition(user, objective, None))
         return (reply, new_model, reasoning, bench_raw, hyp_raw), usage, model_name
 
     (reply, new_model, reasoning, bench_raw, hyp_raw), credits_after, cost = _run_billed(user, produce)
@@ -898,7 +911,8 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
         reply, new_model, reasoning, bench_raw, hyp_raw, model_name, usage = journey_turn(
             objective, current_model, transcript, msg,
             prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j),
-            benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=prev_hyps)
+            benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=prev_hyps,
+            cognition_block_text=_safe_cognition(user, msg, current_model))
         return (reply, new_model, reasoning, bench_raw, hyp_raw), usage, model_name
 
     (reply, new_model, reasoning, bench_raw, hyp_raw), credits_after, cost = _run_billed(user, produce)

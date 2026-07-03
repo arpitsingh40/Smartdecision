@@ -222,6 +222,208 @@ MODULES = [
                  "what is pushing back and invest there. Protect the tension between dream and reality; never "
                  "let them shrink the vision silently to feel better."),
     },
+    # ---------------- demand-creation corpus (brand / psychology / sales / growth / product) ----------------
+    {
+        "id": "ries_positioning", "book": "Positioning + 22 Laws (Ries & Trout) + Obviously Awesome (Dunford)",
+        "triggers": [("positioning", 4), ("brand name", 3), ("tagline", 3), ("category", 2), ("stand out", 3),
+                     ("differentiate", 2), ("known for", 3), ("second product", 3), ("new product line", 2),
+                     ("rebrand", 4), ("me-too", 3), ("crowded", 2)],
+        "lens": ("Marketing is a battle of perceptions: ask what ONE word or slot they can own FIRST in a "
+                 "definable mind, and what they must sacrifice to own it. If a leader exists, position as the "
+                 "OPPOSITE, never a cheaper copy; if no slot is winnable, create a narrower category where they "
+                 "are honestly first. Set positioning by context: competitive alternative (what would customers "
+                 "do without you?), unique attribute, proof, best-fit segment, category frame. Guard against "
+                 "line extension: a name stretched across products stands for nothing."),
+    },
+    {
+        "id": "miller_storybrand", "book": "StoryBrand (Miller) + Made to Stick (Heath)",
+        "triggers": [("website", 2), ("landing page", 3), ("pitch", 2), ("messaging", 3), ("copy", 2),
+                     ("confusing", 3), ("don't get it", 4), ("explain what we do", 4), ("conversion", 2),
+                     ("bounce", 2), ("nobody responds", 3)],
+        "lens": ("If they confuse, they lose: the customer is the hero, the brand only the guide (empathy + "
+                 "authority proof). Find the INTERNAL problem (the feeling before they search) beneath the "
+                 "external one, and sell its resolution. Run the grunt test: what do you offer, how does my "
+                 "life improve, how do I buy, answerable in five seconds. Make every line concrete (scenes, "
+                 "numbers, names, never adjectives), open a curiosity gap before facts, add stakes (what is "
+                 "lost by not acting) and a 3-step plan with one loud direct CTA."),
+    },
+    {
+        "id": "sharp_growth", "book": "How Brands Grow (Sharp)",
+        "triggers": [("loyalty", 3), ("retention program", 3), ("repeat customer", 2), ("awareness", 3),
+                     ("reach", 2), ("light buyers", 4), ("penetration", 4), ("ads not working", 3),
+                     ("grow the brand", 3), ("more customers", 2)],
+        "lens": ("Brands grow by PENETRATION, recruiting new and light buyers, not by deepening loyalty of a "
+                 "small base; loyalty follows size. Growth = mental availability (links between the brand and "
+                 "many buying situations, refreshed continuously) + physical availability (easy to find and buy "
+                 "wherever the category is bought). Distinctiveness beats differentiation: freeze the colors, "
+                 "logo, tagline and repeat for years. Check reach math before engagement metrics: marketing "
+                 "that only speaks to existing fans preaches to the converted."),
+    },
+    {
+        "id": "ogilvy_ads", "book": "Ogilvy on Advertising",
+        "triggers": [("ad copy", 3), ("advertising", 2), ("creative", 2), ("campaign", 2), ("headline", 4),
+                     ("instagram ad", 3), ("facebook ad", 3), ("google ads", 2), ("ctr", 3)],
+        "lens": ("If it doesn't sell, it isn't creative: define the counted action before admiring the ad. The "
+                 "headline is 80% of the money: benefit + specificity + audience in the first line; write "
+                 "twenty, test two. Replace every adjective with a number, a name, or a demonstration; "
+                 "specifics are believed, superlatives are wallpaper. Mine reviews and chats for the customer's "
+                 "own phrases; the best copy is assembled from their words. Keep one repeatable brand device "
+                 "and reuse winning ads until fatigue is proven, not felt."),
+    },
+    {
+        "id": "cialdini_influence", "book": "Influence + Pre-Suasion (Cialdini)",
+        "triggers": [("convert", 2), ("persuade", 3), ("trust us", 2), ("testimonial", 3), ("social proof", 4),
+                     ("urgency", 3), ("free sample", 3), ("abandoned cart", 3), ("follow up", 2),
+                     ("they're pressuring", 3), ("limited time", 3)],
+        "lens": ("Map the seven levers ethically: give first (reciprocity debt does the selling), build ladders "
+                 "of small public commitments, show proof from PEOPLE LIKE THEM at the decision point, admit a "
+                 "weakness before the strength (trustworthy authority), use only TRUE scarcity framed as loss, "
+                 "and invoke shared identity (unity). Sequence the moment BEFORE the message: whatever is focal "
+                 "seems causal, so choose the opening question or image deliberately. In defense mode: when a "
+                 "counterparty uses deadlines, favors or 'everyone signed', name the lever and re-examine bare merits."),
+    },
+    {
+        "id": "berger_contagious", "book": "Contagious (Berger)",
+        "triggers": [("word of mouth", 4), ("viral", 3), ("referral", 3), ("share", 2), ("buzz", 3),
+                     ("organic growth", 3), ("tell their friends", 4), ("reels", 2), ("shareable", 3)],
+        "lens": ("Engineer STEPPS, not luck: Social Currency (does sharing this make the sharer look good? find "
+                 "the inner remarkability), Triggers (link the product to a frequent cue in daily life; "
+                 "top-of-mind is tip-of-tongue), Emotion (high-arousal awe, amusement or useful anger; sadness "
+                 "kills sharing), Public (make usage visible, leave behavioral residue), Practical Value "
+                 "(genuinely useful content spreads; frame deals by the rule of 100), Stories (a narrative "
+                 "Trojan horse that cannot be retold WITHOUT the brand)."),
+    },
+    {
+        "id": "sutherland_alchemy", "book": "Alchemy (Sutherland)",
+        "triggers": [("perceived value", 4), ("premium", 3), ("packaging", 3), ("feels cheap", 4),
+                     ("price perception", 3), ("luxury", 2), ("commodity", 3), ("irrational", 3),
+                     ("why won't they pay", 3)],
+        "lens": ("Perceived value IS real value: the problem may be psychological, not functional, and the fix "
+                 "may cost nothing (naming, framing, ritual, story, packaging). The opposite of a good idea can "
+                 "be another good idea; test the counterintuitive cheaply. Costly signals build trust (visible "
+                 "effort, guarantees, craftsmanship details). Small semantic changes move big behavior: rename "
+                 "the thing, reframe the moment, redesign the default. Don't design for the average customer; "
+                 "solve for a vivid extreme and the middle follows."),
+    },
+    {
+        "id": "rackham_spin", "book": "SPIN Selling (Rackham) + Challenger Sale (Dixon)",
+        "triggers": [("sales call", 3), ("b2b", 3), ("corporate client", 3), ("enterprise", 2), ("demo", 2),
+                     ("proposal", 2), ("lead went cold", 4), ("follow-up", 2), ("close the deal", 3),
+                     ("procurement", 3), ("big client", 2)],
+        "lens": ("In complex sales, questions outsell pitches: Situation (minimal), Problem (uncover "
+                 "dissatisfaction), IMPLICATION (grow the cost of the problem until inaction hurts), Need-payoff "
+                 "(let the buyer state the value themselves). Sell benefits tied to EXPLICIT needs, not "
+                 "features. Teach, don't just relate: bring an insight that reframes their business and leads "
+                 "uniquely to you; take control of next steps. Every call must end in an ADVANCE (a specific "
+                 "commitment: date, stakeholder, pilot), never a vague continuation."),
+    },
+    {
+        "id": "voss_negotiation", "book": "Never Split the Difference (Voss)",
+        "triggers": [("negotiate", 4), ("negotiation", 4), ("counter offer", 4), ("counteroffer", 4),
+                     ("they want 4", 2), ("asking for a discount", 3), ("payment terms", 3), ("haggle", 3),
+                     ("their final offer", 4), ("walk away", 3), ("bargain", 3)],
+        "lens": ("Negotiation is tactical empathy, not argument: label their position ('it seems like margin "
+                 "risk worries you'), mirror their last words to draw them out, run an accusation audit (name "
+                 "their objections before they do). Aim for 'that's right', not 'yes'. Use calibrated How/What "
+                 "questions ('How am I supposed to fund 60-day terms?') to make THEM solve your constraint. "
+                 "'No' is safety; invite it. Never split the difference: trade non-monetary items instead. "
+                 "Anchor with ranges, use precise odd numbers, and hunt the black swan, the hidden fact that "
+                 "changes the whole deal."),
+    },
+    {
+        "id": "pink_selling", "book": "To Sell Is Human (Pink) + Psychology of Selling (Tracy)",
+        "triggers": [("rejection", 3), ("cold call", 3), ("cold outreach", 3), ("hate selling", 4),
+                     ("not a salesperson", 4), ("keep getting no", 4), ("door to door", 3), ("dms", 2)],
+        "lens": ("Selling is moving humans, and buoyancy is trainable: before outreach use interrogative "
+                 "self-talk ('can I move this person, and how?'), after rejection use a non-permanent, "
+                 "non-personal explanatory style. Attune: take their perspective (their inbox, their boss, "
+                 "their week), mimic their language. Clarity beats charisma: the best sellers are problem "
+                 "FINDERS, surfacing the problem the buyer didn't name. People buy from people they trust; "
+                 "listening builds trust faster than talking. Fear of loss moves more than desire for gain, "
+                 "frame honestly. Volume desensitizes: prescribe the hundred-conversations discipline."),
+    },
+    {
+        "id": "weinberg_traction", "book": "Traction (Weinberg & Mares)",
+        "triggers": [("acquisition", 3), ("marketing channel", 4), ("where to find customers", 4),
+                     ("get customers", 3), ("cac", 2), ("growth channel", 4), ("distribution", 2),
+                     ("seo", 2), ("influencer", 2), ("try everything", 3)],
+        "lens": ("Channels are found by Bullseye, not by fashion: brainstorm across ALL nineteen traction "
+                 "channels (including unsexy ones like offline ads, community, engineering-as-marketing), rank "
+                 "into three rings, cheaply test the middle three in parallel with real numbers, then focus "
+                 "EVERYTHING on the single channel that works until saturation. Spend 50% of effort on product "
+                 "and 50% on traction from day one. The underused channel in their industry is usually the "
+                 "arbitrage: crowded channels are expensive, boring ones convert."),
+    },
+    {
+        "id": "moore_chasm", "book": "Crossing the Chasm (Moore)",
+        "triggers": [("early adopters", 4), ("mainstream", 3), ("beachhead", 4), ("niche first", 3),
+                     ("scale beyond", 3), ("first customers loved", 3), ("growth stalled after", 3),
+                     ("referenceable", 3), ("pragmatist", 3)],
+        "lens": ("Visionary early customers and mainstream pragmatists buy DIFFERENTLY: pragmatists need "
+                 "references from other pragmatists, a whole product (everything required to get the full "
+                 "benefit), and a market leader to bet on. The chasm strategy is D-Day: dominate ONE narrow "
+                 "beachhead segment completely (their whole problem, end to end) before adjacent niches. Use "
+                 "the positioning formula: for [target] who [need], our product is a [category] that [benefit]; "
+                 "unlike [alternative], we [key differentiation]."),
+    },
+    {
+        "id": "kim_blueocean", "book": "Blue Ocean Strategy (Kim & Mauborgne)",
+        "triggers": [("saturated", 3), ("price war", 4), ("too much competition", 4), ("red ocean", 4),
+                     ("everyone is fighting", 3), ("undercutting", 3), ("commoditized", 3), ("new market", 2)],
+        "lens": ("Escape bloody competition through value innovation: pursue differentiation AND lower cost "
+                 "simultaneously by redrawing the factors of competition. Run the Four Actions grid: which "
+                 "industry-standard factors can be ELIMINATED entirely, REDUCED well below standard, RAISED "
+                 "well above, CREATED for the first time? Look at the three tiers of NON-customers (soon-to-be, "
+                 "refusing, unexplored) rather than fighting over existing ones. A good strategic profile has "
+                 "focus, divergence from rivals, and a compelling tagline."),
+    },
+    {
+        "id": "fitzpatrick_momtest", "book": "The Mom Test (Fitzpatrick)",
+        "triggers": [("customer interview", 4), ("validate", 3), ("survey", 2), ("would they buy", 4),
+                     ("asked my customers", 3), ("everyone loves the idea", 4), ("positive feedback", 3),
+                     ("user research", 3), ("talk to customers", 3)],
+        "lens": ("Opinions about your idea are worthless; only past behavior and commitments are data. Ask "
+                 "about their LIFE, not your idea: when did this problem last happen, what did it cost, what "
+                 "did they try, what did they pay? 'Would you buy?' invites polite lies; compliments are the "
+                 "most dangerous data. Deflect fluff ('I usually/I would/I might') to concrete past specifics. "
+                 "Real validation = they give up something: money (pre-order), reputation (intro to their "
+                 "boss), or significant time. No commitment extracted = the meeting failed politely."),
+    },
+    {
+        "id": "christensen_jtbd", "book": "Competing Against Luck (Christensen, Jobs-to-be-Done)",
+        "triggers": [("why do customers buy", 4), ("use case", 2), ("churned", 3), ("stopped buying", 3),
+                     ("feature request", 3), ("what job", 3), ("switching from", 3), ("competitor's product", 2)],
+        "lens": ("Customers don't buy products; they HIRE them to make progress in a specific circumstance, "
+                 "functional, social and emotional at once. Find the job: what were they doing the moment they "
+                 "sought a solution, what were they firing, what anxieties held them back, what habits pulled "
+                 "them back? The real competition is whatever else gets hired for the job (a milkshake competes "
+                 "with bananas and boredom). Design around the job's full journey, and measure progress the way "
+                 "the CUSTOMER measures it."),
+    },
+    {
+        "id": "ries_leanstartup", "book": "The Lean Startup (Eric Ries) + Inspired (Cagan) + Continuous Discovery (Torres)",
+        "triggers": [("mvp", 4), ("launch fast", 3), ("build first", 3), ("prototype", 3), ("pivot", 3),
+                     ("new feature", 2), ("test the idea", 3), ("experiment", 2), ("waiting to launch", 3),
+                     ("perfect before launch", 4)],
+        "lens": ("A startup's output is validated LEARNING, not features: state the riskiest assumption "
+                 "(usually value or demand, rarely technology), design the smallest experiment that tests it "
+                 "with real behavior, measure actionable cohort metrics, then persevere or pivot on evidence. "
+                 "Beware vanity metrics and the build trap: shipped is not learned. Test four risks before "
+                 "building: valuable (will they buy), usable, feasible, viable. Make discovery continuous: "
+                 "weekly small customer touchpoints beat quarterly big research."),
+    },
+    {
+        "id": "coyle_culture", "book": "The Culture Code (Coyle)",
+        "triggers": [("culture", 3), ("team morale", 4), ("trust within", 3), ("team is quiet", 3),
+                     ("nobody speaks up", 4), ("conflict in team", 3), ("silos", 3), ("blame culture", 4),
+                     ("first employees", 3)],
+        "lens": ("Culture is built from skills, not slogans: (1) SAFETY, dense small signals of belonging, "
+                 "listening, gratitude, inclusion, that say 'you are safe here, we share a future'; (2) shared "
+                 "VULNERABILITY, the leader admits fallibility FIRST ('what am I missing?'), unlocking honest "
+                 "risk-taking and the vulnerability loop; (3) PURPOSE, flood the environment with simple vivid "
+                 "narratives linking today's work to the goal ('we exist so that...'). Diagnose team problems "
+                 "in that order: is it a safety gap, a vulnerability gap, or a purpose gap?"),
+    },
     {
         "id": "flyvbjerg_bigthings", "book": "How Big Things Get Done (Flyvbjerg)",
         "triggers": [("launch", 2), ("build a", 2), ("big project", 3), ("how long will", 3), ("months to", 2),
@@ -240,8 +442,10 @@ MODULES = [
 _TIER1_BOOST = {"kahneman_bias", "heath_wrap", "taleb_swan", "munger_incentives", "rumelt_kernel"}
 
 
-def select_lenses(latest_msg: str, model: dict | None = None, max_lenses: int = 3, min_score: int = 2):
+def select_lenses(latest_msg: str, model: dict | None = None, max_lenses: int = 3, min_score: int = 2,
+                  boost_ids: list | None = None):
     """Pure function: pick the most relevant reasoning modules for this turn.
+    boost_ids: module ids preferred by the detected decision category (get +3).
     Returns a prompt block string, or "" when nothing scores (keeps prompts lean)."""
     hay = (latest_msg or "").lower()
     if model:
@@ -249,9 +453,12 @@ def select_lenses(latest_msg: str, model: dict | None = None, max_lenses: int = 
             hay += " " + json.dumps(model, ensure_ascii=False, default=str).lower()
         except Exception:
             pass
+    boosts = set(boost_ids or [])
     scored = []
     for m in MODULES:
         s = sum(w for kw, w in m["triggers"] if kw in hay)
+        if m["id"] in boosts:
+            s += 3
         if s >= min_score:
             scored.append((s + (0.5 if m["id"] in _TIER1_BOOST else 0.0), m))
     if not scored:

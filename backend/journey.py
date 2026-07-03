@@ -394,7 +394,7 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
     last_err = None
     for model_name in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            r = client().messages.create(model=model_name, max_tokens=3000, system=system_blocks,
+            r = client().messages.create(model=model_name, max_tokens=5000, system=system_blocks,
                                          messages=[{"role": "user", "content": prompt}])
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
             out = json.loads(_extract_json(txt))

@@ -1394,6 +1394,19 @@ agent_communication:
       READY FOR MAIN AGENT TO SUMMARIZE AND FINISH.
 
 agent_communication:
+  - agent: "main"
+    message: >
+      FOUNDER PERSONA EVALUATION SESSION (Jul 2025 continuation). Env was fully reset: recreated backend/.env
+      (all keys re-supplied by user incl. live ANTHROPIC + Zoho) + frontend/.env, reinstalled deps, DB was empty
+      (admin auto-recreated). Ran full persona test as arjun@greenleaffoods.in / Founder2026! (journey 3 turns +
+      direction + milestones + questionnaire bonus + brain ask + commit). FIX APPLIED: journey.py journey_turn
+      max_tokens 3000->5000 (dense founder input made the JSON contract overflow -> 'Unterminated string' ->
+      all-model failure + refund; reproduced live, fixed, then 3 subsequent turns + direction + milestones all
+      passed live = self-verified, no testing-agent rerun to save LLM budget). CRITICAL OPEN ISSUE: Zoho LIVE
+      create-order fails 'Zoho OAuth refresh failed: invalid_code' -> checkout 502 -> revenue path down; refresh
+      token appears revoked, user must mint a fresh one (code unchanged, worked before). UX GAP: 402 out-of-credits
+      toast is a dead end (no billing link / questionnaire mention). Billing tier feature lists remain marketing
+      copy (no real gating). Full verdict report delivered in chat.
   - agent: "testing"
     message: "Founder Profile deep-onboarding testing COMPLETE. All 4 numbered items from review request PASSED (4 LLM calls used, within budget of 6). TEST 1 (FREE - GATING): All member endpoints correctly return 403, no-auth returns 401 ✓. TEST 2 (FREE - DIRECT PROFILE): PUT/GET working with validation ✓. TEST 3 (LLM ~4 calls - INTERVIEW FLOW): start->answer x2->finish working, connected questions generated, distillation produces non-empty summary+industry_summary, negative test (0 answers) correctly returns 422 ✓. TEST 4 (LLM 1 call - INJECTION): Founder /ask returns goal_impact with all required fields (score, band, label, reason), strategic_alignment correctly stripped ✓. Feature is production-ready. Main agent should summarize and finish."
   - agent: "main"

@@ -1797,3 +1797,24 @@ agent_communication:
 agent_communication:
   - agent: "testing"
     message: "BACKEND TESTING COMPLETE - THREE NEW FEATURES TESTED (July 2, 2026). EXACTLY 1 LLM call used (within budget). ALL 3 FEATURES PASSED: (1) Organ 1 Decision Record + outcome loop - predicted_outcome{claim, confidence, review_after_days} + dont_follow_if working correctly, review loop with calibration working, MongoDB persistence verified. (2) Launch KPI instrumentation - POST /api/kpi/signal idempotency working (replaces not appends), GET /api/admin/launch-readiness returns all 5 KPIs with correct structure. (3) Release Gate - READ-ONLY testing passed, previous smoke run verified with all 4 gates (truth:72, reasoning:68, actionability:82, impact:61), validation working (limit 0/9 -> 422). NO ISSUES FOUND. All backend features are production-ready."
+  - agent: "main"
+    message: >
+      GENUINE-USER EVALUATION SESSION (July 4, 2026). Environment restored after fork (.env files
+      recreated from user-provided values, services restarted, admin re-seeded; DB was empty).
+      Full persona walkthrough (arjun@brewkadak.com, cloud-kitchen founder): signup -> 3 journey
+      turns -> direction -> milestones -> brain ask -> commit-a-move -> billing -> referral ->
+      admin dashboard. 7 live Opus calls. NO code changes made. Full report in
+      /app/GENUINE_USER_EVALUATION_JULY2026.md. KEY ISSUES FOUND (not fixed, awaiting user
+      direction): (1) CRITICAL Zoho payments broken - refresh token invalid_code -> create-order
+      502, all purchases fail; (2) CRITICAL silent UI failures on 402 (approve with low credits)
+      and payment 502 - no toast/paywall; (3) HIGH brain answer unrecoverable in UI if user
+      navigates away during 60-100s generation (answer only in Mongo; My Decisions shows question
+      only); (4) HIGH discoverability - /brain has no UI entry until first use, ultra thinking
+      only on unreachable ThreadPage, QuestionnairePage has NO route (orphaned +100 credits);
+      (5) MED pricing copy says 10 credits ~ 3 turns but real turns cost 8-14 credits;
+      (6) MED telemetry_events empty -> admin per-model cost table always "No LLM calls yet";
+      (7) MED admin credits_spent=56 vs actual 60; active-now count implausible. STRENGTHS:
+      AI reasoning quality outstanding (correct unit economics, hypothesis elimination, milestone
+      generation), cross-feature memory journey<->brain, accountability loop with global countdown,
+      honest admin KPIs, referral works, mobile clean. Test credentials updated in
+      /app/memory/test_credentials.md.

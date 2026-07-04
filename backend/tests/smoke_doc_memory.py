@@ -9,7 +9,7 @@
 """
 import os, sys, time, json, base64, requests
 
-BASE = "https://founder-verdict-3.preview.emergentagent.com"
+BASE = "https://genuine-feedback-1.preview.emergentagent.com"
 TS = int(time.time())
 EMAIL = f"doc{TS}@example.com"
 

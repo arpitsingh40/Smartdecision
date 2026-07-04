@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pymongo import MongoClient
 
 # Configuration
-BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://founder-verdict-3.preview.emergentagent.com")
+BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://genuine-feedback-1.preview.emergentagent.com")
 API_BASE = f"{BACKEND_URL}/api"
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = "smartdecigen_db"

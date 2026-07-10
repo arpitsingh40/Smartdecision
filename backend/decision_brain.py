@@ -18,6 +18,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 import numpy as np
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
@@ -27,6 +28,7 @@ from cognition import cognition_block
 from engine import client, _extract_json
 from db import users_col, db, members_col, orgs_col, decisions_col, journeys_col
 from security import current_user
+from subscriptions import deduct_tokens
 from journey import _normalize_reasoning, _public_reasoning
 from benchmarks import normalize_facts, ingest_facts, benchmark_digest
 
@@ -36,8 +38,8 @@ router = APIRouter(prefix="/api/brain")
 trees_col = db.doc_trees
 nodes_col = db.doc_nodes
 
-PRIMARY_MODEL = "claude-sonnet-4-5"   # grounded analysis: same context as Opus, ~5x cheaper
-FALLBACK_MODEL = "claude-haiku-4-5"
+PRIMARY_MODEL = os.environ.get("LLM_MODEL", "gemini-3.5-flash").strip()
+FALLBACK_MODEL = os.environ.get("LLM_MODEL_FALLBACK", PRIMARY_MODEL).strip()
 
 CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
 BRAIN_RESERVE = int(os.environ.get("BRAIN_RESERVE", "16"))   # ~8k tokens; refund unused
@@ -75,7 +77,7 @@ def _resolve_context(user: dict):
     return kb_id(user["id"]), True, None, (user.get("brain_instructions") or "")
 
 
-def _strategy_block(org: dict | None, function: str = "general") -> str:
+def _strategy_block(org: Optional[dict], function: str = "general") -> str:
     """Build the CONFIDENTIAL steering block from the founder's North Star.
     Empty string when there is no org or no strategy set."""
     if not org:
@@ -115,7 +117,7 @@ def _strategy_block(org: dict | None, function: str = "general") -> str:
     return "\n".join(lines)
 
 
-def _founder_profile_block(org: dict | None) -> str:
+def _founder_profile_block(org: Optional[dict]) -> str:
     """FOUNDER_PROFILE steering, injected ONLY for the owner's own asks so the brain advises
     them like an advisor who genuinely knows how they operate. Never sent to members."""
     if not org:
@@ -144,7 +146,7 @@ def _founder_profile_block(org: dict | None) -> str:
     return "\n".join(lines)
 
 
-def _industry_block(org: dict | None) -> str:
+def _industry_block(org: Optional[dict]) -> str:
     """INDUSTRY_CONTEXT, injected for everyone in the org so decisions are grounded in the company's
     real market, not generic business advice. Combines the founder's industry summary, any structured
     industry fields, and (Phase 2) a refreshable web-research digest."""
@@ -495,7 +497,7 @@ class UploadIn(BaseModel):
 
 class AskIn(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
-    session_id: str | None = Field(default=None, max_length=80)
+    session_id: Optional[str] = Field(default=None, max_length=80)
 
 
 def _sanitize_alignment(a):
@@ -620,7 +622,7 @@ def set_settings(body: SettingsIn, user: dict = Depends(current_user)):
     return {"ok": True, "instructions": rules}
 
 
-def _session_history(user_id: str, session_id: str | None, k: int = 4) -> str:
+def _session_history(user_id: str, session_id: Optional[str], k: int = 4) -> str:
     """Build a SESSION_HISTORY block from this user's prior turns in the same session.
     Makes the brain connected and committed across turns. Empty when no session/history."""
     if not session_id:
@@ -649,7 +651,7 @@ def _session_history(user_id: str, session_id: str | None, k: int = 4) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def _answer_and_log(user: dict, question: str, session_id: str | None):
+def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
     """Shared core for /ask and /next-step: reserve credits, run ONE LLM call with session
     memory + hidden strategy, reconcile to actual tokens, persist the decision, return the
     member-safe response (founder-only alignment stripped)."""
@@ -701,6 +703,10 @@ def _answer_and_log(user: dict, question: str, session_id: str | None):
     if refund:
         u = users_col.find_one_and_update({"id": user["id"]}, {"$inc": {"credits": refund}},
                                           return_document=ReturnDocument.AFTER)
+    try:
+        deduct_tokens(user["id"], usage["input_tokens"], usage["output_tokens"])
+    except HTTPException:
+        pass
     users_col.update_one({"id": user["id"]}, {
         "$inc": {"tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
         "$set": {"last_active_at": now_utc()}})
@@ -784,6 +790,26 @@ def my_decisions(user: dict = Depends(current_user)):
     return {"decisions": rows}
 
 
+@router.get("/decisions/{decision_id}")
+def get_decision(decision_id: str, user: dict = Depends(current_user)):
+    """Full detail for a single decision. Returns the complete answer, recommendation, plan,
+    reasoning (public), predicted outcome, citations, and execution state.
+    Founder-only fields (strategic_alignment, alignment_band) are excluded."""
+    d = decisions_col.find_one(
+        {"id": decision_id, "user_id": user["id"]},
+        {"_id": 0},
+    )
+    if not d:
+        raise HTTPException(404, "Decision not found")
+    _, is_owner, org, _ = _resolve_context(user)
+    raw_alignment = d.pop("strategic_alignment", None)
+    d.pop("alignment_band", None)
+    reasoning = _public_reasoning(d.pop("reasoning", None))
+    goal_impact = _goal_impact(raw_alignment, org, is_owner)
+    return {**d, "reasoning": reasoning,
+            **({"goal_impact": goal_impact} if goal_impact else {})}
+
+
 class FunctionIn(BaseModel):
     function: str = Field(min_length=2, max_length=30)
 
@@ -805,14 +831,14 @@ def set_profile(body: FunctionIn, user: dict = Depends(current_user)):
 
 class CommitIn(BaseModel):
     action: str = Field(min_length=1, max_length=1000)
-    due_in_hours: int | None = Field(default=48, ge=1, le=720)
+    due_in_hours: Optional[int] = Field(default=48, ge=1, le=720)
 
 
 class StatusIn(BaseModel):
     status: str
-    result: str | None = Field(default=None, max_length=2000)
-    outcome: str | None = Field(default=None, max_length=20)  # worked | partly | didnt (one-tap self-report)
-    impact_inr: int | None = Field(default=None, ge=-1000000000, le=1000000000)  # rupee impact (may be negative)
+    result: Optional[str] = Field(default=None, max_length=2000)
+    outcome: Optional[str] = Field(default=None, max_length=20)  # worked | partly | didnt (one-tap self-report)
+    impact_inr: Optional[int] = Field(default=None, ge=-1000000000, le=1000000000)  # rupee impact (may be negative)
 
 
 OUTCOME_MAP = {"worked": "success", "partly": "partial", "didnt": "failed", "didn't": "failed",
@@ -962,8 +988,8 @@ def calibration_for(match: dict) -> dict:
 
 class ReviewIn(BaseModel):
     outcome: str = Field(min_length=2, max_length=20)      # worked | partly | didnt
-    actual: str | None = Field(default=None, max_length=2000)
-    impact_inr: int | None = Field(default=None, ge=-1000000000, le=1000000000)
+    actual: Optional[str] = Field(default=None, max_length=2000)
+    impact_inr: Optional[int] = Field(default=None, ge=-1000000000, le=1000000000)
 
 
 @router.get("/reviews/due")
@@ -1036,3 +1062,57 @@ def decision_ledger(user: dict = Depends(current_user)):
             "impact": {"total_inr": (int(imp[0]["total"]) if imp else 0),
                        "reviewed_with_impact": (int(imp[0]["n"]) if imp else 0)},
             "calibration": calibration_for(base), "recent_reviews": recent}
+
+
+# ----------------------------------------------------------------- task clarity (OKR execution layer)
+class TaskClarifyIn(BaseModel):
+    task_id: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/task-clarify")
+def task_clarify(body: TaskClarifyIn, user: dict = Depends(current_user)):
+    """A member asks about their assigned task; AI responds with vision context + clarity."""
+    # Import tasks_col here to avoid circular import at module level
+    from db import tasks_col
+    task = tasks_col.find_one({"id": body.task_id, "assigned_to": user["id"]})
+    if not task:
+        raise HTTPException(404, "Task not found or not assigned to you")
+
+    plan_context = ""
+    from db import plans_col, orgs_col
+    if task.get("plan_id"):
+        plan = plans_col.find_one({"id": task["plan_id"]})
+        if plan:
+            depts = plan.get("departments") or []
+            dept = next((d for d in depts if d.get("function") == task.get("department_function")), None)
+            # Get the org's North Star (founder's vision)
+            org = orgs_col.find_one({"id": task.get("org_id")})
+            north_star = (org or {}).get("north_star", "") or "(founder's vision)"
+            plan_context = (
+                f"FOUNDER'S VISION (North Star): {north_star}\n"
+                f"→ COMPANY QUARTERLY OBJECTIVE: {plan.get('company_objective', '')}\n"
+                f"→ YOUR DEPARTMENT OBJECTIVE: {(dept or {}).get('objective', '')}\n"
+                f"→ KEY RESULT: {((dept or {}).get('key_results') or [''])[task.get('linked_kr_index', 0)] if dept else ''}"
+            )
+
+    prompt = (
+        f"TASK: {task['title']}\n"
+        f"DESCRIPTION: {task['description']}\n"
+        f"{plan_context}\n\n"
+        f"The team member asks: {body.question}\n\n"
+        f"Respond with clarity about how this task connects to the company vision, "
+        f"what 'done' looks like, and any practical advice. Keep it under 200 words. "
+        f"Be direct and helpful — no markdown, no em-dashes."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=600,
+            system=[{"type": "text", "text": "You are a helpful chief of staff clarifying a team member's task. "
+                     "You connect their work to the company vision and give clear, actionable guidance."}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        return {"answer": txt}
+    except Exception as e:
+        log.error(f"task clarify failed: {e}")
+        raise HTTPException(502, "Could not respond right now.")

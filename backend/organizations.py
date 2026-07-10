@@ -22,12 +22,13 @@ import secrets
 import logging
 from datetime import timedelta, datetime, timezone
 
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, EmailStr
 
-from db import orgs_col, members_col, invites_col, users_col, decisions_col, plans_col
+from db import orgs_col, members_col, invites_col, users_col, decisions_col, plans_col, tasks_col, threads_col
 from security import current_user, now_utc
-from engine import client, _extract_json
+from engine import client, _extract_json, PRIMARY_MODEL
 
 log = logging.getLogger("org")
 
@@ -49,6 +50,9 @@ def ensure_org_startup():
     invites_col.create_index([("org_id", 1), ("status", 1)])
     plans_col.create_index("id", unique=True)
     plans_col.create_index([("org_id", 1), ("status", 1)])
+    tasks_col.create_index("id", unique=True)
+    tasks_col.create_index([("org_id", 1), ("week_start", 1)])
+    tasks_col.create_index([("org_id", 1), ("assigned_to", 1), ("status", 1)])
 
 
 # ----------------------------------------------------------------- models
@@ -57,7 +61,7 @@ class CreateOrgIn(BaseModel):
 
 
 class InviteIn(BaseModel):
-    email: EmailStr | None = None
+    email: Optional[EmailStr] = None
     role: str = "member"
 
 
@@ -73,8 +77,8 @@ class StrategyIn(BaseModel):
     priorities: list[str] = Field(default_factory=list)
     decision_rules: str = Field(default="", max_length=4000)
     # Layer 3: transparent pacing inputs (founder-entered, used only for arithmetic projection).
-    current_arr: float | None = Field(default=None, ge=0)
-    target_arr: float | None = Field(default=None, ge=0)
+    current_arr: Optional[float] = Field(default=None, ge=0)
+    target_arr: Optional[float] = Field(default=None, ge=0)
 
 
 class ProgressIn(BaseModel):
@@ -84,7 +88,7 @@ class ProgressIn(BaseModel):
 
 
 # ----------------------------------------------------------------- helpers
-def _active_membership(user: dict) -> dict | None:
+def _active_membership(user: dict) -> Optional[dict]:
     return members_col.find_one({"user_id": user["id"], "status": "active"})
 
 
@@ -377,7 +381,7 @@ def _progress_status(pct):
     return "Not started yet"
 
 
-def _goal_progress(org: dict | None) -> dict | None:
+def _goal_progress(org: Optional[dict]) -> Optional[dict]:
     """Transparent arithmetic Goal -> Progress view. Founder-only. Not an AI forecast.
     Returns None when there is no numeric target to measure against."""
     if not org:
@@ -732,7 +736,7 @@ def draft_plan(body: PlanDraftIn, user: dict = Depends(current_user)):
         f"HISTORICAL EFFECTIVENESS BY FUNCTION (ground the plan in this):\n{eff_text}\n"
     )
     try:
-        r = client().messages.create(model="claude-sonnet-4-5", max_tokens=1600,
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=1600,
                                      system=[{"type": "text", "text": PLAN_SYSTEM}],
                                      messages=[{"role": "user", "content": prompt}])
         txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
@@ -777,3 +781,437 @@ def ratify_plan(plan_id: str, user: dict = Depends(current_user)):
     plans_col.update_one({"id": plan_id}, {"$set": {"status": "active", "activated_at": now_utc()}})
     p = plans_col.find_one({"id": plan_id})
     return _plan_view(p, org_id)
+
+
+# ----------------------------------------------------------------- weekly OKR tasks (execution layer)
+
+TASK_GENERATION_SYSTEM = (
+    "You are a task operator for a company using OKRs. The hierarchy is:\n"
+    "FOUNDER'S VISION (North Star) → Company Quarterly Objective → Department OKRs → Weekly Tasks\n\n"
+    "Every task must trace back to the founder's vision. Given the founder's vision, the quarterly "
+    "company objective, each department's objectives and key results, and the available team members "
+    "with their functions, generate 3-7 specific weekly tasks for the coming week for EACH department.\n\n"
+    "Each task must:\n"
+    "- Be completable in one week by a single person\n"
+    "- Directly contribute to one of the department's key results\n"
+    "- Include which role/function should own it (match one of the available member functions)\n"
+    "- Have a clear, actionable title and a one-sentence description\n\n"
+    "Be concrete and specific. Avoid vague tasks. Prefer tasks that produce a tangible output "
+    "(doc, analysis, decision, meeting, deliverable, etc.).\n"
+    'Return ONLY JSON, no fences: {"tasks": [{"department_function": "sales", "title": "..."}, '
+    '"description": "...", "linked_kr_index": 0, "suggested_role": "sales"}]}'
+)
+
+TASK_REVIEW_SYSTEM = (
+    "You are a task reviewer. Given a task description and the proof files a team member uploaded, "
+    "determine if the task is genuinely complete.\n\n"
+    "Rules:\n"
+    "- Be fair but rigorous. A task is 'done' only if the evidence shows real completion.\n"
+    "- If the proof is weak or ambiguous, flag it with notes on what's missing.\n"
+    "- Confidence < 0.8 means 'needs human review'.\n"
+    "Return ONLY JSON: {\"approved\": bool, \"confidence\": 0.0-1.0, \"notes\": \"...\"}"
+)
+
+TASK_STAGE_SYSTEM = (
+    "You are a task stage detector. Given a task description, its current status, and the member's "
+    "recent chat messages, determine what stage the task is at.\n\n"
+    "Stages: not_started, researching, in_progress, almost_done, complete\n\n"
+    "Return ONLY JSON: {\"stage\": \"...\", \"confidence\": 0.0-1.0}"
+)
+
+
+class TaskGenerateIn(BaseModel):
+    week_start: Optional[str] = None
+
+
+class TaskUpdateIn(BaseModel):
+    status: Optional[str] = None
+    proof_files: Optional[list[dict]] = None
+    assigned_to: Optional[str] = None
+    due_at: Optional[str] = None
+
+
+def _get_next_monday() -> datetime:
+    today = now_utc()
+    days_ahead = (7 - today.weekday()) % 7
+    if days_ahead == 0:
+        days_ahead = 7
+    return (today + timedelta(days=days_ahead)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _best_member_for_function(org_id: str, function: str) -> dict:
+    members = list(members_col.find({"org_id": org_id, "status": "active"}))
+    exact = [m for m in members if users_col.find_one({"id": m["user_id"]}, {"_id": 0, "function": 1}).get("function") == function]
+    if exact:
+        u = users_col.find_one({"id": exact[0]["user_id"]}, {"_id": 0, "name": 1})
+        return {"user_id": exact[0]["user_id"], "name": (u or {}).get("name", "Member")}
+    for m in members:
+        u = users_col.find_one({"id": m["user_id"]}, {"_id": 0, "name": 1})
+        if u:
+            return {"user_id": m["user_id"], "name": u.get("name", "Member")}
+    return {"user_id": "", "name": "Unassigned"}
+
+
+@router.post("/tasks/generate-week")
+def generate_weekly_tasks(body: TaskGenerateIn, user: dict = Depends(current_user)):
+    """Owner-only. AI generates next week's tasks from the active quarterly plan. Runs Saturday night."""
+    m = _require_owner(user)
+    org_id = m["org_id"]
+    plan = plans_col.find_one({"org_id": org_id, "status": "active"})
+    if not plan:
+        raise HTTPException(400, "No active plan. Ratify a plan first.")
+
+    week_start = body.week_start or _get_next_monday().isoformat()
+
+    org = orgs_col.find_one({"id": org_id})
+    north_star = (org or {}).get("north_star", "") or "(not set)"
+
+    members = list(members_col.find({"org_id": org_id, "status": "active"}))
+    member_list = []
+    for mm in members:
+        u = users_col.find_one({"id": mm["user_id"]}, {"_id": 0, "name": 1, "function": 1})
+        member_list.append({"name": (u or {}).get("name", "Member"), "function": (u or {}).get("function", "general")})
+
+    dept_text = "\n".join(
+        f"- {d['function']}: {d['objective']}\n  KRs: {'; '.join(d.get('key_results', [])[:4])}"
+        for d in plan.get("departments", [])
+    ) if plan.get("departments") else "(no departments)"
+    member_text = "\n".join(f"- {m['name']} ({m['function']})" for m in member_list) or "(no members)"
+
+    prompt = (
+        f"FOUNDER'S VISION (North Star): {north_star}\n\n"
+        f"COMPANY QUARTERLY OBJECTIVE: {plan.get('company_objective', '')}\n\n"
+        f"DEPARTMENTS:\n{dept_text}\n\n"
+        f"AVAILABLE MEMBERS:\n{member_text}\n\n"
+        f"Generate 3-7 weekly tasks for each department for the week starting {week_start}. "
+        f"Every task must trace back to the founder's vision."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=2000,
+            system=[{"type": "text", "text": TASK_GENERATION_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        data = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"task generation failed: {e}")
+        raise HTTPException(502, "Could not generate tasks. Try again.")
+
+    tasks = []
+    week_start_dt = datetime.fromisoformat(week_start)
+    for t in (data.get("tasks") or [])[:30]:
+        if not isinstance(t, dict) or not t.get("title"):
+            continue
+        func = norm_dep_function(t.get("department_function", "general"))
+        best = _best_member_for_function(org_id, func)
+        dept = next((d for d in (plan.get("departments") or []) if d.get("function") == func), {})
+        kr_text = ((dept.get("key_results") or [])[int(t.get("linked_kr_index", 0))] if dept.get("key_results") else "")
+        task = {
+            "id": str(uuid.uuid4()),
+            "org_id": org_id,
+            "plan_id": plan["id"],
+            "department_function": func,
+            "linked_kr_index": int(t.get("linked_kr_index", 0)),
+            "title": str(t.get("title", ""))[:200],
+            "description": str(t.get("description", ""))[:1000],
+            "founder_context": (
+                f"Vision: {north_star}\n"
+                f"→ Company objective: {plan.get('company_objective', '')}\n"
+                f"→ {func}: {dept.get('objective', '')}\n"
+                f"→ KR: {kr_text}"
+            ),
+            "assigned_to": best["user_id"],
+            "assigned_to_name": best["name"],
+            "status": "pending",
+            "due_at": (week_start_dt + timedelta(days=6, hours=23, minutes=59)).isoformat(),
+            "week_start": week_start,
+            "generated_week": week_start_dt.isocalendar()[1],
+            "proof_files": [],
+            "ai_review": {"status": "pending", "notes": "", "confidence": 0.0, "reviewed_at": None},
+            "stage": {"label": "not_started", "confidence": 1.0, "last_updated": now_utc().isoformat()},
+            "escalation": {"dept_head_contacted": False, "dept_head_response": "",
+                           "founder_contacted": False, "founder_response": "", "escalated_at": None},
+            "created_at": now_utc().isoformat(),
+            "updated_at": now_utc().isoformat(),
+            "completed_at": None,
+        }
+        tasks.append(task)
+
+    if tasks:
+        tasks_col.insert_many(tasks)
+
+    return {"tasks_generated": len(tasks), "week_start": week_start}
+
+
+@router.get("/tasks")
+def list_tasks(department_function: Optional[str] = None, status: Optional[str] = None,
+               week_start: Optional[str] = None, assigned_to: Optional[str] = None,
+               user: dict = Depends(current_user)):
+    """Owner-only. List all tasks with filters."""
+    m = _require_owner(user)
+    q = {"org_id": m["org_id"]}
+    if department_function:
+        q["department_function"] = department_function
+    if status:
+        q["status"] = status
+    if week_start:
+        q["week_start"] = week_start
+    if assigned_to:
+        q["assigned_to"] = assigned_to
+
+    rows = list(tasks_col.find(q, {"_id": 0}).sort("created_at", -1).limit(100))
+    return {"tasks": rows, "count": len(rows)}
+
+
+@router.get("/tasks/mine")
+def my_tasks(user: dict = Depends(current_user)):
+    """Member-only. Current user's active assigned tasks."""
+    m = _active_membership(user)
+    if not m:
+        raise HTTPException(403, "Not part of an organization")
+    q = {"org_id": m["org_id"], "assigned_to": user["id"],
+         "status": {"$in": ["pending", "in_progress", "awaiting_review"]}}
+    rows = list(tasks_col.find(q, {"_id": 0}).sort("due_at", 1).limit(50))
+    return {"tasks": rows, "count": len(rows)}
+
+
+@router.patch("/tasks/{task_id}")
+def update_task(task_id: str, body: TaskUpdateIn, user: dict = Depends(current_user)):
+    """Member or owner update task status / proof files."""
+    m = _active_membership(user)
+    if not m:
+        raise HTTPException(403, "Not in an organization")
+    task = tasks_col.find_one({"id": task_id, "org_id": m["org_id"]})
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if m["role"] != "owner" and task["assigned_to"] != user["id"]:
+        raise HTTPException(403, "Can only update your own tasks")
+
+    update = {"updated_at": now_utc().isoformat()}
+    if body.status:
+        update["status"] = body.status
+        if body.status == "done":
+            update["completed_at"] = now_utc().isoformat()
+    if body.proof_files is not None:
+        update["proof_files"] = body.proof_files
+        update["status"] = "awaiting_review"
+    if body.assigned_to and m["role"] == "owner":
+        update["assigned_to"] = body.assigned_to
+        u = users_col.find_one({"id": body.assigned_to}, {"_id": 0, "name": 1})
+        update["assigned_to_name"] = (u or {}).get("name", "Member")
+    if body.due_at and m["role"] == "owner":
+        update["due_at"] = body.due_at
+
+    tasks_col.update_one({"id": task_id}, {"$set": update})
+    updated = tasks_col.find_one({"id": task_id}, {"_id": 0})
+
+    if update.get("status") == "awaiting_review":
+        try:
+            _review_task_proof(task_id)
+        except Exception as e:
+            log.error(f"auto-review failed for {task_id}: {e}")
+
+    return {"task": updated}
+
+
+@router.post("/tasks/{task_id}/ai-review")
+def review_task_proof(task_id: str, user: dict = Depends(current_user)):
+    """Owner/system. AI reviews proof of work."""
+    _require_owner(user)
+    return _review_task_proof(task_id)
+
+
+def _review_task_proof(task_id: str) -> dict:
+    task = tasks_col.find_one({"id": task_id})
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    proof = task.get("proof_files") or []
+    if not proof:
+        return {"approved": False, "confidence": 0, "notes": "No proof files uploaded", "auto_completed": False}
+
+    prompt = (
+        f"TASK: {task['title']}\n"
+        f"DESCRIPTION: {task['description']}\n"
+        f"FILES UPLOADED: {json.dumps([{'name': f.get('name'), 'type': f.get('type')} for f in proof], indent=2)}\n\n"
+        f"Based on the task description and the proof files submitted, determine if this task is genuinely complete."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=800,
+            system=[{"type": "text", "text": TASK_REVIEW_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        data = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"task review failed for {task_id}: {e}")
+        return {"approved": False, "confidence": 0, "notes": f"Review error: {e}", "auto_completed": False}
+
+    approved = bool(data.get("approved", False))
+    confidence = float(data.get("confidence", 0))
+    notes = str(data.get("notes", ""))
+    auto_completed = approved and confidence > 0.8
+
+    update = {
+        "ai_review.status": "approved" if approved else "flagged",
+        "ai_review.notes": notes,
+        "ai_review.confidence": confidence,
+        "ai_review.reviewed_at": now_utc().isoformat(),
+        "updated_at": now_utc().isoformat(),
+    }
+    if auto_completed:
+        update["status"] = "done"
+        update["completed_at"] = now_utc().isoformat()
+
+    tasks_col.update_one({"id": task_id}, {"$set": update})
+    return {"approved": approved, "confidence": confidence, "notes": notes, "auto_completed": auto_completed}
+
+
+@router.post("/tasks/{task_id}/stage")
+def detect_task_stage(task_id: str, user: dict = Depends(current_user)):
+    """AI detects task stage from member chat context."""
+    m = _active_membership(user)
+    if not m:
+        raise HTTPException(403, "Not in an organization")
+    task = tasks_col.find_one({"id": task_id, "org_id": m["org_id"]})
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    thread = threads_col.find_one({"user_id": task["assigned_to"]}, sort=[("last_turn_at", -1)])
+    context = []
+    if thread:
+        for msg in (thread.get("messages") or [])[-10:]:
+            context.append(f"[{msg['role']}]: {msg['text'][:200]}")
+    chat_context = "\n".join(context[-6:]) or "(no recent chat)"
+
+    prompt = (
+        f"TASK: {task['title']}\n"
+        f"DESCRIPTION: {task['description']}\n"
+        f"CURRENT STATUS: {task['status']}\n"
+        f"STAGE: {task.get('stage', {}).get('label', 'unknown')}\n"
+        f"MEMBER'S RECENT CHAT:\n{chat_context}\n\n"
+        f"What stage is this task at now?"
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=500,
+            system=[{"type": "text", "text": TASK_STAGE_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        data = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"stage detection failed for {task_id}: {e}")
+        return {"stage": task.get("stage", {}).get("label", "unknown"), "error": str(e)}
+
+    label = str(data.get("stage", "not_started"))
+    confidence = float(data.get("confidence", 0.5))
+    tasks_col.update_one({"id": task_id}, {"$set": {
+        "stage.label": label, "stage.confidence": confidence,
+        "stage.last_updated": now_utc().isoformat(), "updated_at": now_utc().isoformat()}})
+    return {"stage": label, "confidence": confidence}
+
+
+@router.get("/tasks/weekly-digest")
+def weekly_task_digest(user: dict = Depends(current_user)):
+    """Owner-only. Weekly task aggregation for the cockpit."""
+    m = _require_owner(user)
+    org_id = m["org_id"]
+    now = now_utc()
+    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = monday.isoformat()
+    now_iso = now.isoformat()
+
+    all_tasks = list(tasks_col.find({"org_id": org_id, "week_start": week_start}, {"_id": 0}).sort("created_at", 1))
+
+    dept_map = {}
+    member_map = {}
+    flagged = []
+
+    for t in all_tasks:
+        func = t.get("department_function", "general")
+        d = dept_map.setdefault(func, {"function": func, "total": 0, "done": 0, "overdue": 0,
+                                        "pending": 0, "in_progress": 0, "flagged": 0})
+        d["total"] += 1
+        s = t.get("status", "pending")
+        if s == "done":
+            d["done"] += 1
+        elif t.get("due_at", "") < now_iso and s != "done":
+            d["overdue"] += 1
+        if s == "pending":
+            d["pending"] += 1
+        if s == "in_progress":
+            d["in_progress"] += 1
+        if t.get("ai_review", {}).get("status") == "flagged":
+            d["flagged"] += 1
+
+        uid = t.get("assigned_to", "")
+        mm = member_map.setdefault(uid, {"user_id": uid, "name": t.get("assigned_to_name", "Member"),
+                                          "total": 0, "done": 0, "overdue": 0, "pending": 0})
+        mm["total"] += 1
+        if s == "done":
+            mm["done"] += 1
+        elif t.get("due_at", "") < now_iso and s != "done":
+            mm["overdue"] += 1
+        if s == "pending":
+            mm["pending"] += 1
+
+        if t.get("ai_review", {}).get("status") == "flagged" or s == "needs_clarification":
+            flagged.append(t)
+
+    return {
+        "week_start": week_start,
+        "total_tasks": len(all_tasks),
+        "done": sum(1 for t in all_tasks if t.get("status") == "done"),
+        "overdue": sum(1 for t in all_tasks if t.get("due_at", "") < now_iso and t.get("status") != "done"),
+        "pending": sum(1 for t in all_tasks if t.get("status") == "pending"),
+        "in_progress": sum(1 for t in all_tasks if t.get("status") == "in_progress"),
+        "by_department": list(dept_map.values()),
+        "by_member": list(member_map.values()),
+        "flagged": flagged[:10],
+    }
+
+
+# ----------------------------------------------------------------- department head detection
+@router.get("/department-heads")
+def get_department_heads(user: dict = Depends(current_user)):
+    """Owner-only. Auto-detect department heads from member activity."""
+    m = _require_owner(user)
+    org_id = m["org_id"]
+    org = orgs_col.find_one({"id": org_id})
+    existing = org.get("department_heads") or {}
+
+    members = list(members_col.find({"org_id": org_id, "status": "active"}))
+    rows = list(decisions_col.find({"org_id": org_id}, {"_id": 0, "function": 1, "user_id": 1, "status": 1}))
+
+    by_func = {}
+    for r in rows:
+        f = r.get("function") or "general"
+        if f not in by_func:
+            by_func[f] = {}
+        uid = r["user_id"]
+        by_func[f][uid] = by_func[f].get(uid, 0) + 1
+
+    heads = {}
+    for func, uid_counts in by_func.items():
+        if not uid_counts:
+            continue
+        top_uid = max(uid_counts, key=uid_counts.get)
+        u = users_col.find_one({"id": top_uid}, {"_id": 0, "name": 1})
+        heads[func] = {"user_id": top_uid, "name": (u or {}).get("name", "Member")}
+
+    orgs_col.update_one({"id": org_id}, {"$set": {"department_heads": heads}})
+    return {"detected": heads, "custom": existing}
+
+
+@router.put("/department-heads")
+def set_department_head(body: dict, user: dict = Depends(current_user)):
+    """Owner-only. Manually set a department head."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    current = dict(org.get("department_heads") or {})
+    for func, uid in body.items():
+        if func in DEP_FUNCTIONS and uid:
+            u = users_col.find_one({"id": uid}, {"_id": 0, "name": 1})
+            current[func] = {"user_id": uid, "name": (u or {}).get("name", "Member")}
+    orgs_col.update_one({"id": m["org_id"]}, {"$set": {"department_heads": current}})
+    return {"department_heads": current}

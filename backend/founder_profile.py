@@ -21,7 +21,7 @@ from engine import client, _extract_json
 log = logging.getLogger("founder")
 router = APIRouter(prefix="/api/founder", tags=["founder-profile"])
 
-INTERVIEW_MODELS = ("claude-sonnet-4-5", "claude-haiku-4-5")
+INTERVIEW_MODELS = (os.environ.get("LLM_MODEL", "gemini-3.5-flash").strip(),)
 INTERVIEW_TURNS = int(os.environ.get("FOUNDER_INTERVIEW_TURNS", "6"))  # founder answers before auto-distill
 MIN_FINISH_ANSWERS = 2  # can finish early after this many answers
 

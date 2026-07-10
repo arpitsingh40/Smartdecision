@@ -15,6 +15,7 @@ import json
 import time
 import uuid
 import logging
+from datetime import timedelta
 from typing import Optional
 import requests as http
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,29 +33,28 @@ PACKS = {
         "credits": 10, "amount_inr": 49, "label": "Starter", "tag": None,
         "headline": "Try it out",
         "features": [
-            "Basic AI conversation",
-            "Limited memory",
-            "10 credits (~3 normal turns)",
+            "Full AI reasoning (normal mode)",
+            "Attach files to any turn",
+            "10 credits — covers a short conversation",
         ],
     },
     "pack_50": {
         "credits": 50, "amount_inr": 399, "label": "Pro", "tag": None,
         "headline": "For regular use",
         "features": [
-            "Better reasoning",
-            "Short-term memory",
-            "50 credits (~16 normal turns)",
+            "All modes including Ultra thinking",
+            "File & data analysis",
+            "50 credits — covers a week of regular use",
         ],
     },
     "pack_500": {
         "credits": 500, "amount_inr": 999, "label": "Elite", "tag": "Best Value",
         "headline": "For serious users",
         "features": [
-            "Deep reasoning mode",
-            "Long-term memory",
-            "Priority processing",
-            "Advanced reports & file analysis",
-            "500 credits (10× the Pro plan for 2.5× the price)",
+            "All modes including Ultra thinking",
+            "File & data analysis",
+            "Long conversations, multiple goals",
+            "500 credits — 10× the credits of Pro for 2.5× the price",
         ],
     },
 }
@@ -101,6 +101,45 @@ def _zoho_api(method: str, path: str, payload: Optional[dict] = None) -> dict:
     if r.status_code >= 400:
         raise RuntimeError(f"Zoho API {path} -> {r.status_code}: {r.text[:300]}")
     return r.json()
+
+
+# ----------------------------------------------------------------- UPI mandate helpers (autopay)
+def create_mandate_enrollment(customer_email: str, customer_phone: str, plan_amount: int,
+                               plan_frequency: str = "monthly", description: str = "") -> dict:
+    """Create a UPI mandate enrollment session. Customer authorises in their UPI app.
+    Returns {mandate_enrollment_id, mandate_enrollment_url}."""
+    payload = {
+        "customer": {"email": customer_email, "phone": customer_phone},
+        "mandate_type": "recurring",
+        "frequency": plan_frequency,
+        "amount": plan_amount,
+        "currency": "INR",
+        "description": description[:100],
+        "expiry": (now_utc().replace(tzinfo=None) + timedelta(days=30)).isoformat(),
+    }
+    return _zoho_api("POST", "/mandates/enrollment", payload)
+
+
+def execute_mandate_payment(mandate_id: str, amount: int, description: str = "") -> dict:
+    """Execute a single payment against an authorised UPI mandate.
+    Customer receives a 24h pre-debit notification automatically.
+    Returns {payment_id, status, mandate_id}."""
+    payload = {
+        "amount": amount,
+        "currency": "INR",
+        "description": description[:100],
+    }
+    return _zoho_api("POST", f"/mandates/{mandate_id}/payments", payload)
+
+
+def get_mandate(mandate_id: str) -> dict:
+    """Fetch mandate status and details."""
+    return _zoho_api("GET", f"/mandates/{mandate_id}")
+
+
+def cancel_mandate(mandate_id: str, reason: str = "") -> dict:
+    """Cancel an active mandate."""
+    return _zoho_api("POST", f"/mandates/{mandate_id}/cancel", {"reason": reason[:200]})
 
 
 # ----------------------------------------------------------------- fulfilment (idempotent)

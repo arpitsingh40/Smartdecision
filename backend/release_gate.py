@@ -15,6 +15,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
+from typing import Optional
 
 from db import gates_col
 from engine import client, _extract_json
@@ -23,7 +24,7 @@ from security import require_admin, now_utc
 log = logging.getLogger("release_gate")
 router = APIRouter(prefix="/api/admin/release-gate", tags=["admin"])
 
-JUDGE_MODEL = "claude-haiku-4-5"
+JUDGE_MODEL = "gemini-3.5-flash"
 PASS_THRESHOLD = 70
 GATE_KEYS = ("truth", "reasoning", "actionability", "impact")
 STALE_RUN_MINUTES = 15
@@ -192,7 +193,7 @@ def ensure_gate_startup():
 
 
 class RunIn(BaseModel):
-    limit: int | None = Field(default=None, ge=1, le=5)
+    limit: Optional[int] = Field(default=None, ge=1, le=5)
 
 
 @router.post("/run")

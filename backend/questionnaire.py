@@ -9,6 +9,7 @@ Endpoints (all auth-required, prefix /api/user):
 """
 import os
 import logging
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
@@ -29,7 +30,7 @@ class QuestionnaireIn(BaseModel):
     potential: str = Field(min_length=3, max_length=2000)
 
 
-def _serialize(q: dict | None):
+def _serialize(q: Optional[dict]):
     if not q:
         return None
     out = {k: q.get(k, "") for k in ("dream", "capacity", "advantage", "potential")}

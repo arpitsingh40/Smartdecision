@@ -1,0 +1,14 @@
+node_modules
+.git
+__pycache__
+*.pyc
+.venv
+venv
+.env
+.env.local
+.DS_Store
+*.md
+*.zip
+*.tar.gz
+dist
+build

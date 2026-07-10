@@ -14,6 +14,7 @@ cognition_block() returns one string ready to inject into any engine prompt.
 """
 
 import logging
+from typing import Optional
 from db import users_col, decisions_col, journeys_col
 from lenses import select_lenses
 
@@ -125,7 +126,7 @@ CATEGORIES = {
 }
 
 
-def classify_decision(text: str) -> str | None:
+def classify_decision(text: str) -> Optional[str]:
     """Pure keyword router. Returns category id or None (generic)."""
     hay = (text or "").lower()
     best, best_score = None, 0
@@ -166,7 +167,7 @@ def identity_block(user: dict) -> str:
 
 
 # --------------------------------------------------------------- L5 past-decision memory
-def past_decisions_block(user_id: str, text: str, category: str | None, limit: int = 3) -> str:
+def past_decisions_block(user_id: str, text: str, category: Optional[str], limit: int = 3) -> str:
     """This founder's most relevant past decisions + real outcomes. Relevance = shared keywords
     with the current question; falls back to recency. Zero LLM, one indexed query."""
     try:
@@ -259,7 +260,7 @@ def company_state_block(user_id: str) -> str:
 
 
 # --------------------------------------------------------------- assembled block
-def cognition_block(user: dict, text: str, model: dict | None = None,
+def cognition_block(user: dict, text: str, model: Optional[dict] = None,
                     include_identity: bool = True, include_memory: bool = True,
                     include_company_state: bool = False) -> str:
     """One string with every cognition layer that applies to this turn. Lean by design:

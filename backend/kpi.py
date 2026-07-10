@@ -9,6 +9,7 @@ Two parts:
 """
 import uuid
 import logging
+from typing import Optional
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -37,7 +38,7 @@ def _iso(v):
 class SignalIn(BaseModel):
     kind: str = Field(min_length=3, max_length=40)
     value: bool
-    decision_id: str | None = Field(default=None, max_length=80)
+    decision_id: Optional[str] = Field(default=None, max_length=80)
 
 
 @router.post("/signal")

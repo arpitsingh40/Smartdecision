@@ -1,6 +1,6 @@
 """Deep Discussion Engine core — proven in POC (Phase 1, all checks passed).
 Pure functions: intent classification, rolling fields, re-engagement.
-Single LLM call per turn: Opus 4.8 primary -> Haiku 4.5 fallback.
+Single LLM call per turn: Gemini 3.5 Flash primary.
 Multi-modal: attach image / PDF / Excel / CSV / text — engine reads and reasons on the file."""
 import os
 import io
@@ -10,14 +10,15 @@ import time
 import base64
 import logging
 from datetime import datetime, timedelta, timezone
-import anthropic
+
+import requests
 
 log = logging.getLogger(__name__)
 
-PRIMARY_MODEL = "claude-opus-4-8"
-ANALYTICAL_MODEL = "claude-sonnet-4-5"  # files / large data analysis: same context as Opus, ~5x cheaper
-ULTRA_MODEL = "claude-fable-5"  # ultra thinking: adaptive thinking + high effort
-FALLBACK_MODEL = "claude-haiku-4-5"
+PRIMARY_MODEL = os.environ.get("LLM_MODEL", "gemini-3.5-flash").strip()
+ANALYTICAL_MODEL = os.environ.get("LLM_MODEL_ANALYTICAL", PRIMARY_MODEL).strip()
+ULTRA_MODEL = os.environ.get("LLM_MODEL_ULTRA", PRIMARY_MODEL).strip()
+FALLBACK_MODEL = os.environ.get("LLM_MODEL_FALLBACK", PRIMARY_MODEL).strip()
 
 
 def _extract_json(txt: str) -> str:
@@ -51,11 +52,239 @@ def _extract_json(txt: str) -> str:
 IMAGE_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
 MAX_FILE_CHARS = 50000  # cap extracted text — bounds cost; engine doesn't need the whole novel
 
+# ---------- Gemini client adapter (Anthropic-compatible interface, direct HTTP) ----------
+
+class _GeminiContentBlock:
+    __slots__ = ("text", "type")
+    def __init__(self, text: str):
+        self.text = text
+        self.type = "text"
+
+class _GeminiUsage:
+    __slots__ = ("input_tokens", "output_tokens")
+    def __init__(self, input_tokens: int, output_tokens: int):
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+class _GeminiResponse:
+    __slots__ = ("content", "usage")
+    def __init__(self, text: str, input_tokens: int = 0, output_tokens: int = 0):
+        self.content = [_GeminiContentBlock(text)]
+        self.usage = _GeminiUsage(input_tokens, output_tokens)
+
+_GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+class _GeminiMessages:
+    def __init__(self, api_key: str):
+        self._api_key = api_key
+
+    def _url(self, model: str) -> str:
+        return f"{_GEMINI_API_BASE}/{model}:generateContent?key={self._api_key}"
+
+    @staticmethod
+    def _convert_content(content):
+        if isinstance(content, str):
+            return [{"text": content}]
+        parts = []
+        for block in content:
+            if not isinstance(block, dict):
+                parts.append({"text": str(block)})
+                continue
+            t = block.get("type", "")
+            if t == "text":
+                parts.append({"text": block.get("text", "")})
+            elif t == "image":
+                src = block.get("source", {})
+                if src.get("type") == "base64":
+                    parts.append({"inline_data": {"mime_type": src.get("media_type", "image/png"), "data": src.get("data", "")}})
+                elif src.get("type") == "url":
+                    parts.append({"file_data": {"file_uri": src["url"], "mime_type": src.get("media_type", "image/png")}})
+        return parts
+
+    @staticmethod
+    def _system_to_text(system):
+        if not system:
+            return None
+        if isinstance(system, str):
+            return system
+        if isinstance(system, list):
+            texts = [s["text"] for s in system if isinstance(s, dict) and isinstance(s.get("text"), str) and s["text"].strip()]
+            return "\n".join(texts) if texts else None
+        return None
+
+    def create(self, model: str, system=None, messages=None, max_tokens=None, **kwargs):
+        system_text = self._system_to_text(system)
+        contents = []
+        for m in messages or []:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            gemini_role = "model" if role == "assistant" else "user"
+            parts = self._convert_content(content)
+            contents.append({"role": gemini_role, "parts": parts})
+        body = {"contents": contents, "generationConfig": {"maxOutputTokens": max_tokens or 8192}}
+        if system_text:
+            body["system_instruction"] = {"parts": [{"text": system_text}]}
+        last_err = None
+        for attempt in range(4):
+            try:
+                resp = requests.post(self._url(model), json=body, timeout=120)
+                resp.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                detail = ""
+                try:
+                    detail = resp.text
+                except Exception:
+                    pass
+                status = resp.status_code if hasattr(resp, 'status_code') else 0
+                # Retry on 429 (rate limit) and 503 (overloaded)
+                if status in (429, 503) and attempt < 3:
+                    import re
+                    m2 = re.search(r'retry in (\d+(?:\.\d+)?)s', detail, re.I)
+                    delay = float(m2.group(1)) + 2 if m2 else (2 ** attempt * 5)
+                    log.warning(f"Gemini {status}, retry {attempt+1}/3 after {delay:.0f}s: {detail[:120]}")
+                    time.sleep(delay)
+                    last_err = RuntimeError(f"Gemini API error: {e} {detail[:300]}")
+                    continue
+                raise RuntimeError(f"Gemini API error: {e} {detail[:500]}")
+            data = resp.json()
+            text = ""
+            candidates = data.get("candidates") or []
+            if candidates:
+                c = candidates[0]
+                finish = c.get("finishReason", "")
+                if finish in ("SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"):
+                    log.warning(f"Gemini blocked: finishReason={finish}")
+                parts = (c.get("content") or {}).get("parts") or []
+                if parts:
+                    text = parts[0].get("text", "")
+            usage = data.get("usageMetadata") or {}
+            in_tokens = usage.get("promptTokenCount", 0) or 0
+            out_tokens = usage.get("candidatesTokenCount", 0) or 0
+            return _GeminiResponse(text, in_tokens, out_tokens)
+        raise last_err or RuntimeError("Gemini API failed after retries")
+
+class _GeminiClient:
+    def __init__(self, api_key: str):
+        self._messages = _GeminiMessages(api_key)
+
+    @property
+    def messages(self):
+        return self._messages
+
+
+# ---------- DeepSeek client adapter (OpenAI-compatible, direct HTTP) ----------
+
+_DEEPSEEK_API_BASE = "https://api.deepseek.com"
+
+class _DeepSeekMessages:
+    def __init__(self, api_key: str):
+        self._api_key = api_key
+        self._session = requests.Session()
+        self._session.headers.update({
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        })
+
+    @staticmethod
+    def _system_to_text(system):
+        if not system:
+            return None
+        if isinstance(system, str):
+            return system.strip() or None
+        if isinstance(system, list):
+            texts = [s["text"] for s in system if isinstance(s, dict) and isinstance(s.get("text"), str) and s["text"].strip()]
+            return "\n".join(texts) if texts else None
+        return None
+
+    @staticmethod
+    def _content_as_text(content):
+        if isinstance(content, str):
+            return content
+        parts = []
+        for block in (content or []):
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+        return "".join(parts)
+
+    def create(self, model: str, system=None, messages=None, max_tokens=None, **kwargs):
+        system_text = self._system_to_text(system)
+        ds_messages = []
+        if system_text:
+            ds_messages.append({"role": "system", "content": system_text})
+        for m in messages or []:
+            role = m.get("role", "user")
+            ds_role = "assistant" if role == "assistant" else "user"
+            text = self._content_as_text(m.get("content", ""))
+            ds_messages.append({"role": ds_role, "content": text})
+        body = {
+            "model": model,
+            "messages": ds_messages,
+            "max_tokens": max_tokens or 8192,
+            "temperature": kwargs.get("temperature", 0.7),
+        }
+        last_err = None
+        for attempt in range(4):
+            try:
+                resp = self._session.post(f"{_DEEPSEEK_API_BASE}/v1/chat/completions", json=body, timeout=120)
+                resp.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                detail = ""
+                try:
+                    detail = resp.text
+                except Exception:
+                    pass
+                status = resp.status_code if hasattr(resp, 'status_code') else 0
+                if status in (429, 503) and attempt < 3:
+                    import re
+                    m2 = re.search(r'retry after (\d+)', detail, re.I)
+                    delay = float(m2.group(1)) + 1 if m2 else (2 ** attempt * 5)
+                    log.warning(f"DeepSeek {status}, retry {attempt+1}/3 after {delay:.0f}s")
+                    time.sleep(delay)
+                    last_err = RuntimeError(f"DeepSeek API error: {e} {detail[:300]}")
+                    continue
+                raise RuntimeError(f"DeepSeek API error: {e} {detail[:500]}")
+            data = resp.json()
+            text = ""
+            choices = data.get("choices") or []
+            if choices:
+                text = (choices[0].get("message") or {}).get("content", "") or ""
+            usage = data.get("usage") or {}
+            in_tokens = usage.get("prompt_tokens", 0) or 0
+            out_tokens = usage.get("completion_tokens", 0) or 0
+            return _GeminiResponse(text, in_tokens, out_tokens)
+        raise last_err or RuntimeError("DeepSeek API failed after retries")
+
+class _DeepSeekClient:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self._messages = _DeepSeekMessages(api_key)
+
+    @property
+    def messages(self):
+        return self._messages
+
+
+# ---------- Provider factory ----------
+
 _client = None
+
 def client():
     global _client
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    if _client is not None:
+        return _client
+    provider = os.environ.get("LLM_PROVIDER", "gemini").strip().lower()
+    if provider == "deepseek":
+        key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError("DEEPSEEK_API_KEY not set")
+        _client = _DeepSeekClient(key)
+        log.info("LLM provider: DeepSeek (%s)", os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
+    else:
+        key = os.environ.get("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError("GEMINI_API_KEY not set")
+        _client = _GeminiClient(key)
+        log.info("LLM provider: Gemini")
     return _client
 
 # ---------------------------------------------------------------- intent (pure)
@@ -131,7 +360,7 @@ def compute_reengagement_line(last_snap: dict, now_snap: dict, days_absent: int)
     return PHRASE_BANK[key].format(days=days_absent, prior=last_snap.get("summary_line", "your last position"), mag=extra)
 
 # ------------------------------------------------- action assist: "Do it for me" (1 LLM call)
-def _user_context_block(user_doc: dict | None) -> str:
+def _user_context_block(user_doc) -> str:
     """Render the user's questionnaire (Dream/Capacity/Advantage/Potential) into a tight
     prompt block. Returns empty string if the questionnaire isn't completed yet, so threads
     opened before answering keep the prior behaviour."""
@@ -175,7 +404,7 @@ Return ONLY valid JSON, no markdown fences:
 
 ASSIST_REQUIRED = ("kind", "title", "artifact", "handoff")
 
-def llm_complete_action(thread: dict, user_doc: dict | None = None):
+def llm_complete_action(thread: dict, user_doc=None):
     """Generate the ship-ready artifact (or 10-minute kit) for the current next action."""
     saved_facts = (thread.get("current_file_facts") or "").strip()
     facts_block = f"FILE_FACTS (from a file the user attached earlier — the artifact must USE these numbers, not ask the user to re-derive them):\n{saved_facts}\n" if saved_facts else ""
@@ -250,7 +479,7 @@ def _extract_csv(b: bytes) -> str:
     return "\n".join(lines)[:MAX_FILE_CHARS]
 
 
-def build_attachment_blocks(attachment: dict | None):
+def build_attachment_blocks(attachment):
     """Turn an uploaded file into LLM-ready content.
     Images -> Anthropic vision content block (the model sees the image).
     PDF/Excel/CSV/text -> server-side extraction, appended to the text prompt (cheaper + reliable).
@@ -358,9 +587,9 @@ REQUIRED_KEYS = ("phase", "acknowledgment", "refreshed_open_question", "state_su
 VALID_PHASES = ("exploring", "naming", "ready_to_act", "acting", "checking_in")
 
 def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal",
-             attachment: dict | None = None, user_doc: dict | None = None,
-             recall_block: str = "", attachment_preview: dict | None = None,
-             understanding: dict | None = None):
+             attachment=None, user_doc=None,
+             recall_block: str = "", attachment_preview=None,
+             understanding=None):
     adjust_note = ""
     if intent == "action_adjust":
         adjust_note = ("ADJUSTMENT: the user is pushing back on the PRIOR NEXT ACTION above - "

@@ -91,6 +91,7 @@ def ensure_startup():
             "credits_spent": turn_cost * questions,
             "tokens_in": 0, "tokens_out": 0,
             "revenue_inr": 0, "purchases_count": 0,
+            "subs_active": 0, "subs_trial": 0, "mrr_inr": 0, "subs_revenue_inr": 0,
             "sessions_total": 0, "unique_ips": 0,
         })
         for u in users_col.find({}, {"id": 1, "is_admin": 1, "questions_asked": 1}):

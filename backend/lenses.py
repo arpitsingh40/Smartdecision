@@ -8,6 +8,7 @@ instead of summarizing books. Pure functions, zero LLM cost, ~600 extra tokens/t
 """
 
 import json
+from typing import Optional
 
 # (id, book label, [(trigger substring, weight)], lens instruction text)
 MODULES = [
@@ -442,8 +443,8 @@ MODULES = [
 _TIER1_BOOST = {"kahneman_bias", "heath_wrap", "taleb_swan", "munger_incentives", "rumelt_kernel"}
 
 
-def select_lenses(latest_msg: str, model: dict | None = None, max_lenses: int = 3, min_score: int = 2,
-                  boost_ids: list | None = None):
+def select_lenses(latest_msg: str, model: Optional[dict] = None, max_lenses: int = 3, min_score: int = 2,
+                  boost_ids: Optional[list] = None):
     """Pure function: pick the most relevant reasoning modules for this turn.
     boost_ids: module ids preferred by the detected decision category (get +3).
     Returns a prompt block string, or "" when nothing scores (keeps prompts lean)."""

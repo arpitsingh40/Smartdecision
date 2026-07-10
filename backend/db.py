@@ -31,3 +31,6 @@ shares_col = db.shares                 # public Decision Cards (virality layer):
 benchmarks_col = db.benchmarks         # evolving cross-founder aggregates: (industry, metric) -> samples/stats
 kpi_events_col = db.kpi_events         # one-tap launch-KPI signals (problem detection / decision improvement)
 gates_col = db.release_gates           # release-gate runs (four gates: truth/reasoning/actionability/impact)
+tasks_col = db.tasks                   # weekly OKR tasks: per-member assignments with proof & AI review
+subscriptions_col = db.subscriptions   # UPI mandate subscriptions: plan, mandate_id, token_budget, status
+token_usage_col = db.token_usage       # monthly token consumption per user

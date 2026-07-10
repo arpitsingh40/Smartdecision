@@ -23,6 +23,7 @@ import uuid
 from datetime import datetime, timezone
 
 import numpy as np
+from typing import Optional
 from db import db
 
 log = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ MAX_LEAVES_PER_SECTION = 12        # group leaves into sections when no native h
 MAX_SECTIONS_PER_CHAPTER = 8
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"   # local fastembed (ONNX, ~80MB), 384-dim, no API quota
 EMBED_DIM = 384
-SUMMARIZE_MODEL = "claude-haiku-4-5"     # cheap summarizer for cascade
+SUMMARIZE_MODEL = "gemini-3.5-flash"     # cheap summarizer for cascade
 TOP_CHAPTERS = 3
 TOP_SECTIONS = 3
 TOP_PARAGRAPHS = 5
@@ -55,12 +56,9 @@ def _get_embedder():
         _embedder = TextEmbedding(EMBED_MODEL)
     return _embedder
 
-def _anthropic():
-    global _anth
-    if _anth is None:
-        import anthropic
-        _anth = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    return _anth
+def _gemini_client():
+    from engine import client
+    return client()
 
 # ---------------------------------------------------------------- file parsing
 def _parse_pdf(b: bytes):
@@ -337,7 +335,7 @@ def _summarize(title: str, children_summaries: list, max_words: int = 60):
         f"Capture the concrete facts/numbers/claims that matter. No fluff, no preamble.\n\n{bullets}"
     )
     try:
-        r = _anthropic().messages.create(
+        r = _gemini_client().messages.create(
             model=SUMMARIZE_MODEL, max_tokens=180,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -349,7 +347,7 @@ def _summarize(title: str, children_summaries: list, max_words: int = 60):
         return (" ".join(children_summaries))[:max_words * 6]
 
 # ---------------------------------------------------------------- tree build
-def extract(filename: str, mime: str, b64: str, thread_id: str | None):
+def extract(filename: str, mime: str, b64: str, thread_id: Optional[str]):
     """Entry point called on every attachment.
 
     Small files: return (vision_blocks, inline_text, None) -> engine reads inline.

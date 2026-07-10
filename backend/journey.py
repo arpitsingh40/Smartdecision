@@ -14,6 +14,7 @@ import uuid
 import json
 import math
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
@@ -23,6 +24,7 @@ from db import users_col, journeys_col, decisions_col, members_col
 from security import current_user, now_utc
 from ledger import record_ledger, inc_stats
 from engine import client, _extract_json, PRIMARY_MODEL, FALLBACK_MODEL
+from subscriptions import deduct_tokens
 from benchmarks import normalize_facts, ingest_facts, benchmark_digest
 from cognition import cognition_block
 
@@ -828,6 +830,10 @@ def _run_billed(user, produce):
     inc_stats({"credits_spent": actual, "tokens_in": usage.get("input_tokens", 0),
                "tokens_out": usage.get("output_tokens", 0), "questions_total": 1, "turns_normal": 1})
     record_ledger(user["id"], "turn_spend", -actual, reason="journey")
+    try:
+        deduct_tokens(user["id"], usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+    except HTTPException:
+        pass
     return payload, credits_after, actual
 
 
@@ -916,7 +922,7 @@ class FeedbackIn(BaseModel):
 
 class MilestoneStatusIn(BaseModel):
     status: str
-    result: str | None = Field(default=None, max_length=500)
+    result: Optional[str] = Field(default=None, max_length=500)
 
 
 # ----------------------------------------------------------------- endpoints
@@ -975,14 +981,14 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
     prev_hyps = j.get("hypotheses") or []
 
     def produce():
-        reply, new_model, reasoning, bench_raw, hyp_raw, model_name, usage = journey_turn(
+        reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw, model_name, usage = journey_turn(
             objective, current_model, transcript, msg,
             prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j),
             benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=prev_hyps,
             cognition_block_text=_safe_cognition(user, msg, current_model))
-        return (reply, new_model, reasoning, bench_raw, hyp_raw), usage, model_name
+        return (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), usage, model_name
 
-    (reply, new_model, reasoning, bench_raw, hyp_raw), credits_after, cost = _run_billed(user, produce)
+    (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(current_model, new_model)
     new_msgs = transcript + [{"role": "user", "text": msg, "at": now_utc()},
                              {"role": "assistant", "text": reply, "at": now_utc()}]

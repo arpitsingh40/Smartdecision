@@ -12,9 +12,8 @@ from ledger import get_stats
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # ----------------------------------------------------------------- model pricing
-# USD per 1M tokens. Sourced from Anthropic public pricing tiers (opus / haiku).
-# Fable 5 (ultra-thinking) is priced as opus-tier here; thinking tokens are
-# already counted into output_tokens by the SDK. All values overridable via env
+# USD per 1M tokens. Gemini Flash is free via AI Studio free tier.
+# All values overridable via env so the founder can retune without a code change.
 # so the founder can retune without a code change.
 def _f(env_key: str, default: float) -> float:
     try:
@@ -26,9 +25,7 @@ USD_TO_INR = _f("USD_TO_INR", 83.0)
 
 # {model_id: (input_usd_per_M, output_usd_per_M, label)}
 MODEL_PRICING = {
-    "claude-opus-4-8":  (_f("PRICE_OPUS_IN",  15.0), _f("PRICE_OPUS_OUT",  75.0), "Opus 4.8 (primary)"),
-    "claude-fable-5":   (_f("PRICE_FABLE_IN", 15.0), _f("PRICE_FABLE_OUT", 75.0), "Fable 5 (ultra)"),
-    "claude-haiku-4-5": (_f("PRICE_HAIKU_IN",  1.0), _f("PRICE_HAIKU_OUT",  5.0), "Haiku 4.5 (fallback)"),
+    "gemini-3.5-flash": (_f("PRICE_GEMINI_IN", 0.0), _f("PRICE_GEMINI_OUT", 0.0), "Gemini 3.5 Flash"),
 }
 UNKNOWN_PRICING = (_f("PRICE_OPUS_IN", 15.0), _f("PRICE_OPUS_OUT", 75.0), "Unknown")
 
@@ -69,7 +66,7 @@ def overview(admin: dict = Depends(require_admin)):
     agg = list(traffic_col.aggregate([
         {"$sort": {"started_at": -1}}, {"$limit": 500},
         {"$group": {"_id": None, "avg_s": {"$avg": "$duration_s"}, "total_s": {"$sum": "$duration_s"}}}]))
-    avg_s = round(agg[0]["avg_s"]) if agg else 0
+    avg_s = round(agg[0]["avg_s"]) if agg and agg[0].get("avg_s") is not None else 0
     issued_free = s.get("credits_issued_free", 0)
     issued_paid = s.get("credits_issued_paid", 0)
     spent = s.get("credits_spent", 0)
@@ -134,8 +131,9 @@ def traffic(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
     agg = list(traffic_col.aggregate([
         {"$sort": {"started_at": -1}}, {"$limit": 500},
         {"$group": {"_id": None, "avg_s": {"$avg": "$duration_s"}, "total_s": {"$sum": "$duration_s"}}}]))
+    _avg_s = agg[0].get("avg_s") if agg else None
     summary = {"sessions_total": total, "unique_ips": s.get("unique_ips", 0),
-               "avg_session_s": round(agg[0]["avg_s"]) if agg else 0,
+               "avg_session_s": round(_avg_s) if _avg_s is not None else 0,
                "time_recent_500_s": agg[0]["total_s"] if agg else 0,
                "active_now": traffic_col.count_documents({"last_seen_at": {"$gte": now_utc() - timedelta(minutes=3)}})}
     return {"summary": summary, "items": items, "total": total, "page": page,

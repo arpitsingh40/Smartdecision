@@ -792,15 +792,21 @@ scheduler.add_job(process_mandate_executions, CronTrigger(hour=7, minute=0))
 
 @app.on_event("startup")
 def _startup():
-    ensure_startup()  # idempotent: indexes + founder account + one-time stats backfill
-    ensure_org_startup()  # idempotent: org-layer indexes
-    ensure_brain_startup()  # idempotent: decision-ledger indexes
-    ensure_journey_startup()  # idempotent: founder-journey indexes
-    ensure_share_startup()  # idempotent: virality-layer indexes (decision cards + referrals)
-    ensure_benchmarks_startup()  # idempotent: cross-founder benchmark indexes
-    ensure_kpi_startup()  # idempotent: launch-KPI signal indexes
-    ensure_gate_startup()  # idempotent: release-gate run indexes
-    ensure_subscriptions_startup()  # idempotent: subscription indexes
+    if not os.environ.get("MONGO_URL"):
+        log.warning("MONGO_URL not set — skipping DB startup. Server will start but DB features won't work until MONGO_URL is configured.")
+        return
+    try:
+        ensure_startup()
+        ensure_org_startup()
+        ensure_brain_startup()
+        ensure_journey_startup()
+        ensure_share_startup()
+        ensure_benchmarks_startup()
+        ensure_kpi_startup()
+        ensure_gate_startup()
+        ensure_subscriptions_startup()
+    except Exception as e:
+        log.warning(f"Startup init failed (DB may not be ready): {e}")
     scheduler.start()
     log.info("scheduler started")
 

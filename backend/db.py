@@ -14,7 +14,7 @@ _db = mongo[os.environ.get("DB_NAME", "test_database")] if mongo else None
 
 
 def _col(name):
-    return _db[name] if _db else None
+    return _db[name] if _db is not None else None
 
 
 users_col = _col("users")

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -13,9 +13,17 @@ import { useAuth } from '../App';
 export default function NewGoalPage() {
   const navigate = useNavigate();
   const { setCredits } = useAuth();
+  const [params] = useSearchParams();
   const [title, setTitle] = useState('');
   const [whyNow, setWhyNow] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const t = params.get('title');
+    const w = params.get('why');
+    if (t) setTitle(decodeURIComponent(t));
+    if (w) setWhyNow(decodeURIComponent(w));
+  }, [params]);
 
   const create = async (e) => {
     e.preventDefault();

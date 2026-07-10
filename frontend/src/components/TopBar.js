@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog, MessageCircle, Target, Flag, CheckCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -26,6 +26,8 @@ export const TopBar = () => {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [active, setActive] = useState(null);
   const [unlocks, setUnlocks] = useState(null);
+  const [threadCount, setThreadCount] = useState(0);
+  const [journeyState, setJourneyState] = useState(null); // {started, has_direction, milestones, team_plan}
 
   const loadActive = useCallback(() => {
     if (!user) return;
@@ -34,10 +36,26 @@ export const TopBar = () => {
 
   useEffect(() => {
     if (!user) return undefined;
-    const loadUnlocks = () => api.get('/journey').then((r) => setUnlocks(r.data?.unlocks || null)).catch(() => {});
-    loadUnlocks();
-    window.addEventListener('sdg-journey-changed', loadUnlocks);
-    return () => window.removeEventListener('sdg-journey-changed', loadUnlocks);
+    const loadJourney = () => api.get('/journey').then((r) => {
+      setUnlocks(r.data?.unlocks || null);
+      setJourneyState({
+        started: r.data?.started || false,
+        has_direction: r.data?.has_direction || false,
+        milestones: (r.data?.milestones || []).length > 0,
+        team_plan: !!(r.data?.team?.plan),
+      });
+    }).catch(() => {});
+    loadJourney();
+    window.addEventListener('sdg-journey-changed', loadJourney);
+    return () => window.removeEventListener('sdg-journey-changed', loadJourney);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    api.get('/goals').then((r) => {
+      const items = r.data?.goals || [];
+      setThreadCount(items.filter((g) => g.status === 'active').length);
+    }).catch(() => {});
   }, [user]);
 
   useEffect(() => {
@@ -50,8 +68,9 @@ export const TopBar = () => {
 
   const u = unlocks || {};
   const nav = [
+    ...(threadCount > 0 ? [{ to: '/', label: `Situations (${threadCount})`, icon: MessageCircle, testid: 'nav-situations' }] : [{ to: '/', label: 'Home', icon: MessageCircle, testid: 'nav-home' }]),
+    { to: '/brain', label: 'Decision Brain', icon: BookOpen, testid: 'nav-knowledge' },
     ...(u.decisions ? [{ to: '/decisions', label: 'My Decisions', icon: CheckSquare, testid: 'nav-decisions' }] : []),
-    ...(u.knowledge ? [{ to: '/brain', label: 'Knowledge', icon: BookOpen, testid: 'nav-knowledge' }] : []),
     ...(u.team ? [{ to: '/team', label: 'Team', icon: Users, testid: 'nav-team' }] : []),
     ...(u.cockpit ? [{ to: '/cockpit', label: 'Cockpit', icon: Gauge, testid: 'nav-cockpit' }] : []),
     ...(u.cockpit ? [{ to: '/founder-profile', label: 'My Profile', icon: UserCog, testid: 'nav-founder-profile' }] : []),
@@ -87,8 +106,8 @@ export const TopBar = () => {
             </button>
           )}
           <button data-testid="credits-balance" onClick={() => navigate('/billing')}
-            className="group flex items-center gap-1 font-mono-plex text-xs text-muted-foreground hover:text-foreground transition-colors" title="Buy credits">
-            {user?.credits ?? 0} credits
+            className="group flex items-center gap-1 font-mono-plex text-xs text-muted-foreground hover:text-foreground transition-colors" title="Subscription & tokens">
+            {user?.credits ?? 0} tokens · plan
             <Plus size={12} strokeWidth={2} className="opacity-60 group-hover:opacity-100" />
           </button>
           <DropdownMenu>
@@ -99,17 +118,42 @@ export const TopBar = () => {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="rounded-xl">
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{user?.email}</DropdownMenuLabel>
+              {journeyState && (
+                <div className="px-3 py-2 space-y-1 border-b border-border/60 mb-1" data-testid="progress-checklist">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Your progress</p>
+                  {[
+                    { done: journeyState.started, label: 'Start your conversation', icon: MessageCircle },
+                    { done: journeyState.has_direction, label: 'Get a direction', icon: Target },
+                    { done: journeyState.milestones, label: 'Set measurable milestones', icon: Flag },
+                    { done: threadCount > 0, label: 'Start daily check-ins', icon: CheckCircle },
+                    { done: journeyState.team_plan, label: 'Set up your team', icon: Users },
+                  ].map((s) => (
+                    <div key={s.label} className="flex items-center gap-2 text-xs">
+                      {s.done
+                        ? <CheckCircle size={12} className="text-emerald-500 shrink-0" />
+                        : <div className="w-3 h-3 rounded-full border border-muted-foreground/40 shrink-0" />}
+                      <span className={s.done ? 'text-muted-foreground/70' : 'text-muted-foreground'}>{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <DropdownMenuSeparator />
               <div className="md:hidden">
+                <DropdownMenuItem data-testid="menu-nav-home" onClick={() => navigate('/')} className="text-sm cursor-pointer">
+                  <MessageCircle size={16} strokeWidth={1.75} className="mr-2" /> {threadCount > 0 ? `Situations (${threadCount})` : 'Home'}
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="menu-nav-knowledge" onClick={() => navigate('/brain')} className="text-sm cursor-pointer">
+                  <BookOpen size={16} strokeWidth={1.75} className="mr-2" /> Decision Brain
+                </DropdownMenuItem>
                 {nav.map((n) => (
                   <DropdownMenuItem key={n.to} data-testid={`menu-${n.testid}`} onClick={() => navigate(n.to)} className="text-sm cursor-pointer">
                     <n.icon size={16} strokeWidth={1.75} className="mr-2" /> {n.label}
                   </DropdownMenuItem>
                 ))}
-                {nav.length ? <DropdownMenuSeparator /> : null}
+                {nav.length || true ? <DropdownMenuSeparator /> : null}
               </div>
               <DropdownMenuItem data-testid="buy-credits-menu" onClick={() => navigate('/billing')} className="text-sm cursor-pointer">
-                <Plus size={16} strokeWidth={1.75} className="mr-2" /> Buy credits
+                <Plus size={16} strokeWidth={1.75} className="mr-2" /> Subscription & tokens
               </DropdownMenuItem>
               <DropdownMenuItem data-testid="feedback-menu" onClick={() => setFeedbackOpen(true)} className="text-sm cursor-pointer">
                 <MessageSquare size={16} strokeWidth={1.75} className="mr-2" /> Share feedback

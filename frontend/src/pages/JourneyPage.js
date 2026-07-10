@@ -265,31 +265,48 @@ export default function JourneyPage() {
               Tell me in your own words. We will think it through together, one step at a time.
             </p>
 
-            <div className="mt-8 text-left">
-              <Textarea
-                data-testid="journey-objective-input"
-                value={objective}
-                onChange={(e) => setObjective(e.target.value)}
-                onKeyDown={(e) => onKey(e, start)}
-                placeholder={PLACEHOLDERS[phIdx]}
-                rows={4}
-                className="text-base resize-none rounded-2xl border-border/70 focus-visible:ring-1 px-4 py-3.5 shadow-sm"
-              />
-              <div className="mt-4 flex justify-center">
-                <Button
-                  data-testid="journey-start-btn"
-                  onClick={start}
-                  disabled={!objective.trim() || busy}
-                  className="rounded-full px-7 h-11 text-sm"
-                >
-                  {busy ? <Loader2 className="animate-spin mr-2" size={16} /> : null}
-                  {busy ? 'Thinking' : 'Start Conversation'}
-                  {!busy ? <ArrowRight size={16} strokeWidth={2} className="ml-2" /> : null}
-                </Button>
-              </div>
-              <p className="text-center text-xs text-muted-foreground mt-3">
-                {user?.credits ?? 0} credits · Cmd/Ctrl + Enter to start
-              </p>
+              <div className="mt-8 text-left">
+              {busy ? (
+                <div className="flex flex-col items-center py-6" data-testid="journey-generating">
+                  <div className="rounded-2xl bg-card border border-border/70 px-5 py-4 w-full text-center">
+                    <Loader2 className="animate-spin mx-auto mb-3" size={22} />
+                    <p className="text-sm font-medium">Reading your situation…</p>
+                    <p className="text-xs text-muted-foreground mt-1.5">This takes about a minute for your first reply. Every word you wrote shapes the response.</p>
+                  </div>
+                  <div className="mt-4 w-full space-y-2.5">
+                    {[...Array(4)].map((_, i) => (
+                      <div key={i} className="h-3 rounded-full bg-muted/60 animate-pulse" style={{ width: `${70 + i * 8}%` }} />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Textarea
+                    data-testid="journey-objective-input"
+                    value={objective}
+                    onChange={(e) => setObjective(e.target.value)}
+                    onKeyDown={(e) => onKey(e, start)}
+                    placeholder={PLACEHOLDERS[phIdx]}
+                    rows={4}
+                    className="text-base resize-none rounded-2xl border-border/70 focus-visible:ring-1 px-4 py-3.5 shadow-sm"
+                  />
+                  <div className="mt-4 flex justify-center">
+                    <Button
+                      data-testid="journey-start-btn"
+                      onClick={start}
+                      disabled={!objective.trim() || busy}
+                      className="rounded-full px-7 h-11 text-sm"
+                    >
+                      {busy ? <Loader2 className="animate-spin mr-2" size={16} /> : null}
+                      {busy ? 'Thinking' : 'Start Conversation'}
+                      {!busy ? <ArrowRight size={16} strokeWidth={2} className="ml-2" /> : null}
+                    </Button>
+                  </div>
+                  <p className="text-center text-xs text-muted-foreground mt-3">
+                    {user?.credits ?? 0} tokens available · Cmd/Ctrl + Enter to start
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </main>
@@ -490,8 +507,17 @@ export default function JourneyPage() {
                   <span className="mt-0.5 inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary text-primary-foreground shrink-0">
                     <Brain size={15} strokeWidth={1.75} />
                   </span>
-                  <div className="rounded-2xl rounded-tl-sm bg-card border border-border/70 px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap max-w-[44rem]">
-                    {m.text}
+                  <div className="flex flex-col gap-2 max-w-[44rem]">
+                    <div className="rounded-2xl rounded-tl-sm bg-card border border-border/70 px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap">
+                      {m.text}
+                    </div>
+                    {/* first-turn "Why I asked" card */}
+                    {i === 0 && journey.reasoning?.question_rationale && (
+                      <div className="rounded-xl bg-secondary/60 border border-border/60 px-3.5 py-2.5 text-xs leading-snug" data-testid="first-turn-rationale">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground block mb-0.5">Why I asked that</span>
+                        {journey.reasoning.question_rationale}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -679,6 +705,28 @@ export default function JourneyPage() {
               </div>
             ) : null}
 
+            {/* Journey → Thread bridge: start daily check-ins */}
+            {journey.milestones && journey.milestones.length > 0 && journey.stage === 'milestones' && (
+              <div className="rounded-2xl border border-primary/20 bg-secondary/40 p-5" data-testid="journey-to-thread-bridge">
+                <div className="flex items-start gap-3">
+                  <Target size={18} className="mt-0.5 text-primary shrink-0" />
+                  <div>
+                    <div className="font-display text-base">Ready for daily check-ins?</div>
+                    <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
+                      Your direction and milestones are set. Now open a coach thread to get a daily next action, accountability tracking, and progress toward your goal.
+                    </p>
+                    <Button
+                      onClick={() => navigate(`/new?title=${encodeURIComponent(journey.objective || '')}&why=${encodeURIComponent('Follow through on my direction: ' + (journey.objective || ''))}`)}
+                      className="mt-3 rounded-full"
+                      data-testid="journey-to-thread-btn"
+                    >
+                      <ArrowRight size={15} className="mr-1.5" /> Open daily check-ins
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Team offer */}
             {showTeamOffer ? (
               <div className="rounded-2xl border border-primary/30 bg-secondary/40 p-5" data-testid="team-offer">
@@ -778,6 +826,15 @@ export default function JourneyPage() {
           </button>
           {panelOpen ? <div className="lg:hidden rounded-2xl border border-border/70 bg-card/60 p-4 mb-3">{Panel}</div> : null}
 
+          {/* low-credit warning */}
+          {user && user.credits !== undefined && user.credits < 20 && user.credits > 0 && (
+            <div data-testid="journey-low-credit-warning" className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2">
+              <span className="text-xs text-amber-700">{user.credits.toLocaleString()} tokens left — {' '}
+                <button onClick={() => navigate('/billing')} className="underline font-medium">top up</button> to keep going.
+              </span>
+            </div>
+          )}
+
           {/* composer */}
           <div className="sticky bottom-3">
             <div className="rounded-2xl border border-border/70 bg-card shadow-sm p-2 flex items-end gap-2">
@@ -801,7 +858,7 @@ export default function JourneyPage() {
               </Button>
             </div>
             <p className="text-center text-[11px] text-muted-foreground mt-2">
-              {user?.credits ?? 0} credits · one focused step at a time
+              {user?.credits ?? 0} tokens available · one focused step at a time
             </p>
           </div>
         </section>

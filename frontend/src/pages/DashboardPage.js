@@ -204,7 +204,7 @@ export default function DashboardPage() {
               </p>
               <DirectComposer variant="hero" autoFocus />
               <p className="text-[11px] text-muted-foreground mt-4 tracking-wide">
-                {typeof user?.credits === 'number' ? `${user.credits} free credits ready` : ''}
+                {typeof user?.credits === 'number' ? `${user.credits.toLocaleString()} tokens available` : ''}
               </p>
             </CardContent>
           </Card>

@@ -87,11 +87,11 @@ export function QuestionnaireNudge() {
             </span>
           </div>
           <h3 className="font-display text-[26px] leading-tight">
-            Unlock <span className="text-[#b89165]">₹399 worth of credits</span> — free.
+            Tell us about <span className="text-[#b89165]">your business</span> — free.
           </h3>
           <p className="text-sm text-muted-foreground mt-3 leading-6">
             Answer 4 short questions about your dream, capacity, advantage, and potential.
-            We use them to ground every plan we draft for you — and drop <span className="text-foreground font-mono-plex">100 bonus credits</span> in your wallet.
+            We use them to ground every plan we draft for you.
           </p>
           <ul className="mt-5 space-y-2 text-[13px] text-foreground/80">
             <li className="flex items-start gap-2">
@@ -100,11 +100,11 @@ export function QuestionnaireNudge() {
             </li>
             <li className="flex items-start gap-2">
               <span className="w-5 h-5 rounded-full bg-foreground/[0.06] text-foreground/70 text-[10px] font-semibold flex items-center justify-center shrink-0 mt-0.5">2</span>
-              <span>Credits land instantly. No card.</span>
+              <span>Your answers shape every plan we create.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="w-5 h-5 rounded-full bg-foreground/[0.06] text-foreground/70 text-[10px] font-semibold flex items-center justify-center shrink-0 mt-0.5">3</span>
-              <span>Every plan you get is tailored to your reality, not generic advice.</span>
+              <span>Tailored to your reality, not generic advice.</span>
             </li>
           </ul>
           <div className="mt-7 flex items-center gap-3">
@@ -113,7 +113,7 @@ export function QuestionnaireNudge() {
               onClick={start}
               className="rounded-xl flex-1 active:scale-[0.98] transition-transform"
             >
-              Claim my 100 credits
+              Get started
               <ArrowRight size={15} strokeWidth={2} className="ml-2" />
             </Button>
             <button

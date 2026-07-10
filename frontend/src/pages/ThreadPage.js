@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown, Wand2, Copy, Mail, MessageCircle, Paperclip, X as XIcon,
-  ArrowRight, MapPin, Lightbulb, Sparkles, CheckCircle2, FileText,
+  ArrowRight, MapPin, Lightbulb, Sparkles, CheckCircle2, FileText, ListChecks,
 } from 'lucide-react';
 import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
@@ -160,7 +160,8 @@ const Artifact = ({ artifact, text, onCopy, onShipped, mailtoHref, waHref, think
 
 export default function ThreadPage() {
   const { threadId } = useParams();
-  const { setCredits } = useAuth();
+  const navigate = useNavigate();
+  const { user, setCredits } = useAuth();
   const [thread, setThread] = useState(null);
   const [reengagement, setReengagement] = useState(null);
   const [actionOverdue, setActionOverdue] = useState(false);
@@ -174,10 +175,15 @@ export default function ThreadPage() {
   const [adjustText, setAdjustText] = useState('');
   const [artifactEdit, setArtifactEdit] = useState(null);
   const [attachment, setAttachment] = useState(null);
+  const [myTasks, setMyTasks] = useState([]);
+  const [thinkingElapsed, setThinkingElapsed] = useState(0);
   const fileInputRef = useRef(null);
   const scrollEndRef = useRef(null);
 
   // load thread once
+  useEffect(() => {
+    api.get('/org/tasks/mine').then((r) => setMyTasks(r.data.tasks || [])).catch(() => {});
+  }, []);
   useEffect(() => {
     try { localStorage.setItem('sdg_last_thread', threadId); } catch { /* */ }
     api.get(`/threads/${threadId}`).then((r) => {
@@ -192,6 +198,14 @@ export default function ThreadPage() {
     const id = setInterval(() => setNowTick(Date.now()), 30000);
     return () => clearInterval(id);
   }, []);
+
+  // elapsed timer while thinking
+  useEffect(() => {
+    if (!thinking) { setThinkingElapsed(0); return; }
+    const started = Date.now();
+    const id = setInterval(() => setThinkingElapsed(Date.now() - started), 500);
+    return () => clearInterval(id);
+  }, [thinking]);
 
   // auto-scroll to bottom when messages or thinking changes
   useEffect(() => {
@@ -374,6 +388,29 @@ export default function ThreadPage() {
               <p className="text-sm text-muted-foreground leading-6">{reengagement}</p>
             </div>
           )}
+          {myTasks.length > 0 && (
+            <div className="rounded-xl border border-[hsl(var(--ring))]/20 bg-[hsl(var(--ring))]/[0.04] px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <ListChecks size={14} className="text-[hsl(var(--ring))]" />
+                  <span className="font-medium">You have <span className="tabular-nums">{myTasks.length}</span> task{myTasks.length > 1 ? 's' : ''} this week</span>
+                </div>
+                <button onClick={() => navigate('/my-tasks')}
+                  className="text-xs text-[hsl(var(--ring))] hover:underline shrink-0">View all</button>
+              </div>
+              <div className="mt-2 space-y-1">
+                {myTasks.slice(0, 3).map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate text-muted-foreground">{t.title}</span>
+                    <span className={`shrink-0 capitalize ${t.due_at && new Date(t.due_at).getTime() < Date.now() && t.status !== 'done' ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                      {t.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                ))}
+                {myTasks.length > 3 && <p className="text-[10px] text-muted-foreground">+{myTasks.length - 3} more</p>}
+              </div>
+            </div>
+          )}
           {windowClosed && !thinking && !inactive && (
             <div data-testid="accountability-prompt"
               className="rounded-xl border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/5 px-4 py-3">
@@ -484,13 +521,30 @@ export default function ThreadPage() {
             <div className="flex justify-start" data-testid="engine-thinking-state">
               <div className="rounded-2xl rounded-bl-md bg-white border border-border/70 px-5 py-3">
                 <p className="text-sm text-muted-foreground italic">
-                  {mode === 'ultra' ? 'Ultra thinking…' : 'Reading what you said…'}
+                  {mode === 'ultra' ? 'Ultra thinking\u2026' : 'Reading what you said\u2026'}
                 </p>
+                <div className="mt-2 flex items-center gap-1.5">
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground/60 font-mono-plex">{Math.round(thinkingElapsed / 1000)}s</span>
+                </div>
               </div>
             </div>
           )}
           <div ref={scrollEndRef} />
         </div>
+
+        {/* low-credit warning */}
+        {user && user.credits !== undefined && user.credits < 20 && user.credits > 0 && (
+          <div data-testid="low-credit-warning" className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2">
+            <span className="text-xs text-amber-700">{user.credits.toLocaleString()} tokens left this month — {' '}
+              <button onClick={() => navigate('/billing')} className="underline font-medium">top up</button> to keep going.
+            </span>
+          </div>
+        )}
 
         {/* composer */}
         <div className="rounded-2xl border border-border/70 bg-white p-3 sm:p-4 shadow-sm">

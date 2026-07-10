@@ -5,7 +5,7 @@ import { TopBar } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
-  Target, Loader2, TrendingUp, CheckCircle2, Users, Activity, AlertTriangle, Lock, Gauge, Clock, Award, Flag, Pencil,
+  Target, Loader2, TrendingUp, CheckCircle2, Users, Activity, AlertTriangle, Lock, Gauge, Clock, Award, Flag, Pencil, ListChecks, RefreshCw,
 } from 'lucide-react';
 
 const fmtNum = (n) => {
@@ -43,6 +43,9 @@ export default function CockpitPage() {
   const [arrInput, setArrInput] = useState('');
   const [savingArr, setSavingArr] = useState(false);
   const [editingArr, setEditingArr] = useState(false);
+  const [weeklyDigest, setWeeklyDigest] = useState(null);
+  const [digestLoading, setDigestLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,6 +58,27 @@ export default function CockpitPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadDigest = useCallback(async () => {
+    setDigestLoading(true);
+    try {
+      const r = await api.get('/org/tasks/weekly-digest');
+      setWeeklyDigest(r.data);
+    } catch (_) { /* noop */ }
+    finally { setDigestLoading(false); }
+  }, []);
+
+  useEffect(() => { loadDigest(); }, [loadDigest]);
+
+  const generateWeek = async () => {
+    setGenerating(true);
+    try {
+      const r = await api.post('/org/tasks/generate-week', {});
+      await loadDigest();
+    } catch (e) {
+      /* owner-gated */
+    } finally { setGenerating(false); }
+  };
 
   const saveProgress = async () => {
     const n = Number(String(arrInput).replace(/[, ]/g, ''));
@@ -302,30 +326,125 @@ export default function CockpitPage() {
           )}
         </section>
 
-        {/* per-member */}
-        <section className="rounded-2xl border bg-card p-6">
-          <div className="flex items-center gap-2 mb-4"><Users size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">By teammate</h3></div>
-          <div className="divide-y">
-            <div className="flex items-center text-[11px] uppercase tracking-wide text-muted-foreground pb-2">
-              <span className="flex-1">Member</span>
-              <span className="w-20 text-right">Decisions</span>
-              <span className="w-20 text-right">Alignment</span>
-              <span className="w-16 text-right">Done</span>
-            </div>
-            {(data.per_member || []).map((m) => (
-              <div key={m.user_id} data-testid="cockpit-member-row" className="flex items-center py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{m.name || m.email}{m.role === 'owner' ? ' (you)' : ''}</div>
-                  <div className="text-xs text-muted-foreground truncate">{m.email}</div>
-                </div>
-                <span className="w-20 text-right text-sm tabular-nums">{m.decisions}</span>
-                <span className={`w-20 text-right text-sm tabular-nums ${alignColor(m.avg_alignment)}`}>{m.avg_alignment == null ? '—' : m.avg_alignment}</span>
-                <span className="w-16 text-right text-sm tabular-nums">{m.done}</span>
+          {/* per-member */}
+          <section className="rounded-2xl border bg-card p-6">
+            <div className="flex items-center gap-2 mb-4"><Users size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">By teammate</h3></div>
+            <div className="divide-y">
+              <div className="flex items-center text-[11px] uppercase tracking-wide text-muted-foreground pb-2">
+                <span className="flex-1">Member</span>
+                <span className="w-20 text-right">Decisions</span>
+                <span className="w-20 text-right">Alignment</span>
+                <span className="w-16 text-right">Done</span>
               </div>
-            ))}
-          </div>
-        </section>
-      </main>
+              {(data.per_member || []).map((m) => (
+                <div key={m.user_id} data-testid="cockpit-member-row" className="flex items-center py-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{m.name || m.email}{m.role === 'owner' ? ' (you)' : ''}</div>
+                    <div className="text-xs text-muted-foreground truncate">{m.email}</div>
+                  </div>
+                  <span className="w-20 text-right text-sm tabular-nums">{m.decisions}</span>
+                  <span className={`w-20 text-right text-sm tabular-nums ${alignColor(m.avg_alignment)}`}>{m.avg_alignment == null ? '—' : m.avg_alignment}</span>
+                  <span className="w-16 text-right text-sm tabular-nums">{m.done}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* weekly tasks — OKR execution layer */}
+          <section className="rounded-2xl border bg-card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2"><ListChecks size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Weekly Tasks</h3></div>
+              <Button size="sm" variant="secondary" onClick={generateWeek} disabled={generating}
+                className="rounded-lg h-8 px-3 text-xs border border-border/70 active:scale-[0.98]">
+                {generating ? <Loader2 className="animate-spin" size={13} /> : <RefreshCw size={13} className="mr-1" />}
+                {generating ? 'Generating…' : 'Generate this week'}
+              </Button>
+            </div>
+
+            {digestLoading ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-4"><Loader2 className="animate-spin" size={13} /> Loading tasks…</div>
+            ) : !weeklyDigest || weeklyDigest.total_tasks === 0 ? (
+              <p className="text-xs text-muted-foreground">No tasks generated yet. Click "Generate this week" to create weekly tasks from your active plan.</p>
+            ) : (
+              <div className="space-y-4">
+                {/* summary row */}
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="rounded-xl bg-[hsl(var(--accent))]/50 px-3 py-2">
+                    <div className="text-lg font-display">{weeklyDigest.total_tasks}</div>
+                    <div className="text-[10px] text-muted-foreground">Total</div>
+                  </div>
+                  <div className="rounded-xl bg-emerald-50 px-3 py-2">
+                    <div className="text-lg font-display text-emerald-600">{weeklyDigest.done}</div>
+                    <div className="text-[10px] text-muted-foreground">Done</div>
+                  </div>
+                  <div className="rounded-xl bg-amber-50 px-3 py-2">
+                    <div className="text-lg font-display text-amber-600">{weeklyDigest.overdue}</div>
+                    <div className="text-[10px] text-muted-foreground">Overdue</div>
+                  </div>
+                  <div className="rounded-xl bg-blue-50 px-3 py-2">
+                    <div className="text-lg font-display text-blue-600">{weeklyDigest.in_progress || 0}</div>
+                    <div className="text-[10px] text-muted-foreground">In progress</div>
+                  </div>
+                </div>
+
+                {/* per-department */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">By department</p>
+                  <div className="space-y-2">
+                    {(weeklyDigest.by_department || []).map((d) => (
+                      <div key={d.function} className="flex items-center gap-3">
+                        <span className="w-24 text-xs capitalize shrink-0">{d.function}</span>
+                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full bg-[hsl(var(--ring))] transition-all" style={{ width: `${d.total ? Math.round(100 * d.done / d.total) : 0}%` }} />
+                        </div>
+                        <span className="w-24 text-[11px] text-right text-muted-foreground tabular-nums">{d.done}/{d.total}{d.overdue > 0 ? ` · ${d.overdue} overdue` : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* per-member workload */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Member workload</p>
+                  <div className="divide-y">
+                    <div className="flex items-center text-[10px] uppercase tracking-wide text-muted-foreground pb-1.5">
+                      <span className="flex-1">Member</span>
+                      <span className="w-12 text-right">Tasks</span>
+                      <span className="w-12 text-right">Done</span>
+                      <span className="w-12 text-right">Overdue</span>
+                    </div>
+                    {(weeklyDigest.by_member || []).map((m) => (
+                      <div key={m.user_id} className="flex items-center py-2 text-sm">
+                        <span className="flex-1 truncate text-xs">{m.name}</span>
+                        <span className="w-12 text-right tabular-nums text-xs">{m.total}</span>
+                        <span className="w-12 text-right tabular-nums text-xs text-emerald-600">{m.done}</span>
+                        <span className={`w-12 text-right tabular-nums text-xs ${m.overdue > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{m.overdue || 0}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* flagged tasks */}
+                {weeklyDigest.flagged && weeklyDigest.flagged.length > 0 && (
+                  <div>
+                    <p className="text-xs text-amber-600 mb-2 flex items-center gap-1"><AlertTriangle size={12} /> Flagged — needs your attention</p>
+                    <div className="space-y-2">
+                      {weeklyDigest.flagged.map((t) => (
+                        <div key={t.id} className="rounded-xl border bg-background px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium truncate">{t.title}</span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">{t.assigned_to_name}</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{t.ai_review?.notes || t.status}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </main>
     </div>
   );
 }

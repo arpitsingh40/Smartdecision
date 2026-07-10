@@ -148,7 +148,10 @@ export default function DecisionsPage() {
               return (
                 <div key={d.id} data-testid="decision-row" className="rounded-2xl border bg-card p-5 space-y-3">
                   <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm text-foreground/90 min-w-0" title={d.question}>{d.question}</p>
+                    <button onClick={() => navigate(`/brain/${d.id}`)}
+                      className="text-sm text-foreground/90 min-w-0 text-left hover:text-[hsl(var(--ring))] transition-colors cursor-pointer" title={d.question}>
+                      {d.question}
+                    </button>
                     <Badge variant="outline" className="rounded-lg border-border/70 shrink-0 text-xs">{MODE_LABEL[d.mode] || 'Answer'}</Badge>
                   </div>
 

@@ -1,25 +1,108 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Sparkles, Check, Gift, Copy } from 'lucide-react';
+import { Sparkles, Check, Gift, Copy, Zap, ArrowRight } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
-import { trackPixel } from '../lib/pixel';
+import { useAuth } from '../App';
+
+function UsageBar({ used, budget }) {
+  const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
+  return (
+    <div className="mt-2">
+      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+        <span>{used.toLocaleString()} / {budget.toLocaleString()} tokens used</span>
+        <span className="font-mono-plex">{pct}%</span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-500 ${pct > 80 ? 'bg-amber-500' : pct > 50 ? 'bg-primary/70' : 'bg-emerald-500'}`}
+          style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 export default function BillingPage() {
-  const [packs, setPacks] = useState([]);
-  const [history, setHistory] = useState([]);
+  const { user, setCredits } = useAuth();
+  const navigate = useNavigate();
+  const [plans, setPlans] = useState([]);
+  const [subscription, setSubscription] = useState(null);
+  const [tokenUsage, setTokenUsage] = useState(null);
   const [busy, setBusy] = useState(null);
   const [referral, setReferral] = useState(null);
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
 
-  useEffect(() => {
-    api.get('/payments/packs').then((r) => setPacks(r.data.packs)).catch(() => {});
-    api.get('/payments/history').then((r) => setHistory(r.data.items)).catch(() => {});
-    api.get('/referral').then((r) => setReferral(r.data)).catch(() => {});
+  const load = useCallback(async () => {
+    try {
+      const [p, s, r] = await Promise.all([
+        api.get('/subscriptions/plans'),
+        api.get('/subscriptions/my'),
+        api.get('/referral'),
+      ]);
+      setPlans(p.data.plans || []);
+      const subData = s.data;
+      setSubscription(subData.subscription);
+      setTokenUsage(subData.token_usage);
+      setReferral(r.data);
+    } catch (_e) { /* noop */ }
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const activePlanId = subscription?.plan_id;
+
+  const startTrial = async () => {
+    setBusy('trial');
+    try {
+      const r = await api.post('/subscriptions/trial');
+      window.location.assign(r.data.mandate_enrollment_url);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not start trial.');
+    } finally { setBusy(null); }
+  };
+
+  const subscribe = async (planId) => {
+    setBusy(planId);
+    try {
+      const r = await api.post('/subscriptions/create', { plan_id: planId });
+      const url = r.data.mandate_enrollment_url;
+      if (url) {
+        window.location.assign(url);
+      } else {
+        toast.success('Subscription created!');
+        load();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not start subscription.');
+    } finally { setBusy(null); }
+  };
+
+  const cancelSub = async () => {
+    if (!window.confirm('Cancel your subscription? You will lose access at the end of the current period.')) return;
+    setBusy('cancel');
+    try {
+      await api.post('/subscriptions/cancel');
+      toast.success('Subscription cancelled.');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not cancel.');
+    } finally { setBusy(null); }
+  };
+
+  const topup = async () => {
+    setBusy('topup');
+    try {
+      const r = await api.post('/subscriptions/topup');
+      window.location.assign(r.data.checkout_url);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not start top-up.');
+    } finally { setBusy(null); }
+  };
+
+  const isOnPlan = (planId) => {
+    if (!subscription) return false;
+    return subscription.plan_id === planId && ['active', 'trial'].includes(subscription.status);
+  };
 
   const copyReferral = async () => {
     if (!referral) return;
@@ -27,44 +110,19 @@ export default function BillingPage() {
     try {
       await navigator.clipboard.writeText(url);
       toast.success('Invite link copied.');
-    } catch (_e) {
-      toast.message(url);
-    }
+    } catch (_e) { toast.message(url); }
   };
 
-  useEffect(() => {
-    if (params.get('canceled') === '1') {
-      toast.message('Checkout cancelled. No charge made.');
-      navigate('/billing', { replace: true });
-    }
-  }, [params, navigate]);
-
-  const buy = async (packId) => {
-    if (busy) return;
-    setBusy(packId);
-    // Meta Pixel: InitiateCheckout — fires the moment user commits to a pack, before redirect.
-    try {
-      const pack = packs.find((p) => p.pack_id === packId);
-      trackPixel('InitiateCheckout', {
-        value: Number(pack?.amount_inr || 0),
-        currency: 'INR',
-        content_ids: [packId],
-        content_type: 'product',
-        num_items: 1,
-      });
-    } catch (_e) { /* noop */ }
-    try {
-      const r = await api.post('/payments/create-order', { pack_id: packId });
-      window.location.assign(r.data.checkout_url);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Could not start checkout. Try again.');
-      setBusy(null);
-    }
+  const trialPlan = {
+    id: 'trial', label: 'Trial', price_inr: 99, tokens_per_month: 1_000_000,
+    ultra_enabled: true, model: 'deepseek-flash',
+    features: ['1M tokens (enough for ~150 turns)', 'DeepSeek Flash reasoning',
+               'Ultra thinking mode', '3-day access', 'UPI mandate setup'],
   };
 
   return (
     <div className="relative z-10 min-h-screen">
-      <TopBar title="Plans & credits" backTo="/" />
+      <TopBar title="Plans & tokens" backTo="/" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
         <div className="max-w-2xl">
           <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground mb-3">Pricing</p>
@@ -72,52 +130,92 @@ export default function BillingPage() {
             Pick the plan that matches how seriously you&apos;re pursuing this.
           </h1>
           <p className="mt-4 text-sm md:text-base text-muted-foreground leading-6">
-            One-time top-ups, no subscription. Credits cover every conversation, every &ldquo;do it for me&rdquo; draft, and every file the engine reads with you.
+            Monthly subscription via UPI autopay. Each plan includes <strong>10 million tokens</strong> per month. Unused tokens expire at the end of each billing period.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-5 md:gap-6 mt-10">
-          {packs.map((p) => {
-            const isBest = p.tag === 'Best Value';
+        {subscription && tokenUsage && (
+          <div className="mt-8 rounded-2xl border border-border/70 bg-card p-5 max-w-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Current plan</span>
+                <p className="font-display text-lg mt-0.5">{subscription.label || subscription.plan_id}
+                  <span className={`ml-2 text-[10px] uppercase tracking-[0.14em] px-2 py-0.5 rounded-full border ${
+                    subscription.status === 'active' ? 'border-emerald-400/40 text-emerald-700 bg-emerald-50'
+                    : subscription.status === 'trial' ? 'border-amber-400/40 text-amber-700 bg-amber-50'
+                    : 'border-border/70 text-muted-foreground'
+                  }`}>{subscription.status}</span>
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={cancelSub} disabled={busy === 'cancel'}
+                className="rounded-lg text-xs h-8">
+                Cancel
+              </Button>
+            </div>
+            <UsageBar used={tokenUsage.used || 0} budget={tokenUsage.budget || 0} />
+            <Button onClick={topup} disabled={busy === 'topup'} variant="outline" size="sm"
+              className="mt-3 rounded-lg text-xs h-8">
+              <Zap size={12} className="mr-1.5" /> Buy 10M extra tokens — ₹4,999
+            </Button>
+          </div>
+        )}
+
+        {!subscription && (
+          <div className="mt-8">
+            <Button onClick={startTrial} disabled={busy === 'trial'}
+              className="rounded-full h-12 px-8 text-sm font-medium mb-2 active:scale-[0.98]">
+              <Sparkles size={16} className="mr-2" />
+              {busy === 'trial' ? 'Starting\u2026' : `Start with ₹99 trial for 3 days`}
+            </Button>
+            <p className="text-xs text-muted-foreground">Pay ₹99, set up UPI autopay, get 1M tokens for 3 days. After trial, choose Standard or Pro.</p>
+          </div>
+        )}
+
+        <div className="grid md:grid-cols-2 gap-5 md:gap-6 mt-10">
+          {plans.map((p) => {
+            const active = isOnPlan(p.id);
+            const best = p.id === 'pro';
             return (
-              <div key={p.pack_id} data-testid={`pack-card-${p.pack_id}`}
+              <div key={p.id} data-testid={`plan-card-${p.id}`}
                 className={`relative bg-white border rounded-2xl p-7 flex flex-col transition-all ${
-                  isBest
-                    ? 'border-foreground/40 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.25)] md:scale-[1.03]'
-                    : 'border-border/70'
-                }`}>
-                {isBest && (
-                  <span data-testid={`pack-tag-${p.pack_id}`}
+                  best ? 'border-foreground/40 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.25)] md:scale-[1.03]'
+                  : 'border-border/70'
+                } ${active ? 'ring-2 ring-primary/40' : ''}`}>
+                {best && !active && (
+                  <span data-testid={`plan-tag-${p.id}`}
                     className="absolute -top-3 left-7 inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] bg-foreground text-background border border-foreground rounded-full px-3 py-1">
-                    <Sparkles size={11} strokeWidth={2} /> {p.tag}
+                    <Sparkles size={11} /> Best Value
                   </span>
                 )}
                 <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{p.label}</p>
-                <p className="text-xs text-muted-foreground mt-1">{p.headline}</p>
                 <div className="mt-5 flex items-baseline gap-1.5">
-                  <span className="font-display text-4xl">₹{p.amount_inr}</span>
-                  <span className="text-xs text-muted-foreground">one-time</span>
+                  <span className="font-display text-4xl">₹{p.price_inr}</span>
+                  <span className="text-xs text-muted-foreground">/month</span>
                 </div>
-                <p data-testid={`pack-credits-${p.pack_id}`} className="font-mono-plex text-sm mt-1 text-foreground/80">
-                  {p.credits} credits
+                <p className="font-mono-plex text-sm mt-1 text-foreground/80">
+                  {(p.tokens_per_month / 1_000_000).toLocaleString()}M tokens / mo
+                </p>
+                <p className="mt-1.5 text-[11px] font-mono-plex text-muted-foreground">
+                  {p.id === 'pro' ? 'deepseek-v4' : 'deepseek-flash'}
                 </p>
 
                 <ul className="mt-5 space-y-2.5 text-sm leading-5 text-foreground/85 flex-1">
                   {(p.features || []).map((f, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <Check size={14} strokeWidth={2}
-                        className={`mt-0.5 shrink-0 ${isBest ? 'text-foreground' : 'text-muted-foreground'}`} />
+                        className={`mt-0.5 shrink-0 ${best ? 'text-foreground' : 'text-muted-foreground'}`} />
                       <span>{f}</span>
                     </li>
                   ))}
                 </ul>
 
-                <Button onClick={() => buy(p.pack_id)} disabled={busy === p.pack_id}
-                  data-testid={`pack-buy-${p.pack_id}`}
-                  className={`mt-6 rounded-xl w-full active:scale-[0.98] transition-colors ${
-                    isBest ? '' : 'bg-white text-foreground border border-border/70 hover:bg-[hsl(var(--accent))]'
+                <Button onClick={() => subscribe(p.id)} disabled={busy === p.id || active}
+                  data-testid={`plan-subscribe-${p.id}`}
+                  className={`mt-6 rounded-xl w-full active:scale-[0.98] ${
+                    active ? 'bg-muted text-muted-foreground cursor-default'
+                    : best ? '' : 'bg-white text-foreground border border-border/70 hover:bg-[hsl(var(--accent))]'
                   }`}>
-                  {busy === p.pack_id ? 'Opening checkout…' : `Get ${p.label}`}
+                  {busy === p.id ? 'Redirecting\u2026' : active ? 'Current plan' : `Subscribe — ₹${p.price_inr}/mo`}
                 </Button>
               </div>
             );
@@ -125,7 +223,7 @@ export default function BillingPage() {
         </div>
 
         <p className="mt-6 text-[11px] text-muted-foreground/80 max-w-3xl">
-          The Elite plan gives <span className="text-foreground font-mono-plex">10× the credits of Pro for 2.5× the price</span> — built for users who run multiple goals and attach files (PDFs, sheets, screenshots) to every turn.
+          All plans include <strong>UPI autopay</strong> billing. Your mandate is set up once and charges recur monthly. Cancel anytime from your UPI app or here.
         </p>
 
         {referral ? (
@@ -148,32 +246,10 @@ export default function BillingPage() {
           </div>
         ) : null}
 
-        {history.length > 0 && (
-          <div className="mt-14">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3">Purchase history</p>
-            <div data-testid="billing-history" className="bg-white border border-border/70 rounded-2xl divide-y divide-border/60">
-              {history.map((o) => (
-                <div key={o.order_id} data-testid={`history-row-${o.order_id}`} className="px-5 py-3 flex items-center justify-between text-sm">
-                  <div className="flex flex-col">
-                    <span className="font-mono-plex text-xs">{o.pack_id}</span>
-                    <span className="text-[10px] text-muted-foreground">{new Date(o.created_at).toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="font-mono-plex text-xs">+{o.credits} cr</span>
-                    <span className="font-mono-plex text-xs">₹{o.amount_inr}</span>
-                    <span data-testid={`history-status-${o.order_id}`}
-                      className={`text-[10px] uppercase tracking-[0.14em] px-2 py-0.5 rounded-full border ${
-                        o.status === 'paid' ? 'border-[hsl(var(--success))]/30 text-[hsl(var(--success))]'
-                        : o.status === 'failed' ? 'border-[hsl(var(--destructive))]/30 text-[hsl(var(--destructive))]'
-                        : 'border-border/70 text-muted-foreground'}`}>
-                      {o.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <div className="mt-12 rounded-xl border border-border/60 bg-card/50 p-5 text-sm text-muted-foreground leading-6">
+          <p className="font-medium text-foreground mb-1">How token billing works</p>
+          <p>Every AI response consumes tokens based on the length of the conversation context and the generated reply. A typical turn uses <strong>2,000–6,000 tokens</strong> (normal mode) or <strong>8,000–15,000 tokens</strong> (ultra mode with extended thinking). At 10M tokens per month, you can have roughly <strong>1,500–3,000 normal turns</strong> or <strong>600–1,000 ultra turns</strong>. Additional tokens can be purchased any time.</p>
+        </div>
       </main>
     </div>
   );

@@ -1,6 +1,10 @@
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Toaster } from './components/ui/sonner';
+import { Button } from './components/ui/button';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from './components/ui/dialog';
 import AuthPage from './pages/AuthPage';
 import JourneyPage from './pages/JourneyPage';
 import NewGoalPage from './pages/NewGoalPage';
@@ -14,9 +18,11 @@ import PaymentResultPage from './pages/PaymentResultPage';
 import TeamPage from './pages/TeamPage';
 import JoinPage from './pages/JoinPage';
 import CockpitPage from './pages/CockpitPage';
+import MyTasksPage from './pages/MyTasksPage';
 import GoalSetupPage from './pages/GoalSetupPage';
 import FounderProfilePage from './pages/FounderProfilePage';
 import DecisionCardPage from './pages/DecisionCardPage';
+import QuestionnairePage from './pages/QuestionnairePage';
 import { api, setAuthToken } from './lib/api';
 import { trackPixel } from './lib/pixel';
 import { toast } from 'sonner';
@@ -24,6 +30,45 @@ import './App.css';
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
+
+function InsufficientCreditsModal() {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    const handler = (e) => {
+      setMessage(e.detail || 'No active subscription. Subscribe to continue using the engine.');
+      setOpen(true);
+    };
+    window.addEventListener('sdg-insufficient-credits', handler);
+    return () => window.removeEventListener('sdg-insufficient-credits', handler);
+  }, []);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="sm:max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl font-normal">Need a subscription</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground mt-1">
+            {message}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-2 text-sm text-muted-foreground leading-relaxed">
+          Subscribe to a plan to get 10M tokens per month and keep your conversations going.
+        </div>
+        <DialogFooter className="flex gap-2 sm:gap-3">
+          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">
+            Dismiss
+          </Button>
+          <Button onClick={() => { setOpen(false); navigate('/billing'); }} className="rounded-xl">
+            View plans
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('sdg_token'));
@@ -104,14 +149,17 @@ function App() {
     <AuthContext.Provider value={{ token, user, login, logout, setCredits, setUser }}>
       <div className="paper-noise min-h-screen">
         <BrowserRouter>
+          <InsufficientCreditsModal />
           <Routes>
             <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthPage />} />
             <Route path="/" element={token ? <JourneyPage /> : <Navigate to="/auth" replace />} />
             <Route path="/decisions" element={token ? <DecisionsPage /> : <Navigate to="/auth" replace />} />
             <Route path="/brain" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/brain/:decisionId" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
             <Route path="/new" element={token ? <NewGoalPage /> : <Navigate to="/auth" replace />} />
             <Route path="/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
             <Route path="/team" element={token ? <TeamPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/my-tasks" element={token ? <MyTasksPage /> : <Navigate to="/auth" replace />} />
             <Route path="/cockpit" element={token ? <CockpitPage /> : <Navigate to="/auth" replace />} />
             <Route path="/goal-setup" element={token ? <GoalSetupPage /> : <Navigate to="/auth" replace />} />
             <Route path="/founder-profile" element={token ? <FounderProfilePage /> : <Navigate to="/auth" replace />} />
@@ -120,6 +168,7 @@ function App() {
             <Route path="/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/test-checkout" element={token ? <TestCheckoutPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/result" element={<PaymentResultPage />} />
+            <Route path="/questionnaire" element={token ? <QuestionnairePage /> : <Navigate to="/auth" replace />} />
             <Route path="/admin" element={token ? <AdminPage /> : <Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

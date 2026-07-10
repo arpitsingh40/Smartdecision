@@ -10,11 +10,11 @@ load_dotenv(ROOT_DIR / '.env')
 
 mongo_url = os.environ.get("MONGO_URL", "")
 mongo = MongoClient(mongo_url, maxPoolSize=100, serverSelectionTimeoutMS=5000) if mongo_url else None
-_db = mongo[os.environ.get("DB_NAME", "test_database")] if mongo else None
+db = mongo[os.environ.get("DB_NAME", "test_database")] if mongo else None
 
 
 def _col(name):
-    return _db[name] if _db is not None else None
+    return db[name] if db is not None else None
 
 
 users_col = _col("users")

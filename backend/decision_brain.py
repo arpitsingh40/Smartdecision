@@ -35,8 +35,8 @@ from benchmarks import normalize_facts, ingest_facts, benchmark_digest
 log = logging.getLogger("brain")
 router = APIRouter(prefix="/api/brain")
 
-trees_col = db.doc_trees
-nodes_col = db.doc_nodes
+trees_col = db.doc_trees if db is not None else None
+nodes_col = db.doc_nodes if db is not None else None
 
 PRIMARY_MODEL = os.environ.get("LLM_MODEL", "gemini-3.5-flash").strip()
 FALLBACK_MODEL = os.environ.get("LLM_MODEL_FALLBACK", PRIMARY_MODEL).strip()

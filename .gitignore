@@ -34,6 +34,8 @@ dist
 
 *token.json*
 *credentials.json*
+*firebase-adminsdk*
+*service-account*
 
 # Logs and debug files
 npm-debug.log*
@@ -84,5 +86,8 @@ credentials.json
 *.key
 .credentials
 .env
-.env.*
-*.env
+.env.local
+.env.development.local
+.env.production.local
+.env.test.local
+*.env.local

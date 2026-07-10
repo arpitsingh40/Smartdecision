@@ -1,0 +1,37 @@
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_URL: mongodb://mongo:27017/smartdecision
+      DB_NAME: smartdecision
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-smartdecigen}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/smartdecigen-firebase-adminsdk-fbsvc-6b0a404451.json
+      CORS_ORIGINS: "*"
+      FRONTEND_BASE_URL: http://localhost:3000
+      TURN_COST: "5"
+      SIGNUP_CREDITS: "100"
+    depends_on:
+      - mongo
+    restart: unless-stopped
+    volumes:
+      - ./backend/smartdecigen-firebase-adminsdk-fbsvc-6b0a404451.json:/app/smartdecigen-firebase-adminsdk-fbsvc-6b0a404451.json:ro
+
+volumes:
+  mongo_data:

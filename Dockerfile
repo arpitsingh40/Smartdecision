@@ -16,15 +16,13 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # Backend dependencies
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --timeout=120 -r requirements.txt
+COPY backend/requirements.txt backend/
+RUN pip install --no-cache-dir --timeout=120 -r backend/requirements.txt
 
-# Backend code
-COPY backend/ .
+# Backend code — into backend/ subdir to match Railway's custom start command
+COPY backend/ backend/
 
-# Frontend build from stage 1 — placed at /frontend/build/ as server.py expects
-COPY --from=frontend-builder /app/frontend/build /frontend/build
+# Frontend build from stage 1 — placed at /app/frontend/build/ as server.py expects
+COPY --from=frontend-builder /app/frontend/build frontend/build
 
 EXPOSE 8000
-
-CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}

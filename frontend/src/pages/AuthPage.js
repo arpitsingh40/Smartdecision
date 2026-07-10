@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, Target, CheckCircle2, RefreshCw,
-  Sparkles, Lock, Mail, User, ShieldCheck, Phone,
+  Sparkles, Lock, Mail, User, ShieldCheck, Phone, ArrowLeft,
 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -185,6 +186,7 @@ function PhoneAuthForm({ onSuccess, refCode }) {
 export default function AuthPage() {
   const { login } = useAuth();
   const refCode = new URLSearchParams(window.location.search).get('ref') || '';
+  const navigate = useNavigate();
 
   const onSuccess = (token, user) => {
     login(token, user);
@@ -204,8 +206,14 @@ export default function AuthPage() {
       <div className="relative max-w-7xl mx-auto px-6 sm:px-10 lg:px-14 py-8 lg:py-12 min-h-screen flex flex-col">
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 text-foreground rise-1">
-            <BrandMark size={26} />
-            <span data-testid="brand-wordmark" className="text-sm tracking-[0.32em] font-semibold uppercase">SmartDecigen</span>
+            <button onClick={() => navigate('/')} className="flex items-center gap-2.5">
+              <BrandMark size={26} />
+              <span data-testid="brand-wordmark" className="text-sm tracking-[0.32em] font-semibold uppercase">SmartDecigen</span>
+            </button>
+            <span className="w-px h-4 bg-border/60 mx-2" />
+            <button onClick={() => navigate('/')} className="flex items-center gap-1 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors">
+              <ArrowLeft size={12} strokeWidth={2} /> Back to home
+            </button>
           </div>
           <div className="hidden md:flex items-center gap-2 text-[11px] tracking-[0.18em] uppercase text-muted-foreground rise-1">
             <ShieldCheck size={13} strokeWidth={2} className="text-[#b89165]" />

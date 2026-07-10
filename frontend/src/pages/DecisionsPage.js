@@ -15,7 +15,6 @@ const DUE_OPTIONS = [
   { label: '3 days', hours: 72 },
   { label: '1 week', hours: 168 },
 ];
-// /brain/decisions returns naive (UTC) timestamps; treat tz-less strings as UTC.
 const parseDue = (iso) => {
   if (!iso) return null;
   const hasTz = /[zZ]|[+-]\d{2}:\d{2}$/.test(iso);
@@ -102,7 +101,7 @@ export default function DecisionsPage() {
     try {
       const r = await api.post(`/brain/decisions/${id}/next-step`);
       sessionStorage.setItem('sdg_workspace_seed', JSON.stringify(r.data));
-      navigate('/');
+      navigate('/app');
     } catch (e) { toast.error(e?.response?.data?.detail || 'Could not find the next step.'); }
     finally { setBusy(null); }
   };
@@ -139,7 +138,7 @@ export default function DecisionsPage() {
           <div className="rounded-2xl border bg-card p-10 text-center">
             <ListChecks size={22} className="mx-auto text-muted-foreground mb-3" />
             <p className="text-sm text-muted-foreground">Nothing here yet.</p>
-            <Button className="rounded-xl mt-4" onClick={() => navigate('/')}>Go to your Workspace</Button>
+            <Button className="rounded-xl mt-4" onClick={() => navigate('/app')}>Go to your Workspace</Button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -148,7 +147,7 @@ export default function DecisionsPage() {
               return (
                 <div key={d.id} data-testid="decision-row" className="rounded-2xl border bg-card p-5 space-y-3">
                   <div className="flex items-start justify-between gap-3">
-                    <button onClick={() => navigate(`/brain/${d.id}`)}
+                    <button onClick={() => navigate(`/app/brain/${d.id}`)}
                       className="text-sm text-foreground/90 min-w-0 text-left hover:text-[hsl(var(--ring))] transition-colors cursor-pointer" title={d.question}>
                       {d.question}
                     </button>

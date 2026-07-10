@@ -95,7 +95,7 @@ export default function CockpitPage() {
   if (loading) {
     return (
       <div className="min-h-screen">
-        <TopBar title="Founder Cockpit" backTo="/team" />
+      <TopBar title="Founder Cockpit" backTo="/app/team" />
         <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground py-24">
           <Loader2 className="animate-spin" size={16} /> Loading your cockpit…
         </div>
@@ -106,12 +106,12 @@ export default function CockpitPage() {
   if (denied || !data) {
     return (
       <div className="min-h-screen">
-        <TopBar title="Founder Cockpit" backTo="/" />
+        <TopBar title="Founder Cockpit" backTo="/app" />
         <div data-testid="cockpit-denied" className="max-w-md mx-auto text-center py-24 px-6">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground"><Lock size={20} /></div>
           <h2 className="font-display text-xl">This is the founder&apos;s private view</h2>
           <p className="text-sm text-muted-foreground mt-2">Only the workspace owner can open the cockpit.</p>
-          <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/brain')}>Go to Decision Brain</Button>
+          <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/app/brain')}>Go to Decision Brain</Button>
         </div>
       </div>
     );
@@ -145,7 +145,7 @@ export default function CockpitPage() {
             </>
           ) : (
             <p className="text-sm text-muted-foreground mt-1">
-              No North Star set yet. <button className="underline" onClick={() => navigate('/goal-setup')}>Set up your goal</button> so every decision is steered toward it.
+              No North Star set yet. <button className="underline" onClick={() => navigate('/app/goal-setup')}>Set up your goal</button> so every decision is steered toward it.
             </p>
           )}
         </section>
@@ -165,7 +165,7 @@ export default function CockpitPage() {
           {!gp ? (
             <div className="text-sm text-muted-foreground">
               Set a target number to track progress.{' '}
-              <button data-testid="cockpit-progress-setup" className="underline" onClick={() => navigate('/goal-setup')}>
+              <button data-testid="cockpit-progress-setup" className="underline" onClick={() => navigate('/app/goal-setup')}>
                 Set up your goal
               </button>{' '}so this fills with a live progress bar.
             </div>

@@ -716,7 +716,7 @@ export default function JourneyPage() {
                       Your direction and milestones are set. Now open a coach thread to get a daily next action, accountability tracking, and progress toward your goal.
                     </p>
                     <Button
-                      onClick={() => navigate(`/new?title=${encodeURIComponent(journey.objective || '')}&why=${encodeURIComponent('Follow through on my direction: ' + (journey.objective || ''))}`)}
+                      onClick={() => navigate(`/app/new?title=${encodeURIComponent(journey.objective || '')}&why=${encodeURIComponent('Follow through on my direction: ' + (journey.objective || ''))}`)}
                       className="mt-3 rounded-full"
                       data-testid="journey-to-thread-btn"
                     >
@@ -783,7 +783,7 @@ export default function JourneyPage() {
               <div className="rounded-2xl border border-border/70 bg-card p-5 space-y-4" data-testid="team-plan-card">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5"><Users size={13} /> Team operating plan</span>
-                  <Button size="sm" variant="outline" className="rounded-full h-8" onClick={() => navigate('/team')} data-testid="open-team-btn">
+                  <Button size="sm" variant="outline" className="rounded-full h-8" onClick={() => navigate('/app/team')} data-testid="open-team-btn">
                     <UserPlus size={14} className="mr-1.5" /> Invite your team
                   </Button>
                 </div>
@@ -830,7 +830,7 @@ export default function JourneyPage() {
           {user && user.credits !== undefined && user.credits < 20 && user.credits > 0 && (
             <div data-testid="journey-low-credit-warning" className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2">
               <span className="text-xs text-amber-700">{user.credits.toLocaleString()} tokens left — {' '}
-                <button onClick={() => navigate('/billing')} className="underline font-medium">top up</button> to keep going.
+                <button onClick={() => navigate('/app/billing')} className="underline font-medium">top up</button> to keep going.
               </span>
             </div>
           )}

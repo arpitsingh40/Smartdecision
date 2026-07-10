@@ -32,12 +32,12 @@ export default function JoinPage() {
       setUser((u) => (u ? { ...u, org_id: r.data.id, org_role: r.data.role } : u));
       localStorage.removeItem('sdg_pending_invite');
       toast.success(`You've joined ${r.data.name}.`);
-      navigate('/team');
+      navigate('/app/team');
     } catch (e) {
       const status = e?.response?.status;
       if (status === 409) {
         toast.info('You are already part of an organization.');
-        navigate('/team');
+        navigate('/app/team');
       } else {
         toast.error(e?.response?.data?.detail || 'Could not join. The link may be invalid.');
       }

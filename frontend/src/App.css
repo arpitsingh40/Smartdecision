@@ -63,3 +63,8 @@ textarea:focus-visible, input:focus-visible {
 ::selection {
   background: hsl(186 42% 88%);
 }
+
+/* landing page */
+html {
+  scroll-behavior: smooth;
+}

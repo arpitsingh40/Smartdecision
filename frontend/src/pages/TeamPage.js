@@ -217,7 +217,7 @@ export default function TeamPage() {
               {"You're part of this workspace. Your decisions here are backed by the team's playbook."}
             </p>
             <div className="mt-6">
-              <Button onClick={() => navigate('/brain')} className="rounded-xl">Open Decision Brain</Button>
+              <Button onClick={() => navigate('/app/brain')} className="rounded-xl">Open Decision Brain</Button>
             </div>
           </div>
         )}
@@ -243,7 +243,7 @@ export default function TeamPage() {
             {/* Guided goal setup CTA */}
             <button
               data-testid="goal-setup-cta"
-              onClick={() => navigate('/goal-setup')}
+              onClick={() => navigate('/app/goal-setup')}
               className="w-full text-left rounded-2xl border border-[hsl(var(--ring))]/30 bg-[hsl(var(--accent))]/50 hover:bg-[hsl(var(--accent))]/70 transition-colors p-5 flex items-center gap-4 group"
             >
               <div className="w-11 h-11 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shrink-0">

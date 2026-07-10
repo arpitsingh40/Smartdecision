@@ -32,7 +32,7 @@ export default function NewGoalPage() {
     try {
       const r = await api.post('/goals', { title, why_now: whyNow });
       setCredits(r.data.credits);
-      navigate(`/thread/${r.data.thread.thread_id}`);
+      navigate(`/app/thread/${r.data.thread.thread_id}`);
     } catch (err) {
       const msg = err.response?.status === 402
         ? 'Not enough credits to open a new thread.'

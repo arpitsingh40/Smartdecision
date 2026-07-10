@@ -51,7 +51,7 @@ export function QuestionnaireNudge() {
 
   const start = () => {
     setOpen(false);
-    navigate('/questionnaire');
+    navigate('/app/questionnaire');
   };
 
   if (!eligible) return null;

@@ -102,7 +102,7 @@ export default function QuestionnairePage() {
       } else {
         toast.message('Your answers are updated.');
       }
-      navigate('/new');
+      navigate('/app/new');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Could not save. Try again.');
       setBusy(false);

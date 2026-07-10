@@ -92,7 +92,7 @@ export default function GoalSetupPage() {
       toast.success(r.data.strategy_set
         ? 'Goal locked in. Every decision your team makes now bends toward it.'
         : 'Saved.');
-      navigate('/cockpit');
+      navigate('/app/cockpit');
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not save your goal.');
     } finally { setSaving(false); }
@@ -129,7 +129,7 @@ export default function GoalSetupPage() {
               ? 'A goal lives on your company workspace. Create one, then come back to set the goal.'
               : 'This guided setup is for the workspace owner. Your decisions are already steered by it.'}
           </p>
-          <Button className="rounded-xl mt-6" onClick={() => navigate(noOrg ? '/team' : '/')}>
+          <Button className="rounded-xl mt-6" onClick={() => navigate(noOrg ? '/app/team' : '/app')}>
             {noOrg ? 'Go to Team' : 'Open Decision Brain'}
           </Button>
         </div>

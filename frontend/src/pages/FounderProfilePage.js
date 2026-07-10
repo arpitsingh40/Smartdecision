@@ -129,7 +129,7 @@ export default function FounderProfilePage() {
           <p className="text-sm text-muted-foreground mt-2">
             {noOrg ? 'The founder profile lives on your company workspace.' : 'This deep onboarding is for the workspace owner.'}
           </p>
-          <Button className="rounded-xl mt-6" onClick={() => navigate(noOrg ? '/team' : '/')}>{noOrg ? 'Go to Team' : 'Open Decision Brain'}</Button>
+          <Button className="rounded-xl mt-6" onClick={() => navigate(noOrg ? '/app/team' : '/app')}>{noOrg ? 'Go to Team' : 'Open Decision Brain'}</Button>
         </div>
       </div>
     );
@@ -172,7 +172,7 @@ export default function FounderProfilePage() {
               <Button data-testid="fp-redo-btn" variant="secondary" onClick={start} disabled={busy} className="rounded-xl">
                 <RotateCcw size={14} className="mr-1.5" /> Redo the conversation
               </Button>
-              <Button onClick={() => navigate('/')} className="rounded-xl">
+              <Button onClick={() => navigate('/app')} className="rounded-xl">
                 <Brain size={14} className="mr-1.5" /> Ask the brain now <ArrowRight size={14} className="ml-1.5" />
               </Button>
             </div>

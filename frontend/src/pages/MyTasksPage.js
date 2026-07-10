@@ -187,7 +187,7 @@ export default function MyTasksPage() {
       const r = await api.get('/org/tasks/mine');
       setTasks(r.data.tasks || []);
     } catch (e) {
-      if (e?.response?.status === 403) navigate('/');
+      if (e?.response?.status === 403) navigate('/app');
     } finally { setLoading(false); }
   }, [navigate]);
 
@@ -200,7 +200,7 @@ export default function MyTasksPage() {
 
   return (
     <div className="min-h-screen">
-      <TopBar title="My Tasks" backTo="/" />
+      <TopBar title="My Tasks" backTo="/app" />
       <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-24 pt-4 space-y-4">
         {loading ? (
           <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground py-24">
@@ -211,7 +211,7 @@ export default function MyTasksPage() {
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground"><CheckCircle2 size={20} /></div>
             <h2 className="font-display text-xl">No tasks yet</h2>
             <p className="text-sm text-muted-foreground mt-2">Your tasks will appear here once the founder generates the weekly plan.</p>
-            <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/brain')}>Go to Decision Brain</Button>
+            <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/app/brain')}>Go to Decision Brain</Button>
           </div>
         ) : (
           <>

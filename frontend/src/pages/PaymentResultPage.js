@@ -67,7 +67,7 @@ export default function PaymentResultPage() {
   useEffect(() => {
     if (result?.status !== 'paid') return undefined;
     const lastThread = localStorage.getItem('sdg_last_thread');
-    const dest = lastThread ? `/thread/${lastThread}` : '/';
+    const dest = lastThread ? `/app/thread/${lastThread}` : '/app';
     const t = setTimeout(() => {
       if (isLoggedIn) {
         navigate(dest, { replace: true });
@@ -106,7 +106,7 @@ export default function PaymentResultPage() {
             </p>
             <p className="text-[11px] text-muted-foreground/70 mt-4">{isLoggedIn ? 'Taking you back to your goal…' : 'Sign in to continue from where you left off.'}</p>
             <Button asChild className="mt-5 rounded-xl w-full">
-              <Link to={isLoggedIn ? (localStorage.getItem('sdg_last_thread') ? `/thread/${localStorage.getItem('sdg_last_thread')}` : '/') : '/auth'} data-testid="payment-continue-now">
+              <Link to={isLoggedIn ? (localStorage.getItem('sdg_last_thread') ? `/app/thread/${localStorage.getItem('sdg_last_thread')}` : '/app') : '/auth'} data-testid="payment-continue-now">
                 {isLoggedIn ? 'Continue now' : 'Sign in'}
               </Link>
             </Button>
@@ -118,7 +118,7 @@ export default function PaymentResultPage() {
             <h1 className="font-display text-2xl mt-4">Payment didn&apos;t go through</h1>
             <p className="text-sm text-muted-foreground mt-2">You weren&apos;t charged. No credits added.</p>
             <Button asChild variant="outline" className="mt-6 rounded-xl w-full">
-              <Link to="/billing" data-testid="payment-retry">Try again</Link>
+              <Link to="/app/billing" data-testid="payment-retry">Try again</Link>
             </Button>
           </div>
         )}
@@ -128,7 +128,7 @@ export default function PaymentResultPage() {
             <h1 className="font-display text-2xl mt-4">Still verifying</h1>
             <p className="text-sm text-muted-foreground mt-2">The bank is taking longer than usual. Your credits will appear once it confirms — check the billing page in a minute.</p>
             <Button asChild variant="outline" className="mt-6 rounded-xl w-full">
-              <Link to="/billing" data-testid="payment-check-history">See order history</Link>
+              <Link to="/app/billing" data-testid="payment-check-history">See order history</Link>
             </Button>
           </div>
         )}

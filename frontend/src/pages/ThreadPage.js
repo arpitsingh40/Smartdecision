@@ -395,7 +395,7 @@ export default function ThreadPage() {
                   <ListChecks size={14} className="text-[hsl(var(--ring))]" />
                   <span className="font-medium">You have <span className="tabular-nums">{myTasks.length}</span> task{myTasks.length > 1 ? 's' : ''} this week</span>
                 </div>
-                <button onClick={() => navigate('/my-tasks')}
+                <button onClick={() => navigate('/app/my-tasks')}
                   className="text-xs text-[hsl(var(--ring))] hover:underline shrink-0">View all</button>
               </div>
               <div className="mt-2 space-y-1">
@@ -541,7 +541,7 @@ export default function ThreadPage() {
         {user && user.credits !== undefined && user.credits < 20 && user.credits > 0 && (
           <div data-testid="low-credit-warning" className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2">
             <span className="text-xs text-amber-700">{user.credits.toLocaleString()} tokens left this month — {' '}
-              <button onClick={() => navigate('/billing')} className="underline font-medium">top up</button> to keep going.
+              <button onClick={() => navigate('/app/billing')} className="underline font-medium">top up</button> to keep going.
             </span>
           </div>
         )}

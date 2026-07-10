@@ -5,6 +5,7 @@ import { Button } from './components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from './components/ui/dialog';
+import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
 import JourneyPage from './pages/JourneyPage';
 import NewGoalPage from './pages/NewGoalPage';
@@ -61,7 +62,7 @@ function InsufficientCreditsModal() {
           <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">
             Dismiss
           </Button>
-          <Button onClick={() => { setOpen(false); navigate('/billing'); }} className="rounded-xl">
+          <Button onClick={() => { setOpen(false); navigate('/app/billing'); }} className="rounded-xl">
             View plans
           </Button>
         </DialogFooter>
@@ -151,25 +152,26 @@ function App() {
         <BrowserRouter>
           <InsufficientCreditsModal />
           <Routes>
-            <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthPage />} />
-            <Route path="/" element={token ? <JourneyPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/decisions" element={token ? <DecisionsPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/brain" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/brain/:decisionId" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/new" element={token ? <NewGoalPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/team" element={token ? <TeamPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/my-tasks" element={token ? <MyTasksPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/cockpit" element={token ? <CockpitPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/goal-setup" element={token ? <GoalSetupPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/founder-profile" element={token ? <FounderProfilePage /> : <Navigate to="/auth" replace />} />
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/auth" element={token ? <Navigate to="/app" replace /> : <AuthPage />} />
+            <Route path="/app" element={token ? <JourneyPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/decisions" element={token ? <DecisionsPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/brain" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/brain/:decisionId" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/new" element={token ? <NewGoalPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/team" element={token ? <TeamPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/my-tasks" element={token ? <MyTasksPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/cockpit" element={token ? <CockpitPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/goal-setup" element={token ? <GoalSetupPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/founder-profile" element={token ? <FounderProfilePage /> : <Navigate to="/auth" replace />} />
             <Route path="/join/:code" element={<JoinPage />} />
             <Route path="/d/:shareId" element={<DecisionCardPage />} />
-            <Route path="/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/pay/test-checkout" element={token ? <TestCheckoutPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/pay/test-checkout" element={token ? <TestCheckoutPage /> : <Navigate to="/auth" replace />} />
             <Route path="/pay/result" element={<PaymentResultPage />} />
-            <Route path="/questionnaire" element={token ? <QuestionnairePage /> : <Navigate to="/auth" replace />} />
-            <Route path="/admin" element={token ? <AdminPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/questionnaire" element={token ? <QuestionnairePage /> : <Navigate to="/auth" replace />} />
+            <Route path="/app/admin" element={token ? <AdminPage /> : <Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

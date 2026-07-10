@@ -1,0 +1,686 @@
+{
+  "summary": {
+    "total": 135,
+    "pass": 134,
+    "fail": 0,
+    "warn": 1,
+    "pass_rate_pct": 99.3
+  },
+  "details": [
+    {
+      "test": "Signup returns 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Signup has token",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Signup has user.id",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Signup grants 100 credits",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Duplicate signup 409",
+      "status": "PASS",
+      "detail": "got 409: {\"detail\":\"An account with this email already exists\"}"
+    },
+    {
+      "test": "Login returns 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Login has token",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Wrong password 401",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Auth/me returns 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Auth/me correct email",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Auth/me no token 401",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Public config 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Config signup_credits 100",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Create goal returns 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Goal has thread_id",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Goal has acknowledgment",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "List goals 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Goals has goals array",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Goals has momentum",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Get thread 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Get thread has thread",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Get thread correct goal",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Thread not found 404",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Pause thread 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Pause status = paused",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Turn on paused thread 400",
+      "status": "PASS",
+      "detail": "got 400"
+    },
+    {
+      "test": "Reactivate thread 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Invalid status 422",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Credits endpoint 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Credits has turn_cost",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Normal turn 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Turn has acknowledgment",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Turn has intent",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Turn has model",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Turn has cost >= 0",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Ultra turn handled",
+      "status": "PASS",
+      "detail": "got 402"
+    },
+    {
+      "test": "Graduate thread 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Complete action handled",
+      "status": "PASS",
+      "detail": "got 400"
+    },
+    {
+      "test": "List packs 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Packs has 3 items",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has pack_10",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has pack_50",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has pack_500",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Test mode enabled",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Create order 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Has order_id",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has checkout_url",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Test mode true",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Test-complete success 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Status = paid",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Credits increased > 100",
+      "status": "PASS",
+      "detail": "credits=142"
+    },
+    {
+      "test": "Double-fulfil protection credits unchanged",
+      "status": "PASS",
+      "detail": "142 -> 142"
+    },
+    {
+      "test": "Double-fulfil status still paid",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Failed order status = failed",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Unknown pack 422",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Payment history 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "History has items",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Public status 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Public status masked email",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Plans 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Plans has 2 items",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has standard",
+      "status": "PASS",
+      "detail": "pids=['standard', 'pro']"
+    },
+    {
+      "test": "Has pro",
+      "status": "PASS",
+      "detail": "pids=['standard', 'pro']"
+    },
+    {
+      "test": "My sub (none) 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "No active sub",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Cancel no sub returns 404",
+      "status": "PASS",
+      "detail": "got 404 (endpoint raises 404 when no active sub exists)"
+    },
+    {
+      "test": "Admin login 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Admin overview 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has users",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has engine stats",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has credits",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has revenue",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has traffic",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has tokens",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "At least 1 user",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Admin users list 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Users has items",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Has pagination total",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "User search finds test founder",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "User activity 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Activity has user",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Activity has threads",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Activity has ledger",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Admin traffic 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Admin usage 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Admin usage models 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Models has items",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Models has totals",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Admin usage has summary",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Admin purchases 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Non-admin access 403",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Get journey (none) handled",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Start journey 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Journey message 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Journey direction 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Brain ask handled",
+      "status": "PASS",
+      "detail": "got 502"
+    },
+    {
+      "test": "Brain documents list 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Create org 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Has org_id",
+      "status": "PASS",
+      "detail": "data keys=['id', 'name', 'role', 'member_count', 'created_at', 'is_owner', 'strategy_set']"
+    },
+    {
+      "test": "List members 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Members has at least owner",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Create invite 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Has invite code",
+      "status": "PASS",
+      "detail": "data keys=['id', 'code', 'email', 'role', 'status', 'created_at', 'accepted_at', 'join_url']"
+    },
+    {
+      "test": "Profile interview start 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Feedback 200",
+      "status": "PASS",
+      "detail": "got 200: {\"ok\":true,\"id\":\"d1c3753a-5726-4383-99ce-95dc8d4e5d14\"}"
+    },
+    {
+      "test": "Feedback minimal 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Referral code 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Has referral code",
+      "status": "PASS",
+      "detail": "got keys=['code', 'path', 'invited_count', 'credits_earned', 'bonus']"
+    },
+    {
+      "test": "Share direction",
+      "status": "WARN",
+      "detail": "Requires completed journey direction; skipping in automated test"
+    },
+    {
+      "test": "Get questionnaire 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Save questionnaire 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Questionnaire added credits",
+      "status": "PASS",
+      "detail": "added 100"
+    },
+    {
+      "test": "Persisted dream correct",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "KPI signal 200",
+      "status": "PASS",
+      "detail": "got 200: {\"ok\":true,\"kind\":\"problem_detection\",\"value\":true}"
+    },
+    {
+      "test": "KPI signal ok",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Session tracking 200",
+      "status": "PASS",
+      "detail": "got 200"
+    },
+    {
+      "test": "Has session_id",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Session heartbeat 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Same session_id returned",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "token_cost(0,0) == 1 (minimum)",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "token_cost(500,500) == 2",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "token_cost(2000,1000) == 6",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "token_cost(100_000,50_000) == 300",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "SQLi login attempt rejected (no crash)",
+      "status": "PASS",
+      "detail": "got 422"
+    },
+    {
+      "test": "SQLi signup attempt \u2014 handled (no crash)",
+      "status": "PASS",
+      "detail": "got 422: {\"detail\":[{\"type\":\"value_error\",\"loc\":[\"body\",\"email\"],\"msg\":\"value is not a valid email address: T"
+    },
+    {
+      "test": "Empty token 401",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Invalid token 401",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Path traversal handled",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Root health check 200",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Service name correct",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Empty goal fields 422",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Short goal title 422",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Empty org name 422",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Empty feedback 422 (missing rating)",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "Invalid email 422",
+      "status": "PASS",
+      "detail": "got 422: {\"detail\":[{\"type\":\"value_error\",\"loc\":[\"body\",\"email\"],\"msg\":\"value is not a valid email address: A"
+    }
+  ]
+}

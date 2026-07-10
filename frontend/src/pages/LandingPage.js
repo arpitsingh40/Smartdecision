@@ -109,7 +109,7 @@ export default function LandingPage() {
             >
               <span className="inline-flex items-center gap-2 text-[11px] tracking-[0.26em] uppercase text-[#b89165] font-semibold mb-6">
                 <span className="w-7 h-px bg-[#b89165]" />
-                The Decision AI
+                AI Chief of Staff
               </span>
             </motion.div>
 
@@ -119,11 +119,11 @@ export default function LandingPage() {
               transition={{ duration: 0.6, delay: 0.1, ease: [0.25, 0.1, 0.25, 1] }}
               className="font-display text-6xl sm:text-7xl lg:text-[5.5rem] leading-[0.9] text-white tracking-tight"
             >
-              You already<br />
+              For founders who are<br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#b89165] via-[#c9a86b] to-[#b89165]">
-                know
-              </span>{' '}
-              what to do.
+                tired of guessing
+              </span>
+              .
             </motion.h1>
 
             <motion.p
@@ -132,8 +132,8 @@ export default function LandingPage() {
               transition={{ duration: 0.6, delay: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
               className="mt-6 text-lg sm:text-xl text-white/50 max-w-xl leading-relaxed"
             >
-              <span className="text-white/80 font-medium">SmartDeciGen</span> helps you actually do it.
-              One goal, one action, real progress — held across weeks.
+              <span className="text-white/80 font-medium">SmartDeciGen</span> pressure-tests your assumptions and holds you
+              accountable for the one decision that actually moves the needle.
             </motion.p>
 
             <motion.div
@@ -144,7 +144,7 @@ export default function LandingPage() {
             >
               <Button onClick={() => navigate('/auth')}
                 className="rounded-xl h-14 px-8 text-base font-medium bg-[#b89165] hover:bg-[#a67d52] text-white shadow-xl shadow-[#b89165]/25 group">
-                Start your free trial
+                Try 50 decisions free
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ml-2 group-hover:translate-x-0.5 transition-transform">
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
@@ -161,17 +161,11 @@ export default function LandingPage() {
               transition={{ duration: 0.6, delay: 0.5 }}
               className="mt-8 flex items-center gap-5 text-xs text-white/30"
             >
-              <span className="flex items-center gap-1.5">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-50">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-                No credit card
-              </span>
+              <span>50 free decisions</span>
+              <span className="w-1 h-1 rounded-full bg-white/20" />
+              <span>No card</span>
               <span className="w-1 h-1 rounded-full bg-white/20" />
               <span>Cancel anytime</span>
-              <span className="w-1 h-1 rounded-full bg-white/20" />
-              <span>Privacy-first</span>
             </motion.div>
           </div>
 

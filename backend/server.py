@@ -20,7 +20,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from engine import classify_intent, rolling_fields, compute_reengagement_line, llm_turn, llm_complete_action
-from db import users_col, threads_col, events_col, telemetry_col, orgs_col, tasks_col, plans_col, members_col
+from db import users_col, threads_col, events_col, telemetry_col, orgs_col, tasks_col, plans_col, members_col, user_patterns_col
 from security import pwd, make_token, current_user
 from ledger import record_ledger, inc_stats, ensure_startup
 from tracking import router as tracking_router, client_ip, geo_lookup
@@ -31,6 +31,8 @@ from questionnaire import router as questionnaire_router
 from decision_brain import router as brain_router, ensure_brain_startup
 from organizations import router as org_router, ensure_org_startup
 from founder_profile import router as founder_router
+from question_strategy import decide_strategy, strategy_prompt_block
+from pattern_detector import detect_patterns
 from firebase_auth import router as firebase_auth_router
 from journey import router as journey_router, ensure_journey_startup
 from share import router as share_router, referral_router, ensure_share_startup
@@ -245,6 +247,35 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
     substrate["streak"] = streak
     # step 3: intent (pure; explicit override wins - e.g. action_adjust from the next-action block)
     intent = intent_override or classify_intent(message, days_gap)
+
+    # step 3b: question strategy — decide what kind of turn to take
+    user_doc = users_col.find_one({"id": user["id"]}) or user
+    understanding = (user_doc or {}).get("understanding")
+    # Build understanding_history for pattern detection from stored user_patterns
+    stored_patterns = user_patterns_col.find_one({"user_id": user["id"]}) or {}
+    understanding_history = stored_patterns.get("understanding_history", [])
+    substrate_history = stored_patterns.get("substrate_history", [])
+    # Run pattern detection (history already contains the latest persisted state)
+    # Run pattern detection
+    try:
+        patterns = detect_patterns(
+            [u for u in understanding_history if isinstance(u, dict)],
+            substrate_history,
+            user["id"], thread["thread_id"],
+        )
+    except Exception:
+        patterns = {"pattern_type": None, "confidence": 0.0, "observation": None, "evidence_count": 0}
+    # Decide strategy
+    strategy = decide_strategy(
+        understanding=understanding,
+        substrate=substrate,
+        intent=intent,
+        phase=thread.get("current_phase") or "exploring",
+        turn_count=stored_patterns.get("total_turns", 0) + 1,
+        vulnerability_history=stored_patterns.get("vulnerability_count", 0),
+        patterns=patterns,
+    )
+
     # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5
     # | file/recall: Sonnet 4.5 -> Opus -> Haiku)
     # Refresh the user doc so any newly-saved questionnaire answers are part of the system context.
@@ -259,7 +290,8 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
                                  attachment=attachment, user_doc=user_doc,
                                  recall_block=recall_block,
                                  attachment_preview=attachment_preview,
-                                 understanding=(user_doc or {}).get("understanding"))
+                                 understanding=understanding,
+                                 strategy=strategy)
     sig = out["signals"]
     # step 5: state update
     events_col.insert_one({
@@ -320,6 +352,32 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
         "$set": user_set})
     inc_stats({"questions_total": 1, ("turns_ultra" if mode == "ultra" else "turns_normal"): 1,
                "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]})
+    # Persist pattern data with post-turn understanding
+    try:
+        user_patterns_col.update_one({"user_id": user["id"]}, {
+            "$set": {
+                "last_pattern_check": now,
+                "patterns": patterns,
+            },
+            "$inc": {"total_turns": 1},
+            "$push": {
+                "understanding_history": {"$each": [_understanding] if _understanding and isinstance(_understanding, dict) else [],
+                                          "$slice": -50},
+                "substrate_history": {"$each": [new_snapshot], "$slice": -50},
+            },
+        }, upsert=True)
+    except Exception:
+        pass
+    # Track vulnerability: when fears field deepens, user shared something vulnerable
+    try:
+        if _understanding and isinstance(_understanding, dict):
+            old_fears = (understanding or {}).get("fears", "")
+            new_fears = _understanding.get("fears", "")
+            if isinstance(new_fears, str) and new_fears.strip() and new_fears != old_fears:
+                user_patterns_col.update_one({"user_id": user["id"]},
+                    {"$inc": {"vulnerability_count": 1}})
+    except Exception:
+        pass
     return out, intent, model, latency, usage
 
 # ----------------------------------------------------------------- goals & threads

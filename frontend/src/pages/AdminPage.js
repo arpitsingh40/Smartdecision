@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Users, Activity, Globe, Coins, Star, Rocket, ShieldCheck, Target } from 'lucide-react';
+import { ArrowLeft, Users, Activity, Globe, Coins, Star, Rocket, ShieldCheck, Target, Book } from 'lucide-react';
 import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
 import { toast } from 'sonner';
+import DataTab from '../components/DataTab';
 
 const fmt = (n) => (n ?? 0).toLocaleString('en-IN');
 const fmtDur = (s) => {
@@ -557,6 +558,7 @@ function LaunchTab() {
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'users', label: 'Users' },
+  { id: 'data', label: 'Data' },
   { id: 'traffic', label: 'Traffic' },
   { id: 'usage', label: 'Usage' },
   { id: 'feedback', label: 'Feedback' },
@@ -590,6 +592,7 @@ export default function AdminPage() {
         </div>
         {tab === 'overview' && <Overview />}
         {tab === 'users' && <UsersTab />}
+        {tab === 'data' && <DataTab />}
         {tab === 'traffic' && <TrafficTab />}
         {tab === 'usage' && <UsageTab />}
         {tab === 'feedback' && <FeedbackTab />}

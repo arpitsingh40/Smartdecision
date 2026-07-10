@@ -14,13 +14,13 @@ import {
 } from 'lucide-react';
 
 const PLACEHOLDERS = [
-  'Build my company…',
-  'Launch a product…',
-  'Grow revenue…',
-  'Hire my first team…',
-  'Expand internationally…',
-  'Fix operations…',
-  'Make an important decision…',
+  'The pivot you keep postponing…',
+  'The founder you need to let go…',
+  'The round you are not sure about…',
+  'The customer segment you are ignoring…',
+  'The co-founder conversation you keep delaying…',
+  'The hire you know you need to make…',
+  'The price change you are afraid to test…',
 ];
 
 const STRING_FIELDS = ['objective', 'why_now', 'whats_at_stake', 'knowledge_level', 'urgency', 'impact', 'timeline'];
@@ -256,13 +256,13 @@ export default function JourneyPage() {
         <main className="flex-1 flex items-center justify-center px-4">
           <div className="w-full max-w-2xl mx-auto -mt-10 text-center" data-testid="journey-landing">
             <div className="inline-flex items-center gap-2 text-xs text-muted-foreground mb-6 rounded-full border border-border/70 px-3 py-1">
-              <Sparkles size={13} strokeWidth={2} /> Your founder thinking partner
+              <Sparkles size={13} strokeWidth={2} /> Your AI Chief of Staff
             </div>
             <h1 className="font-display text-3xl sm:text-5xl tracking-[-0.02em] leading-[1.05]">
-              What are you trying to accomplish?
+              What is the decision you have been circling?
             </h1>
             <p className="text-muted-foreground mt-4 text-sm sm:text-base">
-              Tell me in your own words. We will think it through together, one step at a time.
+              Name it plainly. Your Chief of Staff will surface what you are missing and give you one clear next move.
             </p>
 
               <div className="mt-8 text-left">
@@ -270,8 +270,8 @@ export default function JourneyPage() {
                 <div className="flex flex-col items-center py-6" data-testid="journey-generating">
                   <div className="rounded-2xl bg-card border border-border/70 px-5 py-4 w-full text-center">
                     <Loader2 className="animate-spin mx-auto mb-3" size={22} />
-                    <p className="text-sm font-medium">Reading your situation…</p>
-                    <p className="text-xs text-muted-foreground mt-1.5">This takes about a minute for your first reply. Every word you wrote shapes the response.</p>
+                    <p className="text-sm font-medium">Your Chief of Staff is reading…</p>
+                    <p className="text-xs text-muted-foreground mt-1.5">This takes about a minute. Every word shapes the response.</p>
                   </div>
                   <div className="mt-4 w-full space-y-2.5">
                     {[...Array(4)].map((_, i) => (

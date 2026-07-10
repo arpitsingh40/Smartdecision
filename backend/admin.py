@@ -5,7 +5,10 @@ import os
 import re
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
-from db import users_col, threads_col, telemetry_col, ledger_col, traffic_col, orders_col
+from db import (
+    users_col, threads_col, telemetry_col, ledger_col, traffic_col, orders_col,
+    conversation_memory_col, user_patterns_col, decisions_col,
+)
 from security import require_admin, now_utc, as_aware
 from ledger import get_stats
 
@@ -243,3 +246,273 @@ def purchases(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
     items = [_clean(o) for o in orders_col.find({}, {"_id": 0, "status_history": 0})
              .sort("created_at", -1).skip((page - 1) * limit).limit(limit)]
     return {"items": items, "total": total, "page": page, "pages": max(1, -(-total // limit))}
+
+
+# ------------------------------------------------------------------------ Conversations / Data section
+
+USER_PROJ_CONV = {"_id": 0, "password_hash": 0}
+
+
+@router.get("/conversations")
+def list_conversations(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
+                       q: str = Query(""), admin: dict = Depends(require_admin)):
+    """Return all threads organised per user — a book/chapter/topic structure.
+    Each user is a *chapter*, each of their threads is a *topic*."""
+    users_filter = {}
+    if q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        users_filter = {"$or": [{"email": rx}, {"name": rx}]}
+    total_users = users_col.count_documents(users_filter)
+    user_cursor = users_col.find(users_filter, USER_PROJ_CONV).sort("created_at", -1).skip((page - 1) * limit).limit(limit)
+
+    chapters = []
+    total_threads = 0
+    for u in user_cursor:
+        threads = list(threads_col.find({"user_id": u["id"]}).sort("opened_at", -1).limit(100))
+        total_threads += len(threads)
+        thread_list = []
+        for t in threads:
+            msgs = t.get("messages", [])
+            msg_count = len(msgs)
+            user_msg = next((m for m in reversed(msgs) if m.get("role") == "user"), None)
+            thread_list.append({
+                "thread_id": t["thread_id"],
+                "goal": t.get("goal", ""),
+                "status": t.get("status", ""),
+                "phase": t.get("current_phase", ""),
+                "message_count": msg_count,
+                "turn_count": sum(1 for m in msgs if m.get("role") == "user"),
+                "opened_at": _iso(t.get("opened_at")),
+                "last_turn_at": _iso(t.get("last_turn_at")),
+                "preview": (user_msg.get("text", "")[:200] if user_msg else ""),
+            })
+        chapters.append({
+            "user": _clean(u),
+            "threads": thread_list,
+        })
+    return {
+        "chapters": chapters,
+        "total_users": total_users,
+        "total_threads": total_threads,
+        "page": page,
+        "pages": max(1, -(-total_users // limit)),
+    }
+
+
+@router.post("/conversations/memory/refresh")
+def refresh_conversation_memory(admin: dict = Depends(require_admin)):
+    """Enrich conversation_memory from ALL existing learning systems:
+    - users.understanding (living memory)
+    - user_patterns_col (behavioral patterns, understanding/substrate history)
+    - decisions_col (decision outcomes, commitments, calibration)
+    - events_col (emotional/substrate trends)
+    - threads_col (goals, state summaries)
+    """
+    now = now_utc()
+    processed = 0
+    for u in users_col.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1, "understanding": 1}):
+        uid = u["id"]
+        threads = list(threads_col.find({"user_id": uid}).sort("opened_at", -1))
+        if not threads:
+            continue
+
+        # ---- Threads ----
+        goals = []
+        insights = []
+        total_messages = 0
+        active_threads = 0
+        for t in threads:
+            status = t.get("status", "")
+            goals.append({"goal": t.get("goal", ""), "status": status,
+                          "opened_at": _iso(t.get("opened_at"))})
+            if status == "active":
+                active_threads += 1
+            msgs = t.get("messages", [])
+            total_messages += len(msgs)
+            for m in msgs:
+                if m.get("role") == "engine":
+                    text = m.get("text", "")
+                    if len(text) > 100:
+                        insights.append(text[:300])
+
+        # ---- Understanding (living memory from engine) ----
+        understanding = u.get("understanding") or {}
+
+        # ---- Patterns from user_patterns_col ----
+        pat_doc = user_patterns_col.find_one({"user_id": uid}) or {}
+        patterns = pat_doc.get("patterns") or {}
+        total_turns = pat_doc.get("total_turns", 0)
+        vulnerability_count = pat_doc.get("vulnerability_count", 0)
+        understanding_history = pat_doc.get("understanding_history", []) or []
+        substrate_history = pat_doc.get("substrate_history", []) or []
+
+        # Compute pattern trend from history
+        pattern_history = []
+        if patterns and patterns.get("pattern_type"):
+            pattern_history.append({
+                "pattern_type": patterns["pattern_type"],
+                "confidence": patterns.get("confidence", 0),
+                "observation": patterns.get("observation"),
+            })
+
+        # Compute fear evolution from understanding_history
+        fear_evolution = []
+        for uh in (understanding_history or [])[-20:]:
+            if isinstance(uh, dict) and uh.get("fears", "").strip():
+                fear_evolution.append(uh["fears"][:200])
+
+        # Compute engagement trends from substrate_history
+        temps = []
+        consistencies = []
+        paces = []
+        for sh in (substrate_history or [])[-50:]:
+            if isinstance(sh, dict):
+                et = sh.get("emotional_temperature")
+                ec = sh.get("execution_consistency")
+                if et is not None:
+                    temps.append(float(et))
+                if ec is not None:
+                    consistencies.append(float(ec))
+                pc = sh.get("pace_calibration")
+                if pc:
+                    paces.append(pc)
+
+        avg_temp = round(sum(temps) / len(temps), 2) if temps else None
+        avg_consistency = round(sum(consistencies) / len(consistencies), 2) if consistencies else None
+        recent_paces = paces[-10:] if paces else []
+        pace_trend = "stable"
+        if recent_paces:
+            improving = sum(1 for p in recent_paces if p in ("ahead", "on-track"))
+            declining = sum(1 for p in recent_paces if p == "behind")
+            if improving > declining * 2:
+                pace_trend = "improving"
+            elif declining > improving * 2:
+                pace_trend = "declining"
+
+        # ---- Decisions from decisions_col ----
+        dec_total = decisions_col.count_documents({"user_id": uid})
+        dec_committed = decisions_col.count_documents({"user_id": uid, "committed_action": {"$exists": True, "$ne": ""}})
+        dec_done = decisions_col.count_documents({"user_id": uid, "status": "done"})
+        dec_dropped = decisions_col.count_documents({"user_id": uid, "status": "dropped"})
+
+        # Outcome distribution
+        outcome_pipeline = [
+            {"$match": {"user_id": uid, "outcome.status": {"$in": ["success", "partial", "failed"]}}},
+            {"$group": {"_id": "$outcome.status", "count": {"$sum": 1}}},
+        ]
+        outcome_counts = {r["_id"]: r["count"] for r in decisions_col.aggregate(outcome_pipeline)}
+
+        # Recent decisions with outcomes for the memory view
+        recent_decisions = []
+        for d in decisions_col.find(
+            {"user_id": uid},
+            {"_id": 0, "question": 1, "answer": 1, "committed_action": 1, "status": 1,
+             "outcome": 1, "impact_inr": 1, "created_at": 1, "mode": 1}
+        ).sort("created_at", -1).limit(5):
+            recent_decisions.append(_clean(d))
+
+        # Build the enriched memory document
+        memory_doc = {
+            "user_id": uid,
+            "user_name": u.get("name") or u.get("email", ""),
+            "email": u.get("email", ""),
+            "last_updated": _iso(now),
+            "extracted_at": _iso(now),
+
+            # Threads summary
+            "threads": {
+                "total": len(threads),
+                "active": active_threads,
+                "total_messages": total_messages,
+                "goals": goals,
+            },
+
+            # Understanding (living memory from the engine)
+            "understanding": {
+                "current": {k: understanding.get(k, "") for k in (
+                    "focus", "fears", "blockers", "constraints", "tried",
+                    "motivators", "stage", "gap_to_goal", "emotional_read", "needs_now"
+                )},
+                "fear_evolution": fear_evolution,
+            },
+
+            # Behavioral patterns
+            "patterns": {
+                "current": patterns,
+                "history": pattern_history,
+                "total_turns": total_turns,
+                "vulnerability_count": vulnerability_count,
+            },
+
+            # Decision outcomes
+            "decisions": {
+                "total": dec_total,
+                "committed": dec_committed,
+                "done": dec_done,
+                "dropped": dec_dropped,
+                "outcomes": outcome_counts,
+                "recent": recent_decisions,
+            },
+
+            # Engagement / emotional trends
+            "engagement": {
+                "emotional_temperature_avg": avg_temp,
+                "execution_consistency_avg": avg_consistency,
+                "pace_trend": pace_trend,
+            },
+
+            # Raw insights from engine responses
+            "insights": insights[:50],
+        }
+
+        conversation_memory_col.update_one(
+            {"user_id": uid},
+            {"$set": memory_doc},
+            upsert=True,
+        )
+        processed += 1
+    return {"processed": processed, "message": f"Memory refreshed for {processed} users"}
+
+
+@router.get("/conversations/memory")
+def get_conversation_memory(q: str = Query(""), admin: dict = Depends(require_admin)):
+    """Retrieve enriched long-term memory per user — aggregated from
+    understanding, patterns, decisions, engagement, and threads."""
+    filt = {}
+    if q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        filt = {"$or": [{"user_name": rx}, {"email": rx}, {"user_id": rx}]}
+    items = [_clean(m) for m in conversation_memory_col.find(filt).sort("user_name", 1).limit(200)]
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/conversations/{thread_id}")
+def get_conversation_thread(thread_id: str, admin: dict = Depends(require_admin)):
+    """Full thread detail with every message."""
+    t = threads_col.find_one({"thread_id": thread_id})
+    if not t:
+        raise HTTPException(404, "Thread not found")
+    u = users_col.find_one({"id": t["user_id"]}, USER_PROJ_CONV)
+    messages = []
+    for m in t.get("messages", []):
+        messages.append({
+            "role": m.get("role"),
+            "text": m.get("text", ""),
+            "at": _iso(m.get("at")),
+            "intent": m.get("intent"),
+        })
+    return {
+        "thread": {
+            "thread_id": t["thread_id"],
+            "goal": t.get("goal", ""),
+            "why_now": t.get("why_now", ""),
+            "status": t.get("status", ""),
+            "phase": t.get("current_phase", ""),
+            "opened_at": _iso(t.get("opened_at")),
+            "last_turn_at": _iso(t.get("last_turn_at")),
+            "messages": messages,
+            "snapshot_at_last_turn": t.get("snapshot_at_last_turn"),
+            "rolling": t.get("rolling"),
+        },
+        "user": _clean(u) if u else None,
+    }

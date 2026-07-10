@@ -217,7 +217,7 @@ export default function AuthPage() {
           </div>
           <div className="hidden md:flex items-center gap-2 text-[11px] tracking-[0.18em] uppercase text-muted-foreground rise-1">
             <ShieldCheck size={13} strokeWidth={2} className="text-[#b89165]" />
-            <span>Decision AI · Built to be returned to</span>
+              <span>AI Chief of Staff · Built to be returned to</span>
           </div>
         </header>
 
@@ -225,19 +225,19 @@ export default function AuthPage() {
           <div className="lg:col-span-7 max-w-2xl">
             <span className="rise-1 inline-flex items-center gap-2 text-[11px] tracking-[0.26em] uppercase text-[#b89165] font-semibold mb-7">
               <span className="w-7 h-px bg-[#b89165]" />
-              The Decision AI
+              AI Chief of Staff
             </span>
             <h1 className="rise-1 font-display text-5xl sm:text-6xl lg:text-[5.5rem] leading-[0.95] text-foreground tracking-tight">
-              You already<br />know what<br />to do.
+              For founders who are<br />tired of guessing.
             </h1>
             <div className="rise-2 mt-8 flex items-start gap-4">
               <div className="hidden sm:block w-10 h-px bg-[#b89165] mt-3" />
               <p className="font-display text-2xl md:text-[26px] leading-[1.25] text-[#b89165] max-w-md">
-                <span className="font-semibold">SmartDeciGen</span> helps you actually do it.
+                <span className="font-semibold">SmartDeciGen</span> pressure-tests your decisions and holds you accountable.
               </p>
             </div>
             <ul className="rise-3 mt-12 grid sm:grid-cols-3 gap-6 sm:gap-8 max-w-2xl">
-              {PILLARS.map(({ num, icon: Icon, label, sub }) => (
+              {PILLARS.map(({ num, icon: Icon, label, sub }, idx) => (
                 <li key={label} className="group">
                   <div className="flex items-center gap-2 text-[10px] tracking-[0.3em] text-[#b89165] font-semibold mb-2">
                     <span>{num}</span>
@@ -262,11 +262,11 @@ export default function AuthPage() {
                 aria-hidden="true" />
 
               <h2 className="relative font-display text-[28px] leading-tight mb-1">
-                Get started.
+                Try free.
               </h2>
               <p className="relative text-xs text-muted-foreground mb-6 flex items-center gap-1.5">
                 <Sparkles size={11} className="text-[#b89165]" />
-                <span>Enter your phone to receive a one-time code</span>
+                <span>50 decisions on us. No card. ~30 seconds.</span>
               </p>
 
               {refCode ? (
@@ -286,7 +286,7 @@ export default function AuthPage() {
               </div>
             </div>
             <p className="text-center mt-5 text-[11px] text-muted-foreground/80 leading-5 max-w-sm mx-auto">
-              For people who already know what to do — and are tired of not doing it.
+              For founders who are tired of guessing — and ready to decide.
             </p>
           </div>
         </div>

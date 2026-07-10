@@ -6,8 +6,16 @@ from fastapi import HTTPException, Header, Depends
 from passlib.context import CryptContext
 from db import users_col
 
+import logging
+
+_log = logging.getLogger("sdg")
+
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret")
+if not JWT_SECRET or JWT_SECRET in ("dev-secret", "dev-jwt-secret", "dev-jwt-secret-change-in-production"):
+    _log.warning("SECURITY WARNING: Using a weak/default JWT_SECRET. Set a strong random secret in production.")
+    if JWT_SECRET.startswith("dev-"):
+        _log.warning(f"  Current JWT_SECRET starts with 'dev-', suggesting it's a placeholder.")
 
 
 def now_utc():

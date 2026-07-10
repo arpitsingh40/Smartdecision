@@ -10,12 +10,17 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Backgro
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from pymongo import ReturnDocument
+from typing import Optional
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
+
 from engine import classify_intent, rolling_fields, compute_reengagement_line, llm_turn, llm_complete_action
-from db import users_col, threads_col, events_col, telemetry_col
+from db import users_col, threads_col, events_col, telemetry_col, orgs_col, tasks_col, plans_col, members_col
 from security import pwd, make_token, current_user
 from ledger import record_ledger, inc_stats, ensure_startup
 from tracking import router as tracking_router, client_ip, geo_lookup
@@ -26,17 +31,21 @@ from questionnaire import router as questionnaire_router
 from decision_brain import router as brain_router, ensure_brain_startup
 from organizations import router as org_router, ensure_org_startup
 from founder_profile import router as founder_router
+from firebase_auth import router as firebase_auth_router
 from journey import router as journey_router, ensure_journey_startup
 from share import router as share_router, referral_router, ensure_share_startup
 from benchmarks import ensure_benchmarks_startup
 from kpi import router as kpi_router, launch_router, ensure_kpi_startup
 from release_gate import router as release_gate_router, ensure_gate_startup
+from subscriptions import (router as subscriptions_router, deduct_tokens,
+                            get_token_budget, ensure_subscriptions_startup,
+                            process_pending_trial_conversions, process_mandate_executions)
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
 SIGNUP_CREDITS = int(os.environ.get("SIGNUP_CREDITS", "100"))
-# Token-based billing (founder spec): 2 credits per 1,000 tokens (input+output combined).
+# Token-based billing: 2 credits per 1,000 tokens (input+output combined).
 # Pre-reserve the maximum a turn could cost, run the LLM, then refund the unused portion.
 CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
 TURN_RESERVE_NORMAL = int(os.environ.get("TURN_RESERVE_NORMAL", "8"))     # covers ~4k tokens (normal turn cap)
@@ -50,7 +59,51 @@ def token_cost(tokens_in: int, tokens_out: int) -> int:
     total = (tokens_in or 0) + (tokens_out or 0)
     return max(1, math.ceil(total / 1000) * CREDITS_PER_1K_TOKENS)
 
-app = FastAPI(title="SmartDecigen Deep Discussion Engine")
+
+def deduct_usage(user_id: str, tokens_in: int, tokens_out: int, cost: int):
+    """Deduct usage from subscription token budget first, then from credits as fallback.
+    Used after every LLM call to account for actual consumption."""
+    try:
+        deduct_tokens(user_id, tokens_in, tokens_out)
+    except HTTPException:
+        pass  # subscription deduction is best-effort; credit check below enforces the hard limit
+    if cost > 0:
+        users_col.update_one({"id": user_id, "credits": {"$gte": cost}},
+                             {"$inc": {"credits": -cost}})
+
+# ----------------------------------------------------------------- rate limiting
+_RATE_LIMITS: dict[str, list[float]] = {}  # key -> [timestamp, ...]
+_RATE_WINDOW = 60.0
+
+def _rate_limit(key: str, max_reqs: int = 60, window: float = _RATE_WINDOW):
+    now = time.time()
+    bucket = _RATE_LIMITS.setdefault(key, [])
+    bucket[:] = [t for t in bucket if now - t < window]
+    if len(bucket) >= max_reqs:
+        raise HTTPException(429, "Too many requests. Please slow down.")
+    bucket.append(now)
+
+import re as _re
+
+_XSS_PAT = _re.compile(r'<[^>]*\s*(?:on\w+\s*=|javascript\s*:|data\s*:)', _re.I)
+
+app = FastAPI(title="SmartDecigen Deep Discussion Engine",
+              docs_url=None if os.environ.get("DISABLE_DOCS") else "/docs",
+              redoc_url=None if os.environ.get("DISABLE_DOCS") else "/redoc")
+
+@app.middleware("http")
+async def _security_middleware(request: Request, call_next):
+    ct = request.headers.get("content-type", "")
+    if "multipart" in ct:
+        body = await request.body()
+        text = body.decode("utf-8", errors="replace")
+        if _XSS_PAT.search(text):
+            raise HTTPException(400, "Request blocked: suspicious content detected")
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+
 api = APIRouter(prefix="/api")
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("sdg")
@@ -94,9 +147,9 @@ class TurnIn(BaseModel):
     mode: str = "normal"  # normal (Opus 4.8) | ultra (Fable 5 ultra thinking)
     adjust: bool = False  # true = user is reshaping the current next action (obstacle / their version)
     # multi-modal: optional file / image attachment, base64-encoded (≤ 8 MB raw)
-    attachment_base64: str | None = None
-    attachment_filename: str | None = None
-    attachment_mime: str | None = None
+    attachment_base64: Optional[str] = None
+    attachment_filename: Optional[str] = None
+    attachment_mime: Optional[str] = None
 
 class StatusIn(BaseModel):
     status: str  # active | paused | graduated | released
@@ -116,6 +169,9 @@ def signup(body: SignupIn, request: Request):
         raise HTTPException(409, "An account with this email already exists")
     ip = client_ip(request)
     geo = geo_lookup(ip)
+    name = body.name.strip()
+    if _XSS_PAT.search(name):
+        raise HTTPException(400, "Name cannot contain script tags or event handlers")
     user = {
         "id": str(uuid.uuid4()),
         "email": body.email.lower(),
@@ -160,12 +216,12 @@ def login(body: LoginIn, request: Request):
 
 @api.get("/auth/me")
 def me(user: dict = Depends(current_user)):
-    return {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}
+    return {"id": user["id"], "phone": user.get("phone", ""), "email": user.get("email", ""), "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}
 
 # ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
-                 intent_override: str = None, attachment: dict | None = None,
-                 attachment_preview: dict | None = None):
+                 intent_override: str = None, attachment: Optional[dict] = None,
+                 attachment_preview: Optional[dict] = None):
     """Runs the full turn. Returns (out, intent, model, latency, usage).
     Credit deduction is handled by the caller (reserve-and-reconcile against real token usage).
     `attachment` (optional dict): {filename, mime, base64} — file/image the user uploaded with this turn."""
@@ -310,6 +366,7 @@ def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_use
         raise HTTPException(502, "The engine could not open this thread. You were not charged — try again.")
     # reconcile: refund reserved - actual
     actual = token_cost(usage["input_tokens"], usage["output_tokens"])
+    deduct_usage(user["id"], usage["input_tokens"], usage["output_tokens"], actual)
     refund = max(0, reserve - actual)
     if refund:
         u = users_col.find_one_and_update({"id": user["id"]}, {"$inc": {"credits": refund}},
@@ -318,8 +375,10 @@ def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_use
                   tokens=usage["input_tokens"] + usage["output_tokens"], reason="goal_opening")
     inc_stats({"credits_spent": actual})
     fresh = threads_col.find_one({"thread_id": thread["thread_id"]})
+    token_budget = get_token_budget(user["id"])
     return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"], "credits": u["credits"],
-            "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"]}
+            "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"],
+            "token_usage": token_budget}
 
 @api.get("/goals")
 def list_goals(user: dict = Depends(current_user)):
@@ -379,6 +438,10 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
 def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundTasks, user: dict = Depends(current_user)):
     if body.mode not in ("normal", "ultra"):
         raise HTTPException(422, "mode must be 'normal' or 'ultra'")
+    if body.mode == "ultra":
+        budget = get_token_budget(user["id"])
+        if not budget.get("ultra_enabled"):
+            raise HTTPException(402, "Ultra thinking requires a Pro subscription. Upgrade to use this feature.")
     # Refresh user's geo on each turn — covers users who travel or open the app on a different network.
     # Light: persisted on the thread only when it actually changed (no extra prompt tokens if stable).
     try:
@@ -443,6 +506,7 @@ def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundT
         log.error(f"turn failed: {e}")
         raise HTTPException(502, "The engine did not respond. You were not charged — try again.")
     actual = token_cost(usage["input_tokens"], usage["output_tokens"])
+    deduct_usage(user["id"], usage["input_tokens"], usage["output_tokens"], actual)
     refund = max(0, reserve - actual)
     if refund:
         u = users_col.find_one_and_update({"id": user["id"]}, {"$inc": {"credits": refund}},
@@ -452,10 +516,12 @@ def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundT
                   reason="vision_turn" if attachment else None)
     inc_stats({"credits_spent": actual})
     fresh = threads_col.find_one({"thread_id": thread_id})
+    token_budget = get_token_budget(user["id"])
     return {"thread": serialize(fresh), "acknowledgment": out["acknowledgment"],
             "intent": intent, "credits": u["credits"], "model": model, "mode": body.mode,
             "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"],
-            "had_attachment": bool(attachment)}
+            "had_attachment": bool(attachment),
+            "token_usage": token_budget}
 
 # ----------------------------------------------------------------- "Do it for me": ship-ready artifact for the next action
 # Token-based billing: 2 credits per 1,000 tokens (input+output). Reserve-and-reconcile so unused tokens are refunded.
@@ -483,6 +549,7 @@ def complete_action(thread_id: str, user: dict = Depends(current_user)):
         raise HTTPException(502, "The engine could not prepare this. You were not charged — try again.")
     total_tokens = usage["input_tokens"] + usage["output_tokens"]
     cost = token_cost(usage["input_tokens"], usage["output_tokens"])
+    deduct_usage(user["id"], usage["input_tokens"], usage["output_tokens"], cost)
     refund = max(0, reserve - cost)
     if refund:
         u = users_col.find_one_and_update({"id": user["id"]}, {"$inc": {"credits": refund}},
@@ -507,8 +574,9 @@ def complete_action(thread_id: str, user: dict = Depends(current_user)):
                               "thread_id": thread_id, "model": model, "cost": cost,
                               "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"],
                               "latency_s": round(time.time() - t0, 2), "at": now})
+    token_budget = get_token_budget(user["id"])
     return {"artifact": serialize(artifact), "credits": u.get("credits", 0), "cost": cost,
-            "tokens": total_tokens}
+            "tokens": total_tokens, "token_usage": token_budget}
 
 @api.patch("/threads/{thread_id}/status")
 def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user)):
@@ -532,7 +600,27 @@ def credits(user: dict = Depends(current_user)):
 def root():
     return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok"}
 
+@api.get("/robots.txt", include_in_schema=False)
+def robots():
+    from fastapi.responses import Response
+    return Response(content="User-agent: *\nDisallow: /\n", media_type="text/plain")
+
 app.include_router(api)
+
+# ----------------------------------------------------------------- frontend static serving
+FRONTEND_BUILD = Path(__file__).parent.parent / "frontend" / "build"
+if FRONTEND_BUILD.is_dir():
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    app.mount("/static", StaticFiles(directory=str(FRONTEND_BUILD / "static")), name="frontend-static")
+
+    @app.exception_handler(404)
+    async def _spa_fallback(request: Request, exc):
+        return FileResponse(str(FRONTEND_BUILD / "index.html"), media_type="text/html")
+
+    log.info(f"frontend build served from {FRONTEND_BUILD}")
+
 app.include_router(tracking_router)
 app.include_router(admin_router)
 app.include_router(payments_router)
@@ -541,12 +629,166 @@ app.include_router(questionnaire_router)
 app.include_router(brain_router)
 app.include_router(org_router)
 app.include_router(founder_router)
+app.include_router(firebase_auth_router)
 app.include_router(journey_router)
 app.include_router(share_router)
 app.include_router(referral_router)
 app.include_router(kpi_router)
 app.include_router(launch_router)
 app.include_router(release_gate_router)
+app.include_router(subscriptions_router)
+
+# ----------------------------------------------------------------- scheduler: OKR task automation
+scheduler = BackgroundScheduler(daemon=True)
+
+
+def _saturday_night_generate():
+    """Saturday 10 PM: generate next week's tasks for every org with an active plan."""
+    log.info("scheduler: Saturday night task generation starting")
+    try:
+        plans = list(plans_col.find({"status": "active"}))
+        for plan in plans:
+            try:
+                org_id = plan["org_id"]
+                from organizations import _get_next_monday, _best_member_for_function, TASK_GENERATION_SYSTEM, norm_dep_function
+                from engine import client, _extract_json, PRIMARY_MODEL
+                import json, uuid
+                from datetime import timedelta
+
+                org = orgs_col.find_one({"id": org_id})
+                north_star = (org or {}).get("north_star", "") or "(not set)"
+
+                week_start = _get_next_monday().isoformat()
+                members = list(members_col.find({"org_id": org_id, "status": "active"}))
+                member_list = []
+                for mm in members:
+                    u = users_col.find_one({"id": mm["user_id"]}, {"_id": 0, "name": 1, "function": 1})
+                    member_list.append({"name": (u or {}).get("name", "Member"), "function": (u or {}).get("function", "general")})
+
+                dept_text = "\n".join(
+                    f"- {d['function']}: {d['objective']}\n  KRs: {'; '.join(d.get('key_results', [])[:4])}"
+                    for d in plan.get("departments", [])
+                ) if plan.get("departments") else "(no departments)"
+                member_text = "\n".join(f"- {m['name']} ({m['function']})" for m in member_list) or "(no members)"
+
+                prompt = (
+                    f"FOUNDER'S VISION (North Star): {north_star}\n\n"
+                    f"COMPANY QUARTERLY OBJECTIVE: {plan.get('company_objective', '')}\n\n"
+                    f"DEPARTMENTS:\n{dept_text}\n\n"
+                    f"AVAILABLE MEMBERS:\n{member_text}\n\n"
+                    f"Generate 3-7 weekly tasks for each department for the week starting {week_start}. "
+                    f"Every task must trace back to the founder's vision."
+                )
+
+                r = client().messages.create(model=PRIMARY_MODEL, max_tokens=2000,
+                    system=[{"type": "text", "text": TASK_GENERATION_SYSTEM}],
+                    messages=[{"role": "user", "content": prompt}])
+                txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+                data = json.loads(_extract_json(txt))
+
+                tasks = []
+                week_start_dt = datetime.fromisoformat(week_start)
+                for t in (data.get("tasks") or [])[:30]:
+                    if not isinstance(t, dict) or not t.get("title"):
+                        continue
+                    func = norm_dep_function(t.get("department_function", "general"))
+                    best = _best_member_for_function(org_id, func)
+                    dept = next((d for d in (plan.get("departments") or []) if d.get("function") == func), {})
+                    kr_text = ((dept.get("key_results") or [])[int(t.get("linked_kr_index", 0))] if dept.get("key_results") else "")
+                    tasks.append({
+                        "id": str(uuid.uuid4()), "org_id": org_id, "plan_id": plan["id"],
+                        "department_function": func, "linked_kr_index": int(t.get("linked_kr_index", 0)),
+                        "title": str(t.get("title", ""))[:200],
+                        "description": str(t.get("description", ""))[:1000],
+                        "founder_context": (
+                            f"Vision: {north_star}\n"
+                            f"→ Company objective: {plan.get('company_objective', '')}\n"
+                            f"→ {func}: {dept.get('objective', '')}\n"
+                            f"→ KR: {kr_text}"
+                        ),
+                        "assigned_to": best["user_id"], "assigned_to_name": best["name"],
+                        "status": "pending",
+                        "due_at": (week_start_dt + timedelta(days=6, hours=23, minutes=59)).isoformat(),
+                        "week_start": week_start, "generated_week": week_start_dt.isocalendar()[1],
+                        "proof_files": [],
+                        "ai_review": {"status": "pending", "notes": "", "confidence": 0.0, "reviewed_at": None},
+                        "stage": {"label": "not_started", "confidence": 1.0, "last_updated": now_utc().isoformat()},
+                        "escalation": {"dept_head_contacted": False, "dept_head_response": "",
+                                       "founder_contacted": False, "founder_response": "", "escalated_at": None},
+                        "created_at": now_utc().isoformat(), "updated_at": now_utc().isoformat(), "completed_at": None,
+                    })
+                if tasks:
+                    tasks_col.insert_many(tasks)
+                    log.info(f"scheduler: generated {len(tasks)} tasks for org {org_id}")
+            except Exception as e:
+                log.error(f"scheduler: task generation failed for org {plan.get('org_id')}: {e}")
+    except Exception as e:
+        log.error(f"scheduler: saturday night run failed: {e}")
+    log.info("scheduler: Saturday night task generation complete")
+
+
+def _six_hour_housekeeping():
+    """Every 6 hours: check overdue tasks, nearing-due tasks, and escalate clarifications."""
+    log.info("scheduler: 6h housekeeping starting")
+    try:
+        now = now_utc()
+        now_iso = now.isoformat()
+        six_hours_later = (now + timedelta(hours=6)).isoformat()
+
+        # 1. Find overdue tasks and log escalation
+        overdue = list(tasks_col.find({
+            "status": {"$nin": ["done", "awaiting_review"]},
+            "due_at": {"$lt": now_iso, "$ne": None},
+        }))
+        for t in overdue:
+            if not t.get("escalation", {}).get("dept_head_contacted"):
+                tasks_col.update_one({"id": t["id"]}, {"$set": {
+                    "escalation.dept_head_contacted": True,
+                    "escalation.escalated_at": now_iso,
+                }})
+
+        # 2. Find tasks nearing due (within 24h) for auto-follow-up
+        nearing = list(tasks_col.find({
+            "status": {"$in": ["pending", "in_progress"]},
+            "due_at": {"$gte": now_iso, "$lte": six_hours_later},
+        }))
+        if nearing:
+            log.info(f"scheduler: {len(nearing)} tasks nearing due")
+
+        # 3. Escalate unanswered clarifications (dept head hasn't responded in 24h)
+        clarified = list(tasks_col.find({
+            "status": "needs_clarification",
+            "escalation.dept_head_contacted": True,
+        }))
+        for t in clarified:
+            escalated_at = t.get("escalation", {}).get("escalated_at")
+            if escalated_at:
+                try:
+                    esc_dt = datetime.fromisoformat(escalated_at.replace("Z", "+00:00"))
+                    if (now - esc_dt).total_seconds() > 86400 and not t.get("escalation", {}).get("founder_contacted"):
+                        tasks_col.update_one({"id": t["id"]}, {"$set": {
+                            "escalation.founder_contacted": True,
+                        }})
+                        log.info(f"scheduler: escalated task {t['id']} to founder")
+                except (ValueError, TypeError):
+                    pass
+    except Exception as e:
+        log.error(f"scheduler: 6h housekeeping failed: {e}")
+
+
+def _monday_morning_digest():
+    """Monday 6 AM: mark digest ready for all orgs with active plans (handled by cockpit polling)."""
+    log.info("scheduler: Monday morning digest ready")
+    # Digest is computed on-demand via GET /org/tasks/weekly-digest
+    # This hook exists for future notification delivery
+
+
+scheduler.add_job(_saturday_night_generate, CronTrigger(day_of_week="sat", hour=22, minute=0, timezone="Asia/Kolkata"))
+scheduler.add_job(_monday_morning_digest, CronTrigger(day_of_week="mon", hour=6, minute=0, timezone="Asia/Kolkata"))
+scheduler.add_job(_six_hour_housekeeping, IntervalTrigger(hours=6))
+scheduler.add_job(process_pending_trial_conversions, CronTrigger(hour=6, minute=0))
+scheduler.add_job(process_mandate_executions, CronTrigger(hour=7, minute=0))
+
 
 @app.on_event("startup")
 def _startup():
@@ -558,6 +800,9 @@ def _startup():
     ensure_benchmarks_startup()  # idempotent: cross-founder benchmark indexes
     ensure_kpi_startup()  # idempotent: launch-KPI signal indexes
     ensure_gate_startup()  # idempotent: release-gate run indexes
+    ensure_subscriptions_startup()  # idempotent: subscription indexes
+    scheduler.start()
+    log.info("scheduler started")
 
 app.add_middleware(
     CORSMiddleware,

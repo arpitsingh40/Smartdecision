@@ -21,7 +21,14 @@ import pytest
 import requests
 from pymongo import MongoClient
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://genuine-feedback-1.preview.emergentagent.com").rstrip("/")
+# Live-integration suite: needs a deployed backend + seeded demo users + live Zoho.
+# Skipped entirely unless REACT_APP_BACKEND_URL is explicitly set.
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("REACT_APP_BACKEND_URL"),
+    reason="live integration suite — set REACT_APP_BACKEND_URL to run",
+)
+
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 
 DEMO_EMAIL = "demo@smartdecigen.com"
 DEMO_PASS = "Demo1234!"

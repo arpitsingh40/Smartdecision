@@ -1,10 +1,11 @@
-"""Auth primitives shared by all routers (JWT, password hashing, admin gate)."""
+"""Auth primitives shared by all routers (JWT, password hashing, admin gate).
+Supports both sync and async endpoints."""
 import os
 from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi import HTTPException, Header, Depends
 from passlib.context import CryptContext
-from db import users_col
+from db import users_col, async_users_col
 
 import logging
 
@@ -32,31 +33,58 @@ def make_token(user_id: str) -> str:
     return jwt.encode({"sub": user_id, "exp": now_utc() + timedelta(days=30)}, JWT_SECRET, algorithm="HS256")
 
 
-def current_user(authorization: str = Header(None)) -> dict:
+def _decode_token(authorization: str) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Not authenticated")
     try:
-        payload = jwt.decode(authorization.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
+        return jwt.decode(authorization.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
     except Exception:
         raise HTTPException(401, "Invalid or expired token")
+
+
+def current_user(authorization: str = Header(None)) -> dict:
+    payload = _decode_token(authorization)
     user = users_col.find_one({"id": payload["sub"]})
     if not user:
         raise HTTPException(401, "User not found")
     return user
 
 
+async def current_user_async(authorization: str = Header(None)) -> dict:
+    payload = _decode_token(authorization)
+    user = await async_users_col.find_one({"id": payload["sub"]})
+    if not user:
+        raise HTTPException(401, "User not found")
+    return user
+
+
 def optional_user(authorization: str = Header(None)):
-    """Like current_user but returns None instead of raising (used by traffic tracking)."""
     if not authorization or not authorization.startswith("Bearer "):
         return None
     try:
-        payload = jwt.decode(authorization.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
+        payload = _decode_token(authorization)
         return users_col.find_one({"id": payload["sub"]})
     except Exception:
         return None
 
 
+async def optional_user_async(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        payload = _decode_token(authorization)
+        return await async_users_col.find_one({"id": payload["sub"]})
+    except Exception:
+        return None
+
+
 def require_admin(user: dict = Depends(current_user)) -> dict:
+    if not user.get("is_admin"):
+        raise HTTPException(403, "Founder access only")
+    return user
+
+
+async def require_admin_async(user: dict = Depends(current_user_async)) -> dict:
     if not user.get("is_admin"):
         raise HTTPException(403, "Founder access only")
     return user

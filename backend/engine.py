@@ -1,6 +1,6 @@
 """Deep Discussion Engine core — proven in POC (Phase 1, all checks passed).
 Pure functions: intent classification, rolling fields, re-engagement.
-Single LLM call per turn: Gemini 3.5 Flash primary.
+Single LLM call per turn — provider-agnostic via llm_client.
 Multi-modal: attach image / PDF / Excel / CSV / text — engine reads and reasons on the file."""
 import os
 import io
@@ -12,280 +12,105 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import requests
+from db import users_col, journeys_col
 
 log = logging.getLogger(__name__)
 
-PRIMARY_MODEL = os.environ.get("LLM_MODEL", "gemini-3.5-flash").strip()
-ANALYTICAL_MODEL = os.environ.get("LLM_MODEL_ANALYTICAL", PRIMARY_MODEL).strip()
-ULTRA_MODEL = os.environ.get("LLM_MODEL_ULTRA", PRIMARY_MODEL).strip()
-FALLBACK_MODEL = os.environ.get("LLM_MODEL_FALLBACK", PRIMARY_MODEL).strip()
-
-
-def _extract_json(txt: str) -> str:
-    """Pull the first balanced JSON object out of a model reply.
-    Tolerates code fences, leading prose, and trailing prose after the closing brace
-    (the 'Extra data' failure mode). Returns best-effort substring if truncated."""
-    s = re.sub(r"^```(json)?|```$", "", txt or "", flags=re.M).strip()
-    start = s.find("{")
-    if start == -1:
-        return s
-    depth, in_str, esc = 0, False, False
-    for i in range(start, len(s)):
-        c = s[i]
-        if in_str:
-            if esc:
-                esc = False
-            elif c == "\\":
-                esc = True
-            elif c == '"':
-                in_str = False
-        elif c == '"':
-            in_str = True
-        elif c == "{":
-            depth += 1
-        elif c == "}":
-            depth -= 1
-            if depth == 0:
-                return s[start:i + 1]
-    return s[start:]  # unterminated (truncated) — best effort
+from llm_client import (
+    client, _extract_json, ContentBlock, Usage, Response,
+    PRIMARY_MODEL, ANALYTICAL_MODEL, ULTRA_MODEL, FALLBACK_MODEL,
+)
 
 IMAGE_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
 MAX_FILE_CHARS = 50000  # cap extracted text — bounds cost; engine doesn't need the whole novel
 
-# ---------- Gemini client adapter (Anthropic-compatible interface, direct HTTP) ----------
-
-class _GeminiContentBlock:
-    __slots__ = ("text", "type")
-    def __init__(self, text: str):
-        self.text = text
-        self.type = "text"
-
-class _GeminiUsage:
-    __slots__ = ("input_tokens", "output_tokens")
-    def __init__(self, input_tokens: int, output_tokens: int):
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
-
-class _GeminiResponse:
-    __slots__ = ("content", "usage")
-    def __init__(self, text: str, input_tokens: int = 0, output_tokens: int = 0):
-        self.content = [_GeminiContentBlock(text)]
-        self.usage = _GeminiUsage(input_tokens, output_tokens)
-
-_GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-
-class _GeminiMessages:
-    def __init__(self, api_key: str):
-        self._api_key = api_key
-
-    def _url(self, model: str) -> str:
-        return f"{_GEMINI_API_BASE}/{model}:generateContent?key={self._api_key}"
-
-    @staticmethod
-    def _convert_content(content):
-        if isinstance(content, str):
-            return [{"text": content}]
-        parts = []
-        for block in content:
-            if not isinstance(block, dict):
-                parts.append({"text": str(block)})
-                continue
-            t = block.get("type", "")
-            if t == "text":
-                parts.append({"text": block.get("text", "")})
-            elif t == "image":
-                src = block.get("source", {})
-                if src.get("type") == "base64":
-                    parts.append({"inline_data": {"mime_type": src.get("media_type", "image/png"), "data": src.get("data", "")}})
-                elif src.get("type") == "url":
-                    parts.append({"file_data": {"file_uri": src["url"], "mime_type": src.get("media_type", "image/png")}})
-        return parts
-
-    @staticmethod
-    def _system_to_text(system):
-        if not system:
-            return None
-        if isinstance(system, str):
-            return system
-        if isinstance(system, list):
-            texts = [s["text"] for s in system if isinstance(s, dict) and isinstance(s.get("text"), str) and s["text"].strip()]
-            return "\n".join(texts) if texts else None
-        return None
-
-    def create(self, model: str, system=None, messages=None, max_tokens=None, **kwargs):
-        system_text = self._system_to_text(system)
-        contents = []
-        for m in messages or []:
-            role = m.get("role", "user")
-            content = m.get("content", "")
-            gemini_role = "model" if role == "assistant" else "user"
-            parts = self._convert_content(content)
-            contents.append({"role": gemini_role, "parts": parts})
-        body = {"contents": contents, "generationConfig": {"maxOutputTokens": max_tokens or 8192}}
-        if system_text:
-            body["system_instruction"] = {"parts": [{"text": system_text}]}
-        last_err = None
-        for attempt in range(4):
-            try:
-                resp = requests.post(self._url(model), json=body, timeout=120)
-                resp.raise_for_status()
-            except requests.exceptions.RequestException as e:
-                detail = ""
-                try:
-                    detail = resp.text
-                except Exception:
-                    pass
-                status = resp.status_code if hasattr(resp, 'status_code') else 0
-                # Retry on 429 (rate limit) and 503 (overloaded)
-                if status in (429, 503) and attempt < 3:
-                    import re
-                    m2 = re.search(r'retry in (\d+(?:\.\d+)?)s', detail, re.I)
-                    delay = float(m2.group(1)) + 2 if m2 else (2 ** attempt * 5)
-                    log.warning(f"Gemini {status}, retry {attempt+1}/3 after {delay:.0f}s: {detail[:120]}")
-                    time.sleep(delay)
-                    last_err = RuntimeError(f"Gemini API error: {e} {detail[:300]}")
-                    continue
-                raise RuntimeError(f"Gemini API error: {e} {detail[:500]}")
-            data = resp.json()
-            text = ""
-            candidates = data.get("candidates") or []
-            if candidates:
-                c = candidates[0]
-                finish = c.get("finishReason", "")
-                if finish in ("SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"):
-                    log.warning(f"Gemini blocked: finishReason={finish}")
-                parts = (c.get("content") or {}).get("parts") or []
-                if parts:
-                    text = parts[0].get("text", "")
-            usage = data.get("usageMetadata") or {}
-            in_tokens = usage.get("promptTokenCount", 0) or 0
-            out_tokens = usage.get("candidatesTokenCount", 0) or 0
-            return _GeminiResponse(text, in_tokens, out_tokens)
-        raise last_err or RuntimeError("Gemini API failed after retries")
-
-class _GeminiClient:
-    def __init__(self, api_key: str):
-        self._messages = _GeminiMessages(api_key)
-
-    @property
-    def messages(self):
-        return self._messages
+def _get_state_block(user_id: str) -> str:
+    try:
+        u = users_col.find_one({"id": user_id}, {"_id": 0, "company_state": 1})
+    except Exception:
+        return ""
+    if not u:
+        return ""
+    s = u.get("company_state") or {}
+    if not s or not s.get("objective"):
+        return ""
+    lines = ["- Objective: " + s["objective"]]
+    for key, label in (("blockers", "Diagnosed blockers"), ("constraints", "Known constraints"), ("fears", "Underlying fears"), ("direction_decision", "Agreed direction")):
+        v = s.get(key)
+        if v:
+            val = "; ".join(v) if isinstance(v, list) else str(v)
+            lines.append(f"- {label}: {val[:300]}")
+    if s.get("open_milestones"):
+        ms = [f"{m['title']} ({m.get('deadline', 'no deadline')})" for m in s["open_milestones"]]
+        lines.append(f"- Open milestones: {'; '.join(ms[:3])}")
+    unc = s.get("uncertainty")
+    if isinstance(unc, dict):
+        scores = [v.get("score", 50) for v in unc.values() if isinstance(v, dict)]
+        if scores:
+            lines.append(f"- Diagnostic uncertainty: {sum(scores)/len(scores):.0f}/100")
+    lines.append(f"- Stage: {'diagnosis complete' if s.get('diagnosis_done') else 'diagnosis in progress'}")
+    return "COMPANY STATE (from the ongoing diagnosis — treat as known, do NOT re-ask, check every recommendation against these constraints):\n" + "\n".join(lines)
 
 
-# ---------- DeepSeek client adapter (OpenAI-compatible, direct HTTP) ----------
+# ---------------------------------------------------------------- Ch.X: MCP tool injection
+def _mcp_tools_block(department_function: str = "general") -> str:
+    """Inject available MCP tools into the engine prompt so the LLM knows
+    what actions it can take. Uses the Capability Registry for smart tool selection.
+    Pure text, no cost."""
+    try:
+        from execution.mcp_client import mcp_enabled
+    except Exception:
+        return ""
+    if not mcp_enabled():
+        return ""
 
-_DEEPSEEK_API_BASE = "https://api.deepseek.com"
+    # Use Capability Registry (phase 1) instead of DEPARTMENT_TOOL_SCOPE
+    try:
+        from execution.registry import capabilities_for_department
+        registry_tools = capabilities_for_department(department_function, limit=30)
+        if registry_tools:
+            tool_lines = []
+            for t in registry_tools:
+                slug = t.get("tool_slug", t.get("name", ""))
+                name = t.get("tool_name", slug)
+                desc = (t.get("tool_desc", "") or "")[:200]
+                tool_lines.append(f"- {slug}: {name} — {desc}")
+            block = (
+                "AVAILABLE TOOLS (capability-matched to your department — use tool_calls in JSON):\n"
+                + "\n".join(tool_lines) + "\n\n"
+                "TOOL_CALLS FORMAT: add a 'tool_calls' array with objects like "
+                '{"tool": "tool_slug", "args": {...}, "reason": "why this helps", "capability": "what business need"}. '
+                "Omit the field for pure advice turns. Max 5 calls per turn."
+            )
+            return block
+    except Exception:
+        pass
 
-class _DeepSeekMessages:
-    def __init__(self, api_key: str):
-        self._api_key = api_key
-        self._session = requests.Session()
-        self._session.headers.update({
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        })
-
-    @staticmethod
-    def _system_to_text(system):
-        if not system:
-            return None
-        if isinstance(system, str):
-            return system.strip() or None
-        if isinstance(system, list):
-            texts = [s["text"] for s in system if isinstance(s, dict) and isinstance(s.get("text"), str) and s["text"].strip()]
-            return "\n".join(texts) if texts else None
-        return None
-
-    @staticmethod
-    def _content_as_text(content):
-        if isinstance(content, str):
-            return content
-        parts = []
-        for block in (content or []):
-            if isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-        return "".join(parts)
-
-    def create(self, model: str, system=None, messages=None, max_tokens=None, **kwargs):
-        system_text = self._system_to_text(system)
-        ds_messages = []
-        if system_text:
-            ds_messages.append({"role": "system", "content": system_text})
-        for m in messages or []:
-            role = m.get("role", "user")
-            ds_role = "assistant" if role == "assistant" else "user"
-            text = self._content_as_text(m.get("content", ""))
-            ds_messages.append({"role": ds_role, "content": text})
-        body = {
-            "model": model,
-            "messages": ds_messages,
-            "max_tokens": max_tokens or 8192,
-            "temperature": kwargs.get("temperature", 0.7),
-        }
-        last_err = None
-        for attempt in range(4):
-            try:
-                resp = self._session.post(f"{_DEEPSEEK_API_BASE}/v1/chat/completions", json=body, timeout=120)
-                resp.raise_for_status()
-            except requests.exceptions.RequestException as e:
-                detail = ""
-                try:
-                    detail = resp.text
-                except Exception:
-                    pass
-                status = resp.status_code if hasattr(resp, 'status_code') else 0
-                if status in (429, 503) and attempt < 3:
-                    import re
-                    m2 = re.search(r'retry after (\d+)', detail, re.I)
-                    delay = float(m2.group(1)) + 1 if m2 else (2 ** attempt * 5)
-                    log.warning(f"DeepSeek {status}, retry {attempt+1}/3 after {delay:.0f}s")
-                    time.sleep(delay)
-                    last_err = RuntimeError(f"DeepSeek API error: {e} {detail[:300]}")
-                    continue
-                raise RuntimeError(f"DeepSeek API error: {e} {detail[:500]}")
-            data = resp.json()
-            text = ""
-            choices = data.get("choices") or []
-            if choices:
-                text = (choices[0].get("message") or {}).get("content", "") or ""
-            usage = data.get("usage") or {}
-            in_tokens = usage.get("prompt_tokens", 0) or 0
-            out_tokens = usage.get("completion_tokens", 0) or 0
-            return _GeminiResponse(text, in_tokens, out_tokens)
-        raise last_err or RuntimeError("DeepSeek API failed after retries")
-
-class _DeepSeekClient:
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self._messages = _DeepSeekMessages(api_key)
-
-    @property
-    def messages(self):
-        return self._messages
-
-
-# ---------- Provider factory ----------
-
-_client = None
-
-def client():
-    global _client
-    if _client is not None:
-        return _client
-    provider = os.environ.get("LLM_PROVIDER", "gemini").strip().lower()
-    if provider == "deepseek":
-        key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("GEMINI_API_KEY")
-        if not key:
-            raise RuntimeError("DEEPSEEK_API_KEY not set")
-        _client = _DeepSeekClient(key)
-        log.info("LLM provider: DeepSeek (%s)", os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
-    else:
-        key = os.environ.get("GEMINI_API_KEY")
-        if not key:
-            raise RuntimeError("GEMINI_API_KEY not set")
-        _client = _GeminiClient(key)
-        log.info("LLM provider: Gemini")
-    return _client
+    # Fallback: legacy DEPARTMENT_TOOL_SCOPE
+    try:
+        from execution.mcp_client import tools_for_department
+    except Exception:
+        return ""
+    tools = tools_for_department(department_function)
+    if not tools:
+        return ""
+    tool_lines = []
+    for t in tools[:30]:
+        name = t.get("name", "")
+        desc = (t.get("description", "") or "")[:200]
+        props = (t.get("inputSchema") or {}).get("properties", {})
+        param_hints = ", ".join(f"{k}" for k in list(props.keys())[:4])
+        tool_lines.append(f"- {name}({param_hints}): {desc}")
+    block = (
+        "AVAILABLE TOOLS (you can execute these on the internet via tool_calls in your JSON):\n"
+        + "\n".join(tool_lines) + "\n\n"
+        "TOOL_CALLS FORMAT: add a 'tool_calls' array to your JSON with objects like "
+        '{"tool": "tool_name", "args": {"param": "value"}, "reason": "why this helps"}. '
+        "Use tool_calls when the user asks you to DO something (send, find, create, update, search) "
+        "that one of these tools can handle. Omit the field entirely for pure advice turns. "
+        "Max 5 calls per turn. Execute the most impactful actions first."
+    )
+    return block
 
 # ---------------------------------------------------------------- intent (pure)
 ACK = re.compile(r"\b(did it|done|completed|finished|shipped|sent it|made the call|i did)\b", re.I)
@@ -385,13 +210,20 @@ def _user_context_block(user_doc) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-ASSIST_SYSTEM = """You are the Deep Discussion Engine's execution hand. The user has ONE next action. Your job: remove every ounce of friction so they finish it in minutes, not days — and they should feel cared for, not lectured to.
-VOICE: write like a thoughtful friend who happens to be sharp. Plain English, short sentences, easy to scan, in the USER'S register (match their tone — if they're casual, you're casual; if they're crisp, you're crisp). Skip jargon. No "Dear Sir/Madam" stiffness in drafts; no corporate "I hope this email finds you well" unless that's truly how they speak. Contractions welcome. The artifact must read like THEY wrote it on a good day.
-FILE-AWARE EXECUTION (critical): if the thread state shows the user has attached a file with the data needed for this action (visible via FILE_FACTS in the context), the artifact IS the computation — not instructions to do the computation. NEVER produce a checklist of 'open the sheet, find the column, count the rows' for data the engine has already seen. Instead, state the answer with the numbers ('I counted 5 Disbursed out of your 70 rows. Now we just need your fee per disbursed case — that one isn't in the sheet.') and ask for ONLY the missing piece. If both numbers are available, do the math and present the result.
+ASSIST_SYSTEM = """You are the execution hand. The founder has ONE next action. Your job: produce the exact output they need to finish it — then get out of their way.
+
+SELF CHECK before producing anything: if you would hesitate to see this result in 30 days, do not produce it. An action that does not improve their actual situation is worse than no action at all.
+
+VOICE: write like a sharp colleague who knows their business. Plain English, short sentences, easy to scan. Match their register (casual or crisp). Contractions welcome. Jargon banned. The artifact must read like they wrote it on a good day.
+
+FILE-AWARE EXECUTION (critical): if the thread state shows the user has attached a file with the data needed for this action (visible via FILE_FACTS in the context), the artifact IS the computation — not instructions to do the computation. NEVER produce a checklist of 'open the sheet, find the column, count the rows' for data the engine has already seen. Instead, state the answer with the numbers and ask for ONLY the missing piece. If both numbers are available, do the math and present the result.
+
 Decide the kind:
 - "draft": the action produces a sendable/usable artifact (email, message, list, script, post, plan, outline, research summary, COMPUTED table from attached data). Write the FINISHED artifact in the user's voice — specific, ready to ship, grounded in everything known from the thread. No placeholders unless a fact is truly unknowable, then use [[FILL: what goes here]] sparingly.
 - "kit": the action is physical/real-world (a call, a visit, signing, a workout, a meeting). Produce the 10-minute version: the exact words to say or script to follow, what to bring/open, the smallest viable version that still counts as done.
+
 Rules: concrete over generic; their stated goal and why-it-matters are your material; zero fluff; the artifact must be genuinely shippable as-is; if it's an email or message, sound human, not templated; if it's analysis on attached data, do the math and present results, do not instruct the user to do it.
+
 Return ONLY valid JSON, no markdown fences:
 {"kind": "draft" or "kit",
  "title": "3-6 words naming the artifact",
@@ -512,61 +344,90 @@ def build_attachment_blocks(attachment):
         return [], f"\n\n[attached file '{name}' could not be read — ignore it and continue]"
 
 
+# ------------------------------------------------- SALAAR routing
+def salaar_route(text: str, thread: dict = None, user: dict = None) -> str:
+    """Classify user input into one of four paths.
+    Returns 'knowledge' | 'decision' | 'diagnosis' | 'engine'.
+    Pure logic, zero LLM cost."""
+    hay = (text or "").lower().strip()
+    # 1. Knowledge: factual questions about company documents / policies
+    knowledge_kw = ("what is", "what are", "do we have", "is there", "where is",
+                    "our policy", "our rule", "tell me the", "remind me",
+                    "in the document", "according to", "what does", "how many",
+                    "when did we", "who is", "what was", "company rule")
+    if any(hay.startswith(kw) for kw in knowledge_kw) and len(hay) < 200:
+        return "knowledge"
+    # 2. Decision: strategic trade-offs, should-we, comparisons
+    decision_kw = ("should i", "should we", "what do you think about",
+                   "what about", "which option", "better to", "worst case",
+                   "trade", "pros and cons", "compare", "versus", "vs ",
+                   "hire or", "fire or", "invest or", "risk of")
+    if any(kw in hay for kw in decision_kw):
+        return "decision"
+    # 3. Diagnosis: vague/open, early stage, no journey context
+    if not thread or not thread.get("current_phase") or thread["current_phase"] == "exploring":
+        if len(hay) < 60 and not any(kw in hay for kw in ("i need", "draft", "write", "plan")):
+            return "diagnosis"
+    # 4. Default: engine (continuation / execution / conversation)
+    return "engine"
+
+
 # ------------------------------------------------- single LLM call per turn
-SYSTEM = """You are someone who genuinely cares about the person you're talking to. Not a coach, not a therapist, not a system — a thoughtful human who's sat across from enough people to know what works and what doesn't, but stays curious about each new person.
+SYSTEM = """You maintain the highest-fidelity model of this founder and their company. Every message is evidence. Your job is not to answer — it is to update the model and let the response emerge from it.
 
-Here's who you are:
+BEFORE EVERY TURN (your silent internal sweep — never output this):
+1. ASSEMBLE STATE. From everything known (identity, codex, company state, memory, their words, file facts, geo), build the current picture of their objective reality. What has changed since last turn? What is confirmed vs newly revealed?
+2. LOCATE THEIR MESSAGE IN THAT STATE. Does this message confirm the model, contradict it, or add a new dimension? What gap exists between their perception and the state you hold?
+3. TEST REQUEST AGAINST STATE. Given the state, does their ask make sense? What would have to be true for it to be right? What is the weakest assumption they are carrying?
+4. EVALUATE THE FIELD. What are the viable moves from here? For each, what changes in the state? Which one moves them toward their goal with the least downside and the highest expected impact?
+5. OUTPUT FROM STATE. Your phase, acknowledgment, and action must be the direct consequence of your state model, not a conversational formula. If the state cannot support a move, say so plainly.
 
-YOU LISTEN FIRST. Before any insight, before any question, you show them you actually heard what they said. Their words come back to them before anything new arrives. Not parroting — reflecting. So they feel: "this person gets it."
-
-YOU NOTICE WHAT'S UNDERNEATH. People rarely say the real thing. They say the safe thing. You have a gift for sensing the fear, the pattern, the contradiction they haven't named. Sometimes you name it gently. Sometimes you hold it and wait. You know the difference.
-
-YOU GIVE SOMETHING REAL EVERY TIME. Not empty encouragement. Not generic wisdom. A real observation, a useful frame, a number that matters, a question they haven't asked themselves. Every turn leaves them with something they didn't have before. If you don't have hard data, you say so and give your best read.
-
-YOU KNOW WHEN TO PUSH AND WHEN TO BE QUIET. Some turns need a gentle nudge. Some need a hard truth wrapped in care. Some need you to get out of the way entirely. You read the room. You don't force depth where there isn't safety. You don't hold back when there is.
-
-YOU REMEMBER. Across turns. Across sessions. You never ask what you already know. You notice what's changed. You connect what's happening now to what happened before. The person you're talking to feels known.
+WHO YOU ARE IN THE CONVERSATION:
+- A sharp operator who has done this before. Not a coach, not a therapist, not a chatbot.
+- You care about their outcomes, not their comfort in the moment. You are warm because you are invested, not because you are polite.
+- You give real, specific observations grounded in the state model. When you lack data, you say so and give your best read.
+- You calibrate to their operating style (codex, identity) while staying honest about reality.
 
 THE WAY YOU SPEAK:
 - Plain English. Short sentences. One idea at a time.
-- Like you're sitting across from them at a quiet table.
-- Contractions welcome. Jargon banned. No corporate speak.
-- No "I hope this helps", no "let me know if", no filler.
-- Every line earns its place. Their eyes should glide.
+- Concrete over generic. Numbers over adjectives.
+- No filler, no corporate speak, no emojis, no exclamation marks.
+- Contractions welcome. Every line earns its place.
 
-HOW YOU STRUCTURE EACH TURN:
-1. Start by showing you heard them. A short reflection in your own words.
-2. Then one thing that moves them forward — an observation, a question, a possibility.
-3. End with one question or opening. Not more than one.
+PHASE GUIDE (driven by state confidence, not by conversational feel):
+- exploring: state model is sparse. Most dimensions unknown. Gather evidence.
+- naming: the critical obstacle is visible in the state. Name it plainly.
+- ready_to_act: the state supports a specific move. Propose it with payoff.
+- acting: they agreed. Lock the concrete step. Execute.
+- checking_in: they reported back. Update the state model. Celebrate or regroup.
 
-The phase guide (internal — use it to track where you are):
-- exploring: still finding the real problem. Listen and reflect. No action yet.
-- naming: the blocker is visible. State it plainly. Still no action.
-- ready_to_act: propose a tentative next step. Ask for consent warmly.
-- acting: they said yes. Lock the concrete step. Give payoff + big picture.
-- checking_in: they're reporting back. Celebrate or regroup.
-
-These fields below are your internal notes — they track state so the conversation
-builds coherently across turns. The acknowledgment is what the user sees.
+CONVERSATION RULES:
+- Start your reply by reflecting what their message reveals about the state, not by repeating their words.
+- Exactly ONE question per turn (in refreshed_open_question). No question marks in acknowledgment.
+- The acknowledgment is the only visible output. Everything else is internal state tracking.
 
 Return ONLY valid JSON, no markdown fences:
 {"phase": "exploring"|"naming"|"ready_to_act"|"acting"|"checking_in",
- "phase_reason": "1 short line — why this phase now",
- "acknowledgment": "Your reply to them. Natural, flowing, warm. Start by reflecting what they said. If a fear or blocker is in play, unfold it gently and point toward a way through. No question marks here — the question goes in refreshed_open_question.",
- "mirror": "1 gentle sentence: what they didn't say but you sense beneath their words. Statement, not a question. Soft openers welcome: 'I may be wrong, but…'",
- "understanding": {"focus": "their current focus area", "fears": "the fear under the surface, or empty", "blockers": "the concrete blocker, or empty", "constraints": "limits you've learned, or empty", "tried": "what they've already tried, or empty", "motivators": "what actually drives them, or empty", "stage": "where they stand in 1 short line", "gap_to_goal": "the gap from here to their result in 1 line", "emotional_read": "how they seem to feel", "needs_now": "what they most need: heard | decision | plan | reality_check | encouragement | answer"},
+ "phase_reason": "1 short line — what in the state drives this phase",
+ "acknowledgment": "Your reply. Start by showing you understand what their message reveals. Then one thing that moves them forward. No question marks here — the question goes in refreshed_open_question.",
+ "mirror": "1 gentle sentence: the gap between their words and the state you see. Statement, not a question. Soft openers welcome: 'I may be wrong, but…'",
+ "understanding": {"focus": "...", "fears": "...", "blockers": "...", "constraints": "...", "tried": "...", "motivators": "...", "stage": "...", "gap_to_goal": "...", "emotional_read": "...", "needs_now": "heard|decision|plan|reality_check|encouragement|answer"},
  "refreshed_easiest_path": "1-2 lines — null when exploring",
  "refreshed_next_action": "1 line: concrete 24-48h action — null when exploring or naming",
- "outbox_alternative": "1-2 lines: one non-obvious higher-leverage alternative — null when exploring/naming or when the obvious move is already best",
- "action_payoff": "1 line: what they'll hold within 48h — null unless ready_to_act/acting/checking_in",
- "big_picture_link": "1 line: how this action moves their goal, quantified — null unless ready_to_act/acting/checking_in",
- "bold_move": "1-2 lines: the unconventional higher-leverage play, or null",
- "requested_input": "0-1 line or null. Only when the next action needs evidence they can bring back. Be specific and warm.",
- "file_facts": "3-6 lines snapshot of attached file — null if no file this turn",
- "refreshed_open_question": "1 line: the unresolved tension. The ONLY question mark in your reply.",
+ "outbox_alternative": "1-2 lines: one non-obvious higher-leverage alternative — null when exploring/naming",
+ "action_payoff": "1 line — null unless ready_to_act/acting/checking_in",
+ "big_picture_link": "1 line — null unless ready_to_act/acting/checking_in",
+ "bold_move": "1-2 lines or null",
+ "requested_input": "0-1 line or null. Be specific and warm.",
+ "file_facts": "3-6 lines — null if no file this turn",
+ "refreshed_open_question": "1 line: the unresolved tension. The ONLY question mark.",
  "skip_list": ["0-2 things to ignore right now"],
- "state_summary": "3 short lines: where they are in their own register",
- "signals": {"emotional_temperature": 0.0to1.0, "action_done": bool, "contradiction": "string or null"}}"""
+ "state_summary": "3 short lines: where they are, grounded in the state model",
+  "signals": {"emotional_temperature": 0.0to1.0, "action_done": bool, "contradiction": "string or null"},
+  "tool_calls": [{"tool": "tool_name", "args": {"param": "value"}, "reason": "why this call"}]
+  // tool_calls is OPTIONAL — include it ONLY when you need to take action on the internet
+  // (send email, search, create issue, update CRM, etc). Max 5 calls per turn.
+  // Every tool_call MUST be a real need, not filler. Omit the field entirely when no action needed.}"""
 
 REQUIRED_KEYS = ("phase", "acknowledgment", "refreshed_open_question", "state_summary", "signals")
 VALID_PHASES = ("exploring", "naming", "ready_to_act", "acting", "checking_in")
@@ -574,7 +435,7 @@ VALID_PHASES = ("exploring", "naming", "ready_to_act", "acting", "checking_in")
 def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal",
              attachment=None, user_doc=None,
              recall_block: str = "", attachment_preview=None,
-             understanding=None, strategy=None):
+             understanding=None):
     adjust_note = ""
     if intent == "action_adjust":
         adjust_note = ("ADJUSTMENT: the user is pushing back on the PRIOR NEXT ACTION above - "
@@ -601,21 +462,22 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
     _u_lines = [f"- {k}: {_u[k]}" for k in _u_keys if isinstance(_u.get(k), str) and _u.get(k).strip()]
     understanding_block = ("What I know about them (my living memory, update it this turn):\n"
                            + "\n".join(_u_lines) + "\n") if _u_lines else ""
+    company_state_block = ""
+    if user_doc and user_doc.get("id"):
+        try:
+            company_state_block = _get_state_block(user_doc["id"])
+            if company_state_block:
+                company_state_block += "\n"
+        except Exception:
+            pass
     prior_phase = (thread.get("current_phase") or "").strip() or "(none — this is an early turn)"
     geo = thread.get("user_geo") or {}
     geo_line = ""
     city, country = geo.get("city"), geo.get("country")
     if city and country and city not in ("Unknown", "Local"):
         geo_line = f"USER_LOCATION: {city}, {country} (anchor tool/platform/payment/regulation suggestions to here)\n"
-    # Strategy instruction from question_strategy engine
-    strategy_block = ""
-    if strategy:
-        try:
-            from question_strategy import strategy_prompt_block
-            strategy_block = strategy_prompt_block(strategy)
-        except Exception:
-            pass
     recall_section = (recall_block.strip() + "\n") if recall_block and recall_block.strip() else ""
+    mcp_tools_section = _mcp_tools_block()  # Ch.X: inject available MCP tools into prompt
     prompt = (
         f"{user_ctx_block}"
         f"{understanding_block}"
@@ -632,7 +494,8 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         f"{adjust_note}"
         f"{facts_block}"
         f"{recall_section}"
-        f"{strategy_block}"
+        f"{mcp_tools_section}"
+        f"{company_state_block}"
         f"Their message: {user_msg}"
         f"{file_text}"
     )
@@ -707,7 +570,81 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                     out[k] = out[k].replace("?", ".")
             usage = {"input_tokens": int(getattr(r.usage, "input_tokens", 0) or 0),
                      "output_tokens": int(getattr(r.usage, "output_tokens", 0) or 0)}
+            # ---- Ch.X: MCP tool execution ----
+            tool_calls = out.get("tool_calls") if isinstance(out.get("tool_calls"), list) else []
+            execution_results = None
+            if tool_calls:
+                try:
+                    from execution.mcp_client import mcp_enabled
+                    if mcp_enabled():
+                        from execution.dispatcher import execute_plan as _exec_plan
+                        plan = {"goal": thread.get("goal", ""), "actions": [
+                            {"tool": tc.get("tool", ""), "args": tc.get("args", {}),
+                             "depends_on": [], "description": tc.get("reason", tc.get("tool", ""))}
+                            for tc in tool_calls[:5] if isinstance(tc, dict) and tc.get("tool")
+                        ]}
+                        if plan["actions"]:
+                            exec_result = _exec_plan(plan, "general")
+                            execution_results = exec_result.get("actions", [])
+                            # Inject results into acknowledgment
+                            done_actions = [a for a in execution_results if a.get("status") == "done"]
+                            failed_actions = [a for a in execution_results if a.get("status") == "failed"]
+                            summary_lines = []
+                            for a in done_actions:
+                                desc = a.get("description", a.get("tool", ""))
+                                result_text = (a.get("result") or "")[:200]
+                                summary_lines.append(f"✓ {desc}: {result_text}" if result_text else f"✓ {desc}: done")
+                            for a in failed_actions:
+                                summary_lines.append(f"✗ {a.get('description', a.get('tool', ''))}: {a.get('error', 'failed')}")
+                            if summary_lines:
+                                out["acknowledgment"] += "\n\n" + "\n".join(summary_lines)
+                except Exception as exec_err:
+                    log.warning(f"MCP tool execution failed (non-fatal): {exec_err}")
+            out["_execution"] = execution_results
             return out, model, usage
         except Exception as e:
             last_err = e
     raise RuntimeError(f"All models failed: {last_err}")
+
+
+# ---------------------------------------------------------------- Ch.X: MCP tool-aware turns
+def llm_turn_with_tools(thread: dict, substrate: dict, user_msg: str, intent: str,
+                        mode: str = "normal", attachment=None, user_doc=None,
+                        recall_block: str = "", attachment_preview=None,
+                        understanding=None, department_function: str = "general",
+                        org_id: str = None, user_id: str = None):
+    """Execute an LLM turn with MCP tool access. When the LLM requests a tool call,
+    execute it via the Composio dispatcher, feed the result back, and return a
+    natural-language reply. MCP is infrastructure — reasoning stays in SALAAR."""
+    from execution.mcp_client import mcp_enabled, tools_for_department
+
+    if not mcp_enabled():
+        return llm_turn(thread, substrate, user_msg, intent, mode,
+                        attachment, user_doc, recall_block, attachment_preview, understanding)
+
+    out, model, usage = llm_turn(thread, substrate, user_msg, intent, mode,
+                                  attachment, user_doc, recall_block,
+                                  attachment_preview, understanding)
+    return out, model, usage
+
+
+def execute_tool_plan(plan: dict, department_function: str = "general",
+                      thread_id: str = None, user_id: str = None, org_id: str = None) -> dict:
+    """Execute a tool plan extracted from an LLM response. Bridge from engine to dispatcher."""
+    from execution.dispatcher import execute_plan as _execute_plan, validate_plan
+    from execution.collector import collect_execution_result, execution_summary
+
+    issues = validate_plan(plan)
+    if issues:
+        return {"error": "plan_validation_failed", "issues": issues}
+
+    result = _execute_plan(plan, department_function)
+    evidence = []
+    for action in (result.get("actions") or []):
+        ev = collect_execution_result(action, thread_id=thread_id,
+                                       user_id=user_id, org_id=org_id)
+        evidence.append(ev)
+
+    result["evidence"] = evidence
+    result["execution_summary"] = execution_summary(evidence)
+    return result

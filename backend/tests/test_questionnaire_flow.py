@@ -7,14 +7,21 @@ import time
 import requests
 import pytest
 
+import pytest
+
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    # fallback for in-container test runs
-    with open("/app/frontend/.env") as f:
-        for line in f:
-            if line.startswith("REACT_APP_BACKEND_URL="):
-                BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
-                break
+    try:
+        with open("/app/frontend/.env") as f:
+            for line in f:
+                if line.startswith("REACT_APP_BACKEND_URL="):
+                    BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
+                    break
+    except FileNotFoundError:
+        pass
+
+if not BASE_URL:
+    pytest.skip("REACT_APP_BACKEND_URL not set and no .env found — skipping integration tests", allow_module_level=True)
 
 API = f"{BASE_URL}/api"
 

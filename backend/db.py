@@ -1,21 +1,101 @@
-"""Single Mongo client shared by every module (no duplicate connections).
-All collection handles live here so routers never create their own clients."""
+"""Single Mongo client shared by every module.
+All collection handles live here so routers never create their own clients.
+Provides both sync (pymongo) and async (motor) clients.
+Falls back to mongomock (in-memory) when MONGO_URL is not set."""
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from pymongo import MongoClient
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-mongo_url = os.environ.get("MONGO_URL", "")
-mongo = MongoClient(mongo_url, maxPoolSize=100, serverSelectionTimeoutMS=5000) if mongo_url else None
-db = mongo[os.environ.get("DB_NAME", "test_database")] if mongo else None
+mongo_url = os.environ.get("MONGO_URL", "").strip()
+
+if mongo_url:
+    from pymongo import MongoClient
+    import motor.motor_asyncio
+    mongo = MongoClient(mongo_url, maxPoolSize=100, serverSelectionTimeoutMS=5000)
+    db = mongo[os.environ.get("DB_NAME", "smartdecision")]
+    async_mongo = motor.motor_asyncio.AsyncIOMotorClient(mongo_url, maxPoolSize=100, serverSelectionTimeoutMS=5000)
+    async_db = async_mongo[os.environ.get("DB_NAME", "smartdecision")]
+    print(f"[db] Connected to MongoDB at {mongo_url}")
+else:
+    try:
+        import mongomock
+        mongo = mongomock.MongoClient()
+        db = mongo["smartdecision"]
+        async_mongo = None
+        async_db = None
+        print("[db] Using mongomock (in-memory) — set MONGO_URL for production MongoDB")
+    except ImportError:
+        mongo = None
+        db = None
+        async_mongo = None
+        async_db = None
+        print("[db] WARNING: No MongoDB configured and mongomock not available")
 
 
 def _col(name):
     return db[name] if db is not None else None
 
+def _async_col(name):
+    if async_db is not None:
+        return async_db[name]
+    if db is not None:
+        return _MongomockAsyncAdapter(db[name])
+    return None
+
+
+class _MongomockAsyncAdapter:
+    """Wraps a sync pymongo/mongomock collection to work with await syntax."""
+    def __init__(self, sync_col):
+        self._col = sync_col
+
+    async def find_one(self, *args, **kwargs):
+        return self._col.find_one(*args, **kwargs)
+
+    async def insert_one(self, doc, **kwargs):
+        return self._col.insert_one(doc, **kwargs)
+
+    async def update_one(self, *args, **kwargs):
+        return self._col.update_one(*args, **kwargs)
+
+    async def find(self, *args, **kwargs):
+        cursor = self._col.find(*args, **kwargs)
+        return _AsyncCursorWrapper(cursor)
+
+    async def count_documents(self, *args, **kwargs):
+        return self._col.count_documents(*args, **kwargs)
+
+    async def aggregate(self, *args, **kwargs):
+        cursor = self._col.aggregate(*args, **kwargs)
+        return _AsyncCursorWrapper(cursor)
+
+    async def delete_one(self, *args, **kwargs):
+        return self._col.delete_one(*args, **kwargs)
+
+    async def delete_many(self, *args, **kwargs):
+        return self._col.delete_many(*args, **kwargs)
+
+    async def create_index(self, *args, **kwargs):
+        return self._col.create_index(*args, **kwargs)
+
+
+class _AsyncCursorWrapper:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._cursor)
+        except StopIteration:
+            raise StopAsyncIteration
+
+    async def to_list(self, length=None):
+        return list(self._cursor)
 
 users_col = _col("users")
 threads_col = _col("goal_threads")
@@ -34,11 +114,44 @@ decisions_col = _col("decisions")
 plans_col = _col("org_plans")
 journeys_col = _col("journeys")
 shares_col = _col("shares")
-benchmarks_col = _col("benchmarks")
-kpi_events_col = _col("kpi_events")
-gates_col = _col("release_gates")
 tasks_col = _col("tasks")
 subscriptions_col = _col("subscriptions")
 token_usage_col = _col("token_usage")
 user_patterns_col = _col("user_patterns")
 conversation_memory_col = _col("conversation_memory")
+rate_limits_col = _col("rate_limits")
+org_memory_col = _col("organization_memory")    # Ch.18 Autopsy Engine + Ch.26 Org Memory
+executives_col = _col("executives")             # Ch.22 Executive DNA
+executive_messages_col = _col("executive_messages")   # Ch.23 Hierarchy & Communication
+executive_decisions_col = _col("executive_decisions") # Ch.20 Executive Decisions
+resource_requests_col = _col("resource_requests")     # Ch.24 Internal Economy
+projects_col = _col("projects")                       # Ch.36 Project Planning
+automation_templates_col = _col("automation_templates")  # Ch.38 Department Automation
+exec_tasks_col = _col("exec_tasks")                   # Ch.40 Executive task queue (approval → execution)
+genesis_pipelines_col = _col("genesis_pipelines")     # Genesis session state (survives restarts)
+evidence_col = _col("evidence")                       # Ch.44 Verification evidence (the proof engine)
+learning_col = _col("learning_events")                # Ch.47 Verified organizational learning
+
+async_users_col = _async_col("users")
+async_threads_col = _async_col("goal_threads")
+async_events_col = _async_col("substrate_events")
+async_telemetry_col = _async_col("telemetry_events")
+async_ledger_col = _async_col("credit_ledger")
+async_stats_col = _async_col("stats")
+async_traffic_col = _async_col("traffic_sessions")
+async_geo_col = _async_col("geo_cache")
+async_orders_col = _async_col("payment_orders")
+async_feedback_col = _async_col("feedback")
+async_orgs_col = _async_col("organizations")
+async_members_col = _async_col("org_members")
+async_invites_col = _async_col("org_invites")
+async_decisions_col = _async_col("decisions")
+async_plans_col = _async_col("org_plans")
+async_journeys_col = _async_col("journeys")
+async_shares_col = _async_col("shares")
+async_tasks_col = _async_col("tasks")
+async_subscriptions_col = _async_col("subscriptions")
+async_token_usage_col = _async_col("token_usage")
+async_user_patterns_col = _async_col("user_patterns")
+async_conversation_memory_col = _async_col("conversation_memory")
+async_rate_limits_col = _async_col("rate_limits")

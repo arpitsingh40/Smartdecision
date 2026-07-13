@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
@@ -19,9 +20,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from engine import classify_intent, rolling_fields, compute_reengagement_line, llm_turn, llm_complete_action
-from db import users_col, threads_col, events_col, telemetry_col, orgs_col, tasks_col, plans_col, members_col, user_patterns_col
-from security import pwd, make_token, current_user
+from engine import classify_intent, rolling_fields, compute_reengagement_line, llm_turn, llm_complete_action, salaar_route
+from db import (
+    users_col, threads_col, events_col, telemetry_col, orgs_col, tasks_col, plans_col, members_col,
+    async_users_col, async_threads_col, async_events_col, async_telemetry_col,
+)
+from security import pwd, make_token, current_user, current_user_async
 from ledger import record_ledger, inc_stats, ensure_startup
 from tracking import router as tracking_router, client_ip, geo_lookup
 from admin import router as admin_router
@@ -31,67 +35,77 @@ from questionnaire import router as questionnaire_router
 from decision_brain import router as brain_router, ensure_brain_startup
 from organizations import router as org_router, ensure_org_startup
 from founder_profile import router as founder_router
-from question_strategy import decide_strategy, strategy_prompt_block
-from pattern_detector import detect_patterns
-from firebase_auth import router as firebase_auth_router
 from journey import router as journey_router, ensure_journey_startup
 from share import router as share_router, referral_router, ensure_share_startup
-from benchmarks import ensure_benchmarks_startup
-from kpi import router as kpi_router, launch_router, ensure_kpi_startup
-from release_gate import router as release_gate_router, ensure_gate_startup
 from subscriptions import (router as subscriptions_router, deduct_tokens,
-                            get_token_budget, ensure_subscriptions_startup,
-                            process_pending_trial_conversions, process_mandate_executions)
+                            get_token_budget, ensure_subscriptions_startup)
+from executive import router as executive_router, ensure_executive_startup
+from execution.router import router as execution_router
+from execution.tasks_router import router as tasks_router
+from genesis_router import router as genesis_router
 import doc_memory
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
 SIGNUP_CREDITS = int(os.environ.get("SIGNUP_CREDITS", "100"))
-# Token-based billing: 2 credits per 1,000 tokens (input+output combined).
-# Pre-reserve the maximum a turn could cost, run the LLM, then refund the unused portion.
 CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
-TURN_RESERVE_NORMAL = int(os.environ.get("TURN_RESERVE_NORMAL", "8"))     # covers ~4k tokens (normal turn cap)
-TURN_RESERVE_ULTRA = int(os.environ.get("TURN_RESERVE_ULTRA", "24"))      # covers ~12k tokens (ultra with thinking)
-ASSIST_RESERVE = int(os.environ.get("ASSIST_RESERVE", "10"))              # covers ~5k tokens (complete-action cap)
-TURN_RESERVE_VISION = int(os.environ.get("TURN_RESERVE_VISION", "40"))    # covers ~20k tokens (image + PDF + thinking)
+TURN_RESERVE_NORMAL = int(os.environ.get("TURN_RESERVE_NORMAL", "8"))
+TURN_RESERVE_ULTRA = int(os.environ.get("TURN_RESERVE_ULTRA", "24"))
+ASSIST_RESERVE = int(os.environ.get("ASSIST_RESERVE", "10"))
+TURN_RESERVE_VISION = int(os.environ.get("TURN_RESERVE_VISION", "40"))
 
 
 def token_cost(tokens_in: int, tokens_out: int) -> int:
-    """Actual credit cost from real token usage. Minimum 1 credit so trivial turns aren't free."""
     total = (tokens_in or 0) + (tokens_out or 0)
     return max(1, math.ceil(total / 1000) * CREDITS_PER_1K_TOKENS)
 
 
 def deduct_usage(user_id: str, tokens_in: int, tokens_out: int, cost: int):
-    """Deduct usage from subscription token budget first, then from credits as fallback.
-    Used after every LLM call to account for actual consumption."""
     try:
         deduct_tokens(user_id, tokens_in, tokens_out)
     except HTTPException:
-        pass  # subscription deduction is best-effort; credit check below enforces the hard limit
+        pass
     if cost > 0:
         users_col.update_one({"id": user_id, "credits": {"$gte": cost}},
                              {"$inc": {"credits": -cost}})
 
-# ----------------------------------------------------------------- rate limiting
-_RATE_LIMITS: dict[str, list[float]] = {}  # key -> [timestamp, ...]
-_RATE_WINDOW = 60.0
 
-def _rate_limit(key: str, max_reqs: int = 60, window: float = _RATE_WINDOW):
-    now = time.time()
-    bucket = _RATE_LIMITS.setdefault(key, [])
-    bucket[:] = [t for t in bucket if now - t < window]
-    if len(bucket) >= max_reqs:
-        raise HTTPException(429, "Too many requests. Please slow down.")
-    bucket.append(now)
+from ratelimit import general_limiter, strict_limiter
+
+def _rate_limit(key: str, max_reqs: int = 60, window: float = 60.0):
+    limiter = strict_limiter if max_reqs < 60 else general_limiter
+    limiter.check(key)
 
 import re as _re
 
 _XSS_PAT = _re.compile(r'<[^>]*\s*(?:on\w+\s*=|javascript\s*:|data\s*:)', _re.I)
 
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    if os.environ.get("MONGO_URL"):
+        try:
+            ensure_startup()
+            ensure_org_startup()
+            ensure_brain_startup()
+            ensure_journey_startup()
+            ensure_share_startup()
+            ensure_subscriptions_startup()
+            ensure_executive_startup()
+        except Exception as e:
+            log.warning(f"Startup init failed (DB may not be ready): {e}")
+        scheduler.start()
+        log.info("scheduler started")
+    else:
+        log.warning("MONGO_URL not set — skipping DB startup.")
+    yield
+    scheduler.shutdown(wait=False) if scheduler.running else None
+
+
 app = FastAPI(title="SmartDecigen Deep Discussion Engine",
               docs_url=None if os.environ.get("DISABLE_DOCS") else "/docs",
-              redoc_url=None if os.environ.get("DISABLE_DOCS") else "/redoc")
+              redoc_url=None if os.environ.get("DISABLE_DOCS") else "/redoc",
+              lifespan=_lifespan)
 
 @app.middleware("http")
 async def _security_middleware(request: Request, call_next):
@@ -107,15 +121,14 @@ async def _security_middleware(request: Request, call_next):
     return response
 
 api = APIRouter(prefix="/api")
+v1 = APIRouter(prefix="/api/v1")  # Ch.54: versioned API — all new endpoints go here
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("sdg")
 
-# ----------------------------------------------------------------- helpers
 def now_utc():
     return datetime.now(timezone.utc)
 
 def serialize(doc):
-    """Recursively convert Mongo doc to JSON-safe types."""
     if isinstance(doc, dict):
         return {k: serialize(v) for k, v in doc.items() if k != "_id"}
     if isinstance(doc, list):
@@ -129,12 +142,11 @@ def as_aware(dt):
         return dt.replace(tzinfo=timezone.utc)
     return dt
 
-# ----------------------------------------------------------------- models
 class SignupIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     name: str = ""
-    ref: str = ""  # optional referral code (Layer 3 virality): both sides get REFERRAL_BONUS credits
+    ref: str = ""
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -146,28 +158,25 @@ class GoalIn(BaseModel):
 
 class TurnIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
-    mode: str = "normal"  # normal (Opus 4.8) | ultra (Fable 5 ultra thinking)
-    adjust: bool = False  # true = user is reshaping the current next action (obstacle / their version)
-    # multi-modal: optional file / image attachment, base64-encoded (≤ 8 MB raw)
+    mode: str = "normal"
+    adjust: bool = False
     attachment_base64: Optional[str] = None
     attachment_filename: Optional[str] = None
     attachment_mime: Optional[str] = None
 
 class StatusIn(BaseModel):
-    status: str  # active | paused | graduated | released
+    status: str
 
 
-# ----------------------------------------------------------------- public config
 @api.get("/config")
-def public_config():
-    """Public, unauthenticated. Lets the marketing surfaces show the live signup grant."""
+async def public_config():
     return {"signup_credits": int(os.environ.get("SIGNUP_CREDITS", 100))}
 
 
-# ----------------------------------------------------------------- auth
 @api.post("/auth/signup")
-def signup(body: SignupIn, request: Request):
-    if users_col.find_one({"email": body.email.lower()}):
+async def signup(body: SignupIn, request: Request):
+    existing = await async_users_col.find_one({"email": body.email.lower()})
+    if existing:
         raise HTTPException(409, "An account with this email already exists")
     ip = client_ip(request)
     geo = geo_lookup(ip)
@@ -185,10 +194,9 @@ def signup(body: SignupIn, request: Request):
         "questions_asked": 0, "tokens_in": 0, "tokens_out": 0,
         "credits_issued_free": SIGNUP_CREDITS, "credits_issued_paid": 0,
     }
-    users_col.insert_one(user)
+    await async_users_col.insert_one(user)
     record_ledger(user["id"], "free_grant", SIGNUP_CREDITS, reason="signup")
     inc_stats({"credits_issued_free": SIGNUP_CREDITS})
-    # Layer 3 virality: referred signup -> both sides earn the bonus (invalid codes are ignored, never block signup)
     ref = (body.ref or "").strip()
     if ref:
         referrer = users_col.find_one({"referral_code": ref}, {"id": 1, "email": 1})
@@ -205,39 +213,33 @@ def signup(body: SignupIn, request: Request):
     return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False}}
 
 @api.post("/auth/login")
-def login(body: LoginIn, request: Request):
-    user = users_col.find_one({"email": body.email.lower()})
+async def login(body: LoginIn, request: Request):
+    user = await async_users_col.find_one({"email": body.email.lower()})
     if not user or not pwd.verify(body.password, user["password_hash"]):
         raise HTTPException(401, "Incorrect email or password")
     ip = client_ip(request)
-    users_col.update_one({"id": user["id"]}, {"$set": {"last_login_at": now_utc(), "last_ip": ip}})
+    await async_users_col.update_one({"id": user["id"]}, {"$set": {"last_login_at": now_utc(), "last_ip": ip}})
     if not user.get("country"):
         geo = geo_lookup(ip)
-        users_col.update_one({"id": user["id"]}, {"$set": {"country": geo["country"], "city": geo["city"]}})
+        await async_users_col.update_one({"id": user["id"]}, {"$set": {"country": geo["country"], "city": geo["city"]}})
     return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}}
 
 @api.get("/auth/me")
-def me(user: dict = Depends(current_user)):
+async def me(user: dict = Depends(current_user_async)):
     return {"id": user["id"], "phone": user.get("phone", ""), "email": user.get("email", ""), "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}
 
-# ----------------------------------------------------------------- turn pipeline (6 steps, 1 LLM call)
+
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
                  intent_override: str = None, attachment: Optional[dict] = None,
                  attachment_preview: Optional[dict] = None):
-    """Runs the full turn. Returns (out, intent, model, latency, usage).
-    Credit deduction is handled by the caller (reserve-and-reconcile against real token usage).
-    `attachment` (optional dict): {filename, mime, base64} — file/image the user uploaded with this turn."""
     t0 = time.time()
     now = now_utc()
     last_at = as_aware(thread.get("last_turn_at")) or as_aware(thread["opened_at"])
     days_gap = (now - last_at).total_seconds() / 86400
-
-    # step 2: substrate refresh (pure)
     events = list(events_col.find({"thread_id": thread["thread_id"]}))
     for e in events:
         e["at"] = as_aware(e["at"])
     substrate = rolling_fields(events, now)
-    # streak: consecutive kept actions, most recent first (felt momentum, passed to engine voice)
     streak = 0
     for e in sorted(events, key=lambda x: x["at"], reverse=True):
         if e.get("action_done"):
@@ -245,42 +247,13 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
         else:
             break
     substrate["streak"] = streak
-    # step 3: intent (pure; explicit override wins - e.g. action_adjust from the next-action block)
     intent = intent_override or classify_intent(message, days_gap)
-
-    # step 3b: question strategy — decide what kind of turn to take
+    route = salaar_route(message, thread, user)
+    if route != "engine":
+        log.info(f"salaar route: {route} for user {user.get('id','')[:8]} intent={intent}")
     user_doc = users_col.find_one({"id": user["id"]}) or user
     understanding = (user_doc or {}).get("understanding")
-    # Build understanding_history for pattern detection from stored user_patterns
-    stored_patterns = user_patterns_col.find_one({"user_id": user["id"]}) or {}
-    understanding_history = stored_patterns.get("understanding_history", [])
-    substrate_history = stored_patterns.get("substrate_history", [])
-    # Run pattern detection (history already contains the latest persisted state)
-    # Run pattern detection
-    try:
-        patterns = detect_patterns(
-            [u for u in understanding_history if isinstance(u, dict)],
-            substrate_history,
-            user["id"], thread["thread_id"],
-        )
-    except Exception:
-        patterns = {"pattern_type": None, "confidence": 0.0, "observation": None, "evidence_count": 0}
-    # Decide strategy
-    strategy = decide_strategy(
-        understanding=understanding,
-        substrate=substrate,
-        intent=intent,
-        phase=thread.get("current_phase") or "exploring",
-        turn_count=stored_patterns.get("total_turns", 0) + 1,
-        vulnerability_history=stored_patterns.get("vulnerability_count", 0),
-        patterns=patterns,
-    )
-
-    # step 4: single LLM call (normal: Opus 4.8 -> Haiku 4.5 | ultra: Fable 5 -> Opus 4.8 -> Haiku 4.5
-    # | file/recall: Sonnet 4.5 -> Opus -> Haiku)
-    # Refresh the user doc so any newly-saved questionnaire answers are part of the system context.
     user_doc = users_col.find_one({"id": user["id"]}) or user
-    # step 4a: hierarchical recall over indexed docs on this thread (cheap, ~100 ms; empty when none).
     try:
         recall_block = doc_memory.recall(thread["thread_id"], message)
     except Exception as e:
@@ -290,10 +263,8 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
                                  attachment=attachment, user_doc=user_doc,
                                  recall_block=recall_block,
                                  attachment_preview=attachment_preview,
-                                 understanding=understanding,
-                                 strategy=strategy)
+                                 understanding=understanding)
     sig = out["signals"]
-    # step 5: state update
     events_col.insert_one({
         "id": str(uuid.uuid4()), "thread_id": thread["thread_id"], "user_id": user["id"], "at": now,
         "emotional_temperature": float(sig.get("emotional_temperature", 0.5)),
@@ -323,19 +294,15 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
             "current_requested_input": (out.get("requested_input") or "").strip() or None,
             "current_mirror": out.get("mirror"),
             "current_insight": (out.get("insight") or "").strip() or None,
-            "current_action_artifact": None,  # new action -> old "Do it for me" draft is stale
+            "current_action_artifact": None,
             "skip_list": out.get("skip_list", []),
             "last_turn_at": now,
             "snapshot_at_last_turn": new_snapshot,
             "rolling": {k: new_snapshot[k] for k in ("emotional_temperature", "execution_consistency", "pace_calibration")},
-            # Persist file_facts ONLY when the engine produced a new one this turn (i.e. user
-            # attached a file). On turns without an attachment, leave the prior snapshot intact
-            # so the file effectively "stays in the room" across the conversation.
             **({"current_file_facts": (out.get("file_facts") or "").strip()} if (out.get("file_facts") or "").strip() else {}),
         },
         "$push": {"messages": {"$each": new_msgs}},
     })
-    # step 6: telemetry + usage counters (pre-aggregated -> Founder OS reads stay O(1))
     latency = round(time.time() - t0, 2)
     actual_cost = token_cost(usage["input_tokens"], usage["output_tokens"])
     telemetry_col.insert_one({"id": str(uuid.uuid4()), "type": "discussion_turn", "user_id": user["id"],
@@ -346,51 +313,28 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
     user_set = {"last_active_at": now}
     _understanding = out.get("understanding")
     if isinstance(_understanding, dict) and any((str(v).strip() for v in _understanding.values())):
-        user_set["understanding"] = _understanding  # living memory, compounds across threads
+        user_set["understanding"] = _understanding
     users_col.update_one({"id": user["id"]}, {
         "$inc": {"questions_asked": 1, "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
         "$set": user_set})
+    # ---- Ch.X: Store MCP execution evidence in thread ----
+    execution = out.get("_execution")
+    if execution:
+        threads_col.update_one({"thread_id": thread["thread_id"]}, {
+            "$push": {"execution_log": {"$each": [{"at": now, "actions": execution}]}}})
     inc_stats({"questions_total": 1, ("turns_ultra" if mode == "ultra" else "turns_normal"): 1,
                "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]})
-    # Persist pattern data with post-turn understanding
-    try:
-        user_patterns_col.update_one({"user_id": user["id"]}, {
-            "$set": {
-                "last_pattern_check": now,
-                "patterns": patterns,
-            },
-            "$inc": {"total_turns": 1},
-            "$push": {
-                "understanding_history": {"$each": [_understanding] if _understanding and isinstance(_understanding, dict) else [],
-                                          "$slice": -50},
-                "substrate_history": {"$each": [new_snapshot], "$slice": -50},
-            },
-        }, upsert=True)
-    except Exception:
-        pass
-    # Track vulnerability: when fears field deepens, user shared something vulnerable
-    try:
-        if _understanding and isinstance(_understanding, dict):
-            old_fears = (understanding or {}).get("fears", "")
-            new_fears = _understanding.get("fears", "")
-            if isinstance(new_fears, str) and new_fears.strip() and new_fears != old_fears:
-                user_patterns_col.update_one({"user_id": user["id"]},
-                    {"$inc": {"vulnerability_count": 1}})
-    except Exception:
-        pass
     return out, intent, model, latency, usage
 
-# ----------------------------------------------------------------- goals & threads
+
 @api.post("/goals")
-def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_user)):
-    # reserve the max a normal turn could cost; reconcile to actual after the LLM responds
+async def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_user_async)):
     reserve = TURN_RESERVE_NORMAL
     u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
                                       {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
     if not u:
         raise HTTPException(402, "Not enough credits")
     now = now_utc()
-    # Resolve user's location once at thread open — drives local-content personalisation in the engine prompt.
     try:
         geo = geo_lookup(client_ip(request)) or {}
         user_geo = {"city": geo.get("city") or "", "country": geo.get("country") or "",
@@ -411,18 +355,21 @@ def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_use
         "skip_list": [], "messages": [], "last_turn_at": None, "snapshot_at_last_turn": None,
         "rolling": {"emotional_temperature": 0.5, "execution_consistency": 0.5, "pace_calibration": "on-track"},
     }
+    # Ch.33: stamp with current mission version for traceability
+    org = orgs_col.find_one({"id": user.get("org_id")}) if user.get("org_id") else None
+    if org:
+        thread["mission_version"] = org.get("strategy_version", 0)
     threads_col.insert_one(thread)
     try:
         out, intent, model, latency, usage = run_pipeline(thread, user, body.why_now.strip())
     except Exception as e:
         try:
-            users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
+            users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})
         except Exception as refund_err:
             log.error(f"CRITICAL: refund failed after goal-open LLM failure for user={user['id']} reserve={reserve}: {refund_err}")
         threads_col.delete_one({"thread_id": thread["thread_id"]})
         log.error(f"goal creation turn failed: {e}")
         raise HTTPException(502, "The engine could not open this thread. You were not charged — try again.")
-    # reconcile: refund reserved - actual
     actual = token_cost(usage["input_tokens"], usage["output_tokens"])
     deduct_usage(user["id"], usage["input_tokens"], usage["output_tokens"], actual)
     refund = max(0, reserve - actual)
@@ -439,10 +386,11 @@ def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_use
             "token_usage": token_budget}
 
 @api.get("/goals")
-def list_goals(user: dict = Depends(current_user)):
+async def list_goals(user: dict = Depends(current_user_async)):
     now = now_utc()
     items = []
-    for t in threads_col.find({"user_id": user["id"]}).sort("opened_at", -1):
+    cursor = async_threads_col.find({"user_id": user["id"]}).sort("opened_at", -1)
+    async for t in cursor:
         last_at = as_aware(t.get("last_turn_at"))
         hours_since = (now - last_at).total_seconds() / 3600 if last_at else None
         items.append({
@@ -456,17 +404,17 @@ def list_goals(user: dict = Depends(current_user)):
             "opened_at": t["opened_at"].isoformat() if isinstance(t.get("opened_at"), datetime) else t.get("opened_at"),
             "last_turn_at": t["last_turn_at"].isoformat() if isinstance(t.get("last_turn_at"), datetime) else t.get("last_turn_at"),
         })
-    kept = events_col.count_documents({"user_id": user["id"], "action_done": True})
+    kept = await async_events_col.count_documents({"user_id": user["id"], "action_done": True})
     week_ago = now - timedelta(days=7)
-    turns_week = telemetry_col.count_documents({"user_id": user["id"], "type": "discussion_turn", "at": {"$gte": week_ago}})
+    turns_week = await async_telemetry_col.count_documents({"user_id": user["id"], "type": "discussion_turn", "at": {"$gte": week_ago}})
     active = [g for g in items if g["status"] == "active"]
     avg_consistency = round(sum(g["consistency"] for g in active) / len(active), 2) if active else None
     return {"goals": items, "momentum": {"kept_promises": kept, "turns_this_week": turns_week,
                                          "avg_consistency": avg_consistency}}
 
 @api.get("/threads/{thread_id}")
-def get_thread(thread_id: str, user: dict = Depends(current_user)):
-    t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
+async def get_thread(thread_id: str, user: dict = Depends(current_user_async)):
+    t = await async_threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
     if not t:
         raise HTTPException(404, "Thread not found")
     now = now_utc()
@@ -493,41 +441,36 @@ def get_thread(thread_id: str, user: dict = Depends(current_user)):
             "hours_since_turn": round(hours_since) if hours_since is not None else None}
 
 @api.post("/threads/{thread_id}/turn")
-def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundTasks, user: dict = Depends(current_user)):
+async def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundTasks, user: dict = Depends(current_user_async)):
     if body.mode not in ("normal", "ultra"):
         raise HTTPException(422, "mode must be 'normal' or 'ultra'")
     if body.mode == "ultra":
         budget = get_token_budget(user["id"])
         if not budget.get("ultra_enabled"):
             raise HTTPException(402, "Ultra thinking requires a Pro subscription. Upgrade to use this feature.")
-    # Refresh user's geo on each turn — covers users who travel or open the app on a different network.
-    # Light: persisted on the thread only when it actually changed (no extra prompt tokens if stable).
     try:
         fresh = geo_lookup(client_ip(request)) or {}
         if fresh.get("city") and fresh.get("city") not in ("Unknown", "Local"):
-            threads_col.update_one({"thread_id": thread_id, "user_id": user["id"],
-                                    "user_geo.city": {"$ne": fresh.get("city")}},
-                                   {"$set": {"user_geo": {"city": fresh.get("city"),
-                                                          "country": fresh.get("country"),
-                                                          "country_code": fresh.get("country_code", "")}}})
+            async_threads_col.update_one({"thread_id": thread_id, "user_id": user["id"],
+                                          "user_geo.city": {"$ne": fresh.get("city")}},
+                                         {"$set": {"user_geo": {"city": fresh.get("city"),
+                                                                "country": fresh.get("country"),
+                                                                "country_code": fresh.get("country_code", "")}}})
     except Exception as e:
         log.debug(f"per-turn geo refresh skipped: {e}")
-    # Attachment? Use a larger reserve (vision + extracted file text both inflate token usage).
     attachment = None
-    attachment_preview = None  # set when we pre-extract via doc_memory (skips engine's internal extractor)
+    attachment_preview = None
     if body.attachment_base64:
-        if len(body.attachment_base64) > 12_000_000:  # ~9 MB raw cap to keep memory + token cost sane
+        if len(body.attachment_base64) > 12_000_000:
             raise HTTPException(413, "Attachment too large. Keep files under 8 MB.")
         attachment = {"base64": body.attachment_base64,
                       "filename": body.attachment_filename or "attachment",
                       "mime": body.attachment_mime or ""}
-        # Pre-extract: returns inline-text for small files, or schedules tree build for big ones.
         try:
             vblocks, inline_text, tree_id = doc_memory.extract(
                 attachment["filename"], attachment["mime"], attachment["base64"], thread_id)
             attachment_preview = {"vision_blocks": vblocks, "inline_text": inline_text}
             if tree_id:
-                # Re-parse on the worker so the full raw text stays out of memory of the request thread.
                 import base64 as _b64
                 raw = _b64.b64decode(attachment["base64"])
                 kind, full_text, chapters = doc_memory.parse_file(
@@ -542,7 +485,7 @@ def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundT
         reserve = TURN_RESERVE_ULTRA
     else:
         reserve = TURN_RESERVE_NORMAL
-    t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
+    t = await async_threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
     if not t:
         raise HTTPException(404, "Thread not found")
     if t["status"] != "active":
@@ -558,7 +501,7 @@ def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundT
                                                    attachment_preview=attachment_preview)
     except Exception as e:
         try:
-            users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
+            users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})
         except Exception as refund_err:
             log.error(f"CRITICAL: refund failed after turn LLM failure for user={user['id']} reserve={reserve}: {refund_err}")
         log.error(f"turn failed: {e}")
@@ -581,11 +524,9 @@ def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundT
             "had_attachment": bool(attachment),
             "token_usage": token_budget}
 
-# ----------------------------------------------------------------- "Do it for me": ship-ready artifact for the next action
-# Token-based billing: 2 credits per 1,000 tokens (input+output). Reserve-and-reconcile so unused tokens are refunded.
 @api.post("/threads/{thread_id}/complete-action")
-def complete_action(thread_id: str, user: dict = Depends(current_user)):
-    t = threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
+async def complete_action(thread_id: str, user: dict = Depends(current_user_async)):
+    t = await async_threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
     if not t:
         raise HTTPException(404, "Thread not found")
     if t["status"] != "active":
@@ -602,7 +543,7 @@ def complete_action(thread_id: str, user: dict = Depends(current_user)):
         fresh_user = users_col.find_one({"id": user["id"]}) or user
         out, model, usage = llm_complete_action(t, user_doc=fresh_user)
     except Exception as e:
-        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
+        users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})
         log.error(f"complete-action failed: {e}")
         raise HTTPException(502, "The engine could not prepare this. You were not charged — try again.")
     total_tokens = usage["input_tokens"] + usage["output_tokens"]
@@ -637,16 +578,16 @@ def complete_action(thread_id: str, user: dict = Depends(current_user)):
             "tokens": total_tokens, "token_usage": token_budget}
 
 @api.patch("/threads/{thread_id}/status")
-def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user)):
+async def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user_async)):
     if body.status not in ("active", "paused", "graduated", "released"):
         raise HTTPException(422, "Invalid status")
-    r = threads_col.update_one({"thread_id": thread_id, "user_id": user["id"]}, {"$set": {"status": body.status}})
+    r = await async_threads_col.update_one({"thread_id": thread_id, "user_id": user["id"]}, {"$set": {"status": body.status}})
     if r.matched_count == 0:
         raise HTTPException(404, "Thread not found")
     return {"ok": True, "status": body.status}
 
 @api.get("/credits")
-def credits(user: dict = Depends(current_user)):
+async def credits(user: dict = Depends(current_user_async)):
     return {"credits": user.get("credits", 0),
             "turn_cost": TURN_COST, "ultra_turn_cost": ULTRA_TURN_COST,
             "credits_per_1k_tokens": CREDITS_PER_1K_TOKENS,
@@ -656,7 +597,11 @@ def credits(user: dict = Depends(current_user)):
 
 @api.get("/")
 def root():
-    return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok"}
+    return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok", "version": "1"}
+
+@v1.get("")
+def v1_root():
+    return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok", "version": "1"}  # ponytail: duplicate needed for /api/v1 root
 
 @api.get("/robots.txt", include_in_schema=False)
 def robots():
@@ -664,17 +609,31 @@ def robots():
     return Response(content="User-agent: *\nDisallow: /\n", media_type="text/plain")
 
 app.include_router(api)
+app.include_router(v1)  # Ch.54: versioned API — new endpoints go under /api/v1
 
-# ----------------------------------------------------------------- frontend static serving
 FRONTEND_BUILD = Path(__file__).parent.parent / "frontend" / "build"
 if FRONTEND_BUILD.is_dir():
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse
 
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_BUILD / "static")), name="frontend-static")
+    # Vite outputs build/assets; older CRA builds used build/static. Mount what exists.
+    for _sub in ("assets", "static"):
+        _dir = FRONTEND_BUILD / _sub
+        if _dir.is_dir():
+            app.mount(f"/{_sub}", StaticFiles(directory=str(_dir)), name=f"frontend-{_sub}")
 
     @app.exception_handler(404)
     async def _spa_fallback(request: Request, exc):
+        # API 404s must stay JSON 404s — swallowing them returns 200+HTML to API
+        # clients and masks real errors. Only client-side routes get index.html.
+        if request.url.path.startswith("/api"):
+            from fastapi.responses import JSONResponse
+            detail = getattr(exc, "detail", None) or "Not Found"
+            return JSONResponse({"detail": detail}, status_code=404)
+        # Real build files (favicon, manifest, …) are served as themselves.
+        candidate = (FRONTEND_BUILD / request.url.path.lstrip("/")).resolve()
+        if candidate.is_file() and str(candidate).startswith(str(FRONTEND_BUILD.resolve())):
+            return FileResponse(str(candidate))
         return FileResponse(str(FRONTEND_BUILD / "index.html"), media_type="text/html")
 
     log.info(f"frontend build served from {FRONTEND_BUILD}")
@@ -687,21 +646,19 @@ app.include_router(questionnaire_router)
 app.include_router(brain_router)
 app.include_router(org_router)
 app.include_router(founder_router)
-app.include_router(firebase_auth_router)
 app.include_router(journey_router)
 app.include_router(share_router)
 app.include_router(referral_router)
-app.include_router(kpi_router)
-app.include_router(launch_router)
-app.include_router(release_gate_router)
 app.include_router(subscriptions_router)
+app.include_router(executive_router)
+app.include_router(execution_router)
+app.include_router(tasks_router)
+app.include_router(genesis_router)
 
-# ----------------------------------------------------------------- scheduler: OKR task automation
 scheduler = BackgroundScheduler(daemon=True)
 
 
 def _saturday_night_generate():
-    """Saturday 10 PM: generate next week's tasks for every org with an active plan."""
     log.info("scheduler: Saturday night task generation starting")
     try:
         plans = list(plans_col.find({"status": "active"}))
@@ -786,14 +743,11 @@ def _saturday_night_generate():
 
 
 def _six_hour_housekeeping():
-    """Every 6 hours: check overdue tasks, nearing-due tasks, and escalate clarifications."""
     log.info("scheduler: 6h housekeeping starting")
     try:
         now = now_utc()
         now_iso = now.isoformat()
         six_hours_later = (now + timedelta(hours=6)).isoformat()
-
-        # 1. Find overdue tasks and log escalation
         overdue = list(tasks_col.find({
             "status": {"$nin": ["done", "awaiting_review"]},
             "due_at": {"$lt": now_iso, "$ne": None},
@@ -804,16 +758,12 @@ def _six_hour_housekeeping():
                     "escalation.dept_head_contacted": True,
                     "escalation.escalated_at": now_iso,
                 }})
-
-        # 2. Find tasks nearing due (within 24h) for auto-follow-up
         nearing = list(tasks_col.find({
             "status": {"$in": ["pending", "in_progress"]},
             "due_at": {"$gte": now_iso, "$lte": six_hours_later},
         }))
         if nearing:
             log.info(f"scheduler: {len(nearing)} tasks nearing due")
-
-        # 3. Escalate unanswered clarifications (dept head hasn't responded in 24h)
         clarified = list(tasks_col.find({
             "status": "needs_clarification",
             "escalation.dept_head_contacted": True,
@@ -835,38 +785,13 @@ def _six_hour_housekeeping():
 
 
 def _monday_morning_digest():
-    """Monday 6 AM: mark digest ready for all orgs with active plans (handled by cockpit polling)."""
     log.info("scheduler: Monday morning digest ready")
-    # Digest is computed on-demand via GET /org/tasks/weekly-digest
-    # This hook exists for future notification delivery
 
 
 scheduler.add_job(_saturday_night_generate, CronTrigger(day_of_week="sat", hour=22, minute=0, timezone="Asia/Kolkata"))
 scheduler.add_job(_monday_morning_digest, CronTrigger(day_of_week="mon", hour=6, minute=0, timezone="Asia/Kolkata"))
 scheduler.add_job(_six_hour_housekeeping, IntervalTrigger(hours=6))
-scheduler.add_job(process_pending_trial_conversions, CronTrigger(hour=6, minute=0))
-scheduler.add_job(process_mandate_executions, CronTrigger(hour=7, minute=0))
 
-
-@app.on_event("startup")
-def _startup():
-    if not os.environ.get("MONGO_URL"):
-        log.warning("MONGO_URL not set — skipping DB startup. Server will start but DB features won't work until MONGO_URL is configured.")
-        return
-    try:
-        ensure_startup()
-        ensure_org_startup()
-        ensure_brain_startup()
-        ensure_journey_startup()
-        ensure_share_startup()
-        ensure_benchmarks_startup()
-        ensure_kpi_startup()
-        ensure_gate_startup()
-        ensure_subscriptions_startup()
-    except Exception as e:
-        log.warning(f"Startup init failed (DB may not be ready): {e}")
-    scheduler.start()
-    log.info("scheduler started")
 
 app.add_middleware(
     CORSMiddleware,

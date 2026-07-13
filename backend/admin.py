@@ -28,9 +28,10 @@ USD_TO_INR = _f("USD_TO_INR", 83.0)
 
 # {model_id: (input_usd_per_M, output_usd_per_M, label)}
 MODEL_PRICING = {
-    "gemini-3.5-flash": (_f("PRICE_GEMINI_IN", 0.0), _f("PRICE_GEMINI_OUT", 0.0), "Gemini 3.5 Flash"),
+    "deepseek-flash": (_f("PRICE_FLASH_IN", 0.0), _f("PRICE_FLASH_OUT", 0.0), "Standard Engine"),
+    "deepseek-v4-pro": (_f("PRICE_PRO_IN", 0.0), _f("PRICE_PRO_OUT", 0.0), "Ultra Engine"),
 }
-UNKNOWN_PRICING = (_f("PRICE_OPUS_IN", 15.0), _f("PRICE_OPUS_OUT", 75.0), "Unknown")
+UNKNOWN_PRICING = (_f("PRICE_UNKNOWN_IN", 15.0), _f("PRICE_UNKNOWN_OUT", 75.0), "Pro Engine")
 
 
 def _price_inr(model: str, tokens_in: int, tokens_out: int) -> float:

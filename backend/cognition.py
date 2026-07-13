@@ -14,8 +14,9 @@ cognition_block() returns one string ready to inject into any engine prompt.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
-from db import users_col, decisions_col, journeys_col
+from db import users_col, decisions_col, journeys_col, members_col, orgs_col, threads_col, telemetry_col
 from lenses import select_lenses
 
 log = logging.getLogger("cognition")
@@ -259,10 +260,134 @@ def company_state_block(user_id: str) -> str:
     )
 
 
+# --------------------------------------------------------------- L3 founder operating codex
+def codex_block(user: dict) -> str:
+    """Compact founder operating codex from the founder_profile on the org.
+    Tells the engine HOW to work with this person (personality, style, blind spots),
+    not just WHO they are. Silently adapts tone and framing.
+    Returns empty string when no profile exists."""
+    if not user:
+        return ""
+    try:
+        m = members_col.find_one({"user_id": user["id"], "status": "active", "role": "owner"})
+        if not m:
+            return ""
+        org = orgs_col.find_one({"id": m["org_id"]}, {"_id": 0, "founder_profile": 1})
+    except Exception:
+        return ""
+    if not org:
+        return ""
+    p = org.get("founder_profile") or {}
+    if not isinstance(p, dict):
+        return ""
+    summary = (p.get("summary") or "").strip()
+    if not summary:
+        return ""
+    lines = [f"- Operator summary: {summary}"]
+    for key, label in (
+        ("personality", "Personality"),
+        ("working_style", "Working style"),
+        ("communication_style", "Communication style"),
+        ("decision_style", "Decision style"),
+        ("risk_appetite", "Risk appetite"),
+        ("strengths", "Strengths"),
+        ("blind_spots", "Watch for"),
+        ("motivations", "Motivations"),
+    ):
+        val = (p.get(key) or "").strip()
+        if val:
+            lines.append(f"- {label}: {val}")
+    return (
+        "FOUNDER CODEX — how to work with THIS person (silently adapt your tone, framing, "
+        "and recommendations to fit their operating style; never quote this back at them):\n"
+        + "\n".join(lines)
+    )
+
+
+# --------------------------------------------------------------- Ch.11: Decision DNA
+def decision_dna_block(user_id: str) -> str:
+    """Inferred decision algorithm from observed behavior. Pure computation, zero LLM.
+    Models HOW the founder decides: speed, risk, phase preferences, decision types."""
+    try:
+        decisions = list(decisions_col.find(
+            {"user_id": user_id},
+            {"_id": 0, "mode": 1, "status": 1, "committed_action": 1, "created_at": 1,
+             "predicted_outcome": 1, "outcome": 1},
+        ).sort("created_at", -1).limit(50))
+        turns = list(telemetry_col.find(
+            {"user_id": user_id, "type": "discussion_turn"},
+            {"_id": 0, "at": 1},
+        ).sort("at", -1).limit(50))
+    except Exception as e:
+        log.warning(f"decision_dna lookup failed: {e}")
+        return ""
+
+    n = len(decisions)
+    if n < 3:
+        return ""  # not enough data
+
+    # Decision speed: average days between turns
+    def _aware(dt):
+        if not isinstance(dt, datetime):
+            return datetime.min.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    speed = "medium"
+    if len(turns) >= 4:
+        sorted_turns = sorted(turns, key=lambda x: _aware(x.get("at")))
+        gaps = []
+        for i in range(1, len(sorted_turns)):
+            a = sorted_turns[i-1].get("at")
+            b = sorted_turns[i].get("at")
+            if a and b:
+                gaps.append((_aware(b) - _aware(a)).total_seconds() / 3600)
+        if gaps:
+            avg_hours = sum(gaps) / len(gaps)
+            speed = "fast" if avg_hours < 48 else ("slow" if avg_hours > 168 else "medium")
+
+    # Risk appetite: inferred from commitment rate and outcome success
+    committed = sum(1 for d in decisions if d.get("committed_action"))
+    commit_rate = committed / n if n else 0
+    outcomes = [d for d in decisions if (d.get("outcome") or {}).get("status") in ("success", "partial", "failed")]
+    success_rate = sum(1 for d in outcomes if d["outcome"]["status"] == "success") / len(outcomes) if outcomes else 0.5
+    risk = "high" if commit_rate > 0.7 and success_rate > 0.6 else ("low" if commit_rate < 0.3 else "medium")
+
+    # Preferred decision modes
+    modes = {}
+    for d in decisions:
+        m = d.get("mode", "answer")
+        modes[m] = modes.get(m, 0) + 1
+    preferred_mode = max(modes, key=modes.get) if modes else "answer"
+
+    # Calibration: average predicted confidence vs actual success
+    predicted = [d for d in decisions if (d.get("predicted_outcome") or {}).get("confidence")]
+    avg_pred_conf = round(sum(d["predicted_outcome"]["confidence"] for d in predicted) / len(predicted)) if predicted else None
+    calibration_note = ""
+    if avg_pred_conf is not None and outcomes:
+        actual_rate = round(100 * success_rate)
+        gap = avg_pred_conf - actual_rate
+        calibration_note = (f"Overconfident by {gap}%" if gap > 10
+                      else f"Underconfident by {-gap}%" if gap < -10
+                      else "Well-calibrated")
+
+    lines = [
+        f"DECISION DNA (inferred from {n} past decisions — HOW they decide, not just what):",
+        f"- Decision speed: {speed} (avg hours between turns)",
+        f"- Risk posture: {risk} (commitment rate {round(commit_rate*100)}%, outcome success {round(success_rate*100)}%)",
+        f"- Preferred mode: {preferred_mode}",
+    ]
+    if calibration_note:
+        lines.append(f"- Calibration: {calibration_note} (predict {avg_pred_conf}% confident, actual {round(success_rate*100)}%)")
+    lines.append("Silently fit your recommendations to this decision style. Never quote the DNA back at them.")
+    return "\n".join(lines)
+
+
 # --------------------------------------------------------------- assembled block
 def cognition_block(user: dict, text: str, model: Optional[dict] = None,
                     include_identity: bool = True, include_memory: bool = True,
-                    include_company_state: bool = False) -> str:
+                    include_company_state: bool = False,
+                    include_codex: bool = False,
+                    include_dna: bool = False) -> str:
     """One string with every cognition layer that applies to this turn. Lean by design:
     empty sections are omitted entirely so quiet turns stay cheap."""
     category = classify_decision(text)
@@ -272,6 +397,14 @@ def cognition_block(user: dict, text: str, model: Optional[dict] = None,
         ib = identity_block(user)
         if ib:
             sections.append(ib)
+    if include_codex and user:
+        cx = codex_block(user)
+        if cx:
+            sections.append(cx)
+    if include_dna and user:
+        dna = decision_dna_block(user["id"])  # Ch.11: Decision DNA
+        if dna:
+            sections.append(dna)
     if include_company_state and user:
         cs = company_state_block(user["id"])
         if cs:

@@ -26,19 +26,17 @@ from pymongo import ReturnDocument
 import doc_memory
 from cognition import cognition_block
 from engine import client, _extract_json
-from db import users_col, db, members_col, orgs_col, decisions_col, journeys_col
+from db import users_col, db, members_col, orgs_col, decisions_col, journeys_col, org_memory_col
 from security import current_user
 from subscriptions import deduct_tokens
 from journey import _normalize_reasoning, _public_reasoning
-from benchmarks import normalize_facts, ingest_facts, benchmark_digest
-
 log = logging.getLogger("brain")
 router = APIRouter(prefix="/api/brain")
 
 trees_col = db.doc_trees if db is not None else None
 nodes_col = db.doc_nodes if db is not None else None
 
-PRIMARY_MODEL = os.environ.get("LLM_MODEL", "gemini-3.5-flash").strip()
+PRIMARY_MODEL = os.environ.get("LLM_MODEL", "deepseek-flash").strip()
 FALLBACK_MODEL = os.environ.get("LLM_MODEL_FALLBACK", PRIMARY_MODEL).strip()
 
 CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
@@ -106,8 +104,10 @@ def _strategy_block(org: Optional[dict], function: str = "general") -> str:
     )
     lines.append(
         "ALSO include a private JSON field strategic_alignment as "
-        '{"score": <0-100>, "reason": "<one short line>"} estimating how strongly your recommendation '
-        "advances the North Star above. " + (
+        '{"score": <0-100>, "confidence": "high|medium|low", "basis": "<what makes you confident or unsure in one line>"} '
+        "estimating how strongly your recommendation advances the North Star above. "
+        "confidence: high = you have solid evidence from docs/context, medium = reasonable inference, "
+        "low = sparse signals, you are guessing. basis: one line naming the strongest signal (or its absence). " + (
             f"The user's function is {norm_function(function)}; judge the score by how well the recommendation "
             f"advances the North Star THROUGH that function's real contribution ({FUNCTION_RUBRIC.get(norm_function(function), FUNCTION_RUBRIC['general'])}). "
         ) +
@@ -317,7 +317,14 @@ def kb_retrieve(kb_ns: str, question: str):
 
 
 # ---------------------------------------------------------------- the single LLM call
-SYSTEM = """You are SmartDeciGen's Decision Brain for a company. You serve everyone from the owner to a ground-floor employee. Read the message, decide which ONE job it needs, then do that job exceptionally well.
+SYSTEM = """You maintain the operational model of this company. Every message is evidence for that model. You serve everyone from the owner to a ground-floor employee, but your loyalty is to the company's reality, not to anyone's comfort.
+
+BEFORE EVERY TURN (your silent internal sweep — never output this):
+1. ASSEMBLE STATE. From all known context (retrieved passages, company rules, founder profile, industry context, benchmarks, session history, the user's function), build the current picture of the company's operational reality.
+2. LOCATE THE MESSAGE IN THE STATE. What does this message reveal about the state? Does it confirm, contradict, or extend the model?
+3. TEST REQUEST AGAINST STATE. Given the state, does this ask make sense? What is the weakest assumption?
+4. EVALUATE THE FIELD. What are the viable moves? Which serves the company's reality best?
+5. OUTPUT FROM STATE. Your mode, recommendation, and action must be the consequence of the state model.
 
 THREE JOBS:
 - ANSWER: a factual question about the company's documents. Lead with the direct answer, grounded ONLY in RETRIEVED_PASSAGES, then add the one piece of context that makes it useful. Cite the source.
@@ -332,31 +339,31 @@ HONOR THE REQUEST: if the user explicitly asks for a plan, an answer, a draft, a
 
 VOICE: engaging, warm, confident, like a sharp operator who has done this before and wants you to win. Plain English, short sentences, easy to scan. Specific over generic. No fluff, no hedging, no emojis, no em-dashes, no exclamation marks.
 
-ONE NATURAL REPLY: write the body (and recommendation) as one cohesive, flowing piece of advice, the way one sharp human would say it in a single breath. Do NOT fragment it into labelled boxes, headers, or meta-sections. It should read as a single natural reply, not a form.
+ONE NATURAL REPLY: write the body (and recommendation) as one cohesive, flowing piece of advice, the way one sharp human would say it in a single breath. Do NOT fragment it into labelled boxes, headers, or meta-sections.
 
-READ THE PERSON (clarity): notice what is really going on underneath the message, the real worry, the real constraint, the thing they did not say. Reflect it in one gentle, plain line (situation_read). This is how they feel understood, not interrogated. Never clinical, never accusing.
+READ THE PERSON (clarity): notice what is really going on underneath the message, the real worry, the real constraint, the thing they did not say. Reflect it in one gentle, plain line (situation_read). Never clinical, never accusing.
 
 ALWAYS LAND A NEXT ACTION: every single turn ends with ONE concrete next action the person can do in the next 24 to 48 hours (next_action). Specific, small enough to actually start, the easiest true first move. This is the hero of your reply. It is never empty.
 
-STRONG HOOK: alongside the action, give ONE short, motivating line (hook) that makes them WANT to do it now, ties it to momentum and to where the company is heading, and makes the payoff easy to picture. Warm and human, never hype, no exclamation marks.
+STRONG HOOK: alongside the action, give ONE short, motivating line (hook) that makes them WANT to do it now, ties it to momentum and to where the company is heading. Warm and human, never hype, no exclamation marks.
 
-COMMIT THEN SHARPEN: when the decision genuinely hinges on ONE missing fact, still deliver your best recommendation under a clearly stated assumption, then ask ONE sharp, connected question (sharpening_question) that digs toward the real lever, not a generic "anything else?". The question MUST attack the dimension your reasoning sweep found most uncertain AND most decision-critical (highest expected information gain). One question, only when it truly earns its place, otherwise null.
+SELF CHECK: if the state model cannot support a confident decision or plan, do not fake one. Deliver your best read under a clearly stated assumption, then ask ONE sharp, connected question (sharpening_question) that digs toward the real lever. One question, only when it truly earns its place, otherwise null.
 
 PREDICT THE OUTCOME: whenever you recommend an action, a decision, or a plan, commit to ONE measurable prediction (predicted_outcome): what will observably happen if the user follows it (a number, a signal, a state change they can check later), an HONEST confidence 0..100 (calibrated: 55 when genuinely unsure, 85+ only when the mechanism is near-certain, never cluster everything at 70-80), and review_after_days (7 for fast-feedback actions, 14 for medium, 30 for slow-burn strategy). You WILL be checked against this prediction later, so make it checkable. Pure factual lookups (mode answer with no recommendation) may set predicted_outcome to null.
 
 WHEN NOT TO FOLLOW: name the ONE condition under which the user should NOT follow this recommendation (dont_follow_if): the specific fact that, if true in their world, flips the call. Plain, specific, one line, never a generic disclaimer. Pure factual lookups may set null.
 
-REASONING SWEEP (do this silently on EVERY message, before writing anything): update a ten-dimension uncertainty map about THIS user's situation, each scored 0..100 (0 = fully understood, 100 = complete unknown), honest, may rise when new information exposes a problem: goal (what they really want), reality (facts on the ground), constraints (hard limits), risks, resources, knowledge_gap (what THEY cannot do), assumptions (unsupported beliefs they carry), hidden_desire (what they really want beneath the ask), decision_impact (stakes + reversibility of THIS decision), missing_info (facts nobody has). Detect their unsupported assumptions. Classify the decision (idea|validation|execution|scaling|crisis|other) and whether it is reversible. Note the 2-4 expert lenses you applied. If the decision-critical dimensions are already low-uncertainty, set sufficient=true and sharpening_question SHOULD be null.
+REASONING SWEEP (update this silently on EVERY message): ten-dimension uncertainty map about THIS user's situation, each scored 0..100 (0 = fully understood, 100 = complete unknown), honest, may rise when new information exposes a problem: goal (what they really want), reality (facts on the ground), constraints (hard limits), risks, resources, knowledge_gap (what THEY cannot do), assumptions (unsupported beliefs they carry), hidden_desire (what they really want beneath the ask), decision_impact (stakes + reversibility of THIS decision), missing_info (facts nobody has). Detect unsupported assumptions. Classify the decision (idea|validation|execution|scaling|crisis|other) and whether it is reversible. Note the 2-4 expert lenses you applied. If the decision-critical dimensions are already low-uncertainty, set sufficient=true and sharpening_question SHOULD be null.
 
-USE PLATFORM BENCHMARKS: when a REAL PLATFORM BENCHMARKS block is present, prefer that real founder data over generic knowledge, and ALWAYS cite it honestly with its sample size ("founders on this platform report..., n=3, early signal"). Never present an early signal as an established statistic.
+USE PLATFORM BENCHMARKS: when a REAL PLATFORM BENCHMARKS block is present, prefer that real founder data over generic knowledge, and ALWAYS cite it honestly with its sample size. Never present an early signal as an established statistic.
 
 HARVEST BENCHMARK FACTS: whenever the user states a REAL number about the business (revenue, orders, margin, ticket size, headcount, conversion...), record it in benchmark_facts with a reusable snake_case metric name and the industry. ONLY numbers they explicitly stated, never your own estimates. Empty list when none.
 
-CONNECTED MEMORY: when SESSION_HISTORY is present, this is an ongoing conversation. Build on it, go one level deeper than last turn, never repeat what you already said, never re-ask what they already told you. It should feel like the same person who has been with them the whole way.
+CONNECTED MEMORY: when SESSION_HISTORY is present, this is an ongoing conversation. Build on it, go one level deeper than last turn, never repeat what you already said, never re-ask what they already told you.
 
-FIT THE FOUNDER: if a FOUNDER_PROFILE block is present, this is the person you are advising and you know them well. Shape your tone, framing, and the next_action to fit their personality, communication style, decision style, and risk appetite. If they are conflict-averse or introverted, make the move gentler and give them words/a script; if they are decisive and blunt, be crisp and direct. Lean on their strengths, quietly cover their blind spots. NEVER quote the profile back at them or label them ("as an introvert..."); just fit them so naturally it feels like you get them.
+FIT THE FOUNDER: if a FOUNDER_PROFILE block is present, this is the person you are advising and you know them well. Shape your tone, framing, and the next_action to fit their personality, communication style, decision style, and risk appetite. If they are conflict-averse or introverted, make the move gentler and give them words/a script; if they are decisive and blunt, be crisp and direct. Lean on their strengths, quietly cover their blind spots. NEVER quote the profile back at them or label them; just fit them so naturally it feels like you get them.
 
-KNOW THE INDUSTRY: if an INDUSTRY_CONTEXT block is present, treat it as real, current domain knowledge about this company's specific market. Ground your read, decision, and next_action in those concrete realities (the real players, dynamics, constraints, regulations, benchmarks) instead of generic business advice dressed in industry words. Be specific to THIS industry. If the context cites research, you may reference what the industry research shows, but stay concrete and never fabricate a number that is not supported.
+KNOW THE INDUSTRY: if an INDUSTRY_CONTEXT block is present, treat it as real, current domain knowledge about this company's specific market. Ground your read, decision, and next_action in those concrete realities instead of generic business advice dressed in industry words. Be specific to THIS industry.
 
 HARD RULES:
 - Ground every factual claim in a RETRIEVED_PASSAGE. Cite each source you used as its document name and chapter.
@@ -489,6 +496,73 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
 
 
 # ---------------------------------------------------------------- models
+# ---------------------------------------------------------------- KillCritic Engine (Ch.17)
+KILLCRITIC_SYSTEM = """You are the KillCritic — an adversarial reviewer who attacks decisions BEFORE they ship.
+Your job: find every weakness, blind spot, unstated assumption, and missing alternative in the decision below.
+You are not polite. You are not balanced. You are the devil's advocate with one job: make this decision stronger by trying to break it.
+
+Attack these dimensions:
+1. WEAKEST ASSUMPTION — the one belief that, if wrong, makes the entire decision wrong
+2. MISSING ALTERNATIVE — the option they didn't consider that a smart competitor would
+3. BLIND SPOT — what the decision-maker cannot see from their position
+4. REVERSIBILITY CHECK — if this goes wrong, can they undo it, and at what cost?
+5. NUMBER HONESTY — are the numbers/claims grounded or aspirational?
+6. FOUNDER PATTERN — does this match a recurring blind spot in the founder's history?
+
+Return ONLY JSON, no fences:
+{"weakest_assumption": "one line naming it",
+ "severity": "low|medium|high|critical",
+ "attack_lines": ["specific weakness 1", "specific weakness 2", "specific weakness 3"],
+ "would_flip_if": "the one fact that, if true, reverses this recommendation entirely",
+ "verdict": "ship_as_is|refine_before_shipping|do_not_ship"}"""
+
+
+def killcritic_review(question: str, mode: str, answer: str, recommendation: str,
+                       plan: list, next_action: str, predicted_outcome: dict,
+                       citations: list) -> dict:
+    """Adversarial review of a decision before presenting to user. One cheap LLM call.
+    Returns critique dict stored in the decision record (founder-only, never shown to user)."""
+    rec_text = f"Recommendation: {recommendation}" if recommendation else ""
+    plan_text = f"Plan: {' | '.join(plan)}" if plan else ""
+    pred_text = ""
+    if predicted_outcome:
+        pred_text = f"Predicted: {predicted_outcome.get('claim','')} (confidence {predicted_outcome.get('confidence','?')}%)"
+    cites_text = f"Sources: {'; '.join(c.get('doc','')+' > '+c.get('chapter','') for c in citations)}" if citations else "(no sources)"
+    prompt = (
+        f"QUESTION: {question[:800]}\n"
+        f"MODE: {mode}\n"
+        f"ANSWER/BODY: {answer[:1200]}\n"
+        f"{rec_text}\n{plan_text}\n"
+        f"NEXT ACTION: {next_action[:400]}\n"
+        f"{pred_text}\n"
+        f"{cites_text}\n\n"
+        f"Attack every weakness in this decision. Be specific and surgical."
+    )
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=600,
+            system=[{"type": "text", "text": KILLCRITIC_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        out = json.loads(_extract_json(txt))
+        severity = out.get("severity", "medium")
+        if severity not in ("low", "medium", "high", "critical"):
+            severity = "medium"
+        verdict = out.get("verdict", "ship_as_is")
+        if verdict not in ("ship_as_is", "refine_before_shipping", "do_not_ship"):
+            verdict = "ship_as_is"
+        return {
+            "severity": severity,
+            "verdict": verdict,
+            "weakest_assumption": str(out.get("weakest_assumption", ""))[:300],
+            "attack_lines": [str(x)[:300] for x in (out.get("attack_lines") or []) if str(x).strip()][:3],
+            "would_flip_if": str(out.get("would_flip_if", ""))[:300],
+        }
+    except Exception as e:
+        log.warning(f"killcritic review failed (non-fatal): {e}")
+        return {"severity": "unknown", "verdict": "ship_as_is", "weakest_assumption": "",
+                "attack_lines": [], "would_flip_if": ""}
+
+
 class UploadIn(BaseModel):
     filename: str = Field(min_length=1, max_length=300)
     mime: str = ""
@@ -510,7 +584,12 @@ def _sanitize_alignment(a):
     except Exception:
         score = None
     reason = a.get("reason")
-    return {"score": score, "reason": (str(reason)[:300] if reason else "")}
+    conf = a.get("confidence")
+    if conf not in ("high", "medium", "low"):
+        conf = None
+    basis = a.get("basis")
+    return {"score": score, "reason": (str(reason)[:300] if reason else ""),
+            "confidence": conf, "basis": (str(basis)[:200] if basis else "")}
 
 
 # Feature (c): turn the founder-only alignment into a plain-English "goal impact" the FOUNDER sees
@@ -665,15 +744,7 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
     learning_block = _org_learning_block(org, function)
     founder_block = _founder_profile_block(org) if is_owner else ""   # owner-only personality steering
     industry_block = _industry_block(org)                              # org-wide domain grounding
-    # evolving cross-founder benchmarks: org industry first, else the user's journey industry (solo)
-    bench_industry = (org.get("industry") if org else "") or ""
-    if not bench_industry:
-        try:
-            jdoc = journeys_col.find_one({"user_id": user["id"]}, {"industry": 1})
-            bench_industry = (jdoc or {}).get("industry", "") or ""
-        except Exception:
-            bench_industry = ""
-    benchmarks_block = benchmark_digest(bench_industry)
+    benchmarks_block = ""
     reserve = BRAIN_RESERVE
     u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
                                       {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
@@ -684,7 +755,7 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
         history = _session_history(user["id"], session_id)
         cog_block = ""
         try:
-            cog_block = cognition_block(user, question, include_company_state=True)
+            cog_block = cognition_block(user, question, include_company_state=True, include_dna=True)
         except Exception as cog_err:
             log.warning(f"cognition block failed (non-fatal): {cog_err}")
         out, model, usage = brain_answer(question, passages, doc_names, instructions,
@@ -711,16 +782,16 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
         "$inc": {"tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
         "$set": {"last_active_at": now_utc()}})
 
+    # ---- KillCritic adversarial review (Ch.17): silent quality gate, never shown to user ----
+    killcritic = killcritic_review(
+        question, out.get("mode", "answer"), out.get("answer", ""),
+        out.get("recommendation"), out.get("plan"), out.get("next_action", ""),
+        out.get("predicted_outcome"), out.get("citations", []))
+
     # ---- Decision Ledger: persist; alignment is FOUNDER-ONLY (stripped from member response) ----
     alignment = _sanitize_alignment(out.pop("strategic_alignment", None))
     goal_impact = _goal_impact(alignment, org, is_owner)  # founder-only; None for members/solo
-    # ---- Decision Intelligence Engine (Sprint 2a): reasoning sweep + benchmark harvesting ----
     reasoning = _normalize_reasoning(out.pop("reasoning", None))
-    bench_industry_out, bench_facts = normalize_facts(out.pop("benchmark_facts", None))
-    try:
-        ingest_facts(user["id"], bench_industry_out or bench_industry, bench_facts, now_utc())
-    except Exception as e:
-        log.warning(f"brain benchmark ingest failed: {e}")
     decision_id = str(uuid.uuid4())
     try:
         decisions_col.insert_one({
@@ -763,6 +834,7 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
                           if out.get("predicted_outcome") else None),
             "reviewed_at": None,
             "impact_inr": None,
+            "killcritic": killcritic,   # Ch.17: adversarial quality gate (founder-only) 
         })
     except Exception as e:
         log.warning(f"decision persist failed: {e}")
@@ -785,7 +857,7 @@ def my_decisions(user: dict = Depends(current_user)):
     """A member's own decision history. Never exposes the founder-only alignment field."""
     rows = list(decisions_col.find(
         {"user_id": user["id"]},
-        {"_id": 0, "strategic_alignment": 0, "alignment_band": 0, "reasoning": 0},
+        {"_id": 0, "strategic_alignment": 0, "alignment_band": 0, "reasoning": 0, "killcritic": 0},
     ).sort("created_at", -1).limit(50))
     return {"decisions": rows}
 
@@ -804,6 +876,7 @@ def get_decision(decision_id: str, user: dict = Depends(current_user)):
     _, is_owner, org, _ = _resolve_context(user)
     raw_alignment = d.pop("strategic_alignment", None)
     d.pop("alignment_band", None)
+    d.pop("killcritic", None)   # Ch.17: founder-only quality gate
     reasoning = _public_reasoning(d.pop("reasoning", None))
     goal_impact = _goal_impact(raw_alignment, org, is_owner)
     return {**d, "reasoning": reasoning,
@@ -986,10 +1059,78 @@ def calibration_for(match: dict) -> dict:
             "calibration_gap": gap, "label": label}
 
 
-class ReviewIn(BaseModel):
-    outcome: str = Field(min_length=2, max_length=20)      # worked | partly | didnt
-    actual: Optional[str] = Field(default=None, max_length=2000)
-    impact_inr: Optional[int] = Field(default=None, ge=-1000000000, le=1000000000)
+# ---------------------------------------------------------------- Autopsy Engine (Ch.18)
+AUTOPSY_SYSTEM = """You are the Autopsy Engine. A decision's outcome has been reviewed. Your job:
+extract the SINGLE most important lesson from what actually happened vs what was predicted.
+
+Rules:
+- If prediction was accurate: identify what made it predictable (which signal was reliable?)
+- If prediction was wrong: identify the ROOT CAUSE of the gap (wrong assumption? missing info? external shock?)
+- Extract one reusable if-then principle for the organization's rulebook
+- Be specific to this decision, not generic advice
+
+Return ONLY JSON, no fences:
+{"gap_analysis": "one line: what actually happened vs predicted",
+ "root_cause": "the deepest reason for the gap (or why it was predictable)",
+ "signal_that_mattered": "what data point, if known earlier, would have changed the call",
+ "lesson": "one if-then principle to carry forward (max 200 chars)",
+ "decision_pattern": "one label for the recurring pattern if any (e.g. over-optimism, anchoring, delay-bias)",
+ "worth_remembering": true or false}"""
+
+
+def run_autopsy(decision: dict, outcome_status: str) -> dict:
+    """Run a structured post-mortem when an outcome review shows a gap vs prediction.
+    One cheap LLM call. Store result in org_memory for cross-decision learning."""
+    pred = decision.get("predicted_outcome") or {}
+    pred_claim = pred.get("claim", "") or ""
+    pred_conf = pred.get("confidence")
+    question = (decision.get("question") or "")[:400]
+    rec = (decision.get("recommendation") or decision.get("answer") or "")[:400]
+    actual = decision.get("review_note") or ""
+    if not pred_claim:
+        return None
+    prompt = (
+        f"QUESTION: {question}\n"
+        f"RECOMMENDATION: {rec}\n"
+        f"PREDICTED OUTCOME: {pred_claim} (confidence {pred_conf}%)\n"
+        f"ACTUAL OUTCOME STATUS: {outcome_status}\n"
+        f"WHAT HAPPENED: {actual[:400]}\n\n"
+        f"Extract the lesson."
+    )
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=400,
+            system=[{"type": "text", "text": AUTOPSY_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        out = json.loads(_extract_json(txt))
+        result = {
+            "gap_analysis": str(out.get("gap_analysis", ""))[:300],
+            "root_cause": str(out.get("root_cause", ""))[:300],
+            "signal_that_mattered": str(out.get("signal_that_mattered", ""))[:200],
+            "lesson": str(out.get("lesson", ""))[:200],
+            "decision_pattern": str(out.get("decision_pattern", ""))[:100],
+            "worth_remembering": bool(out.get("worth_remembering", False)),
+            "run_at": now_utc().isoformat(),
+        }
+        if result["worth_remembering"] and org_memory_col is not None and decision.get("org_id"):
+            org_memory_col.insert_one({
+                "id": str(uuid.uuid4()),
+                "org_id": decision["org_id"],
+                "domain": norm_function(decision.get("function", "general")),
+                "topic": result["decision_pattern"] or "outcome_lesson",
+                "knowledge_type": "lesson",
+                "content": {"summary": result["lesson"], "detail": result["gap_analysis"],
+                           "evidence": f"Predicted: {pred_claim}. Actual: {outcome_status}. {actual[:200]}",
+                           "counter_evidence": ""},
+                "confidence": 0.7, "observation_count": 1,
+                "source": [{"type": "autopsy", "id": decision["id"], "timestamp": now_utc().isoformat()}],
+                "tags": [outcome_status],
+                "created_at": now_utc().isoformat(),
+            })
+        return result
+    except Exception as e:
+        log.warning(f"autopsy failed (non-fatal): {e}")
+        return None
 
 
 @router.get("/reviews/due")
@@ -1008,6 +1149,12 @@ def reviews_due(user: dict = Depends(current_user)):
         r["review_at"] = _iso(r.get("review_at"))
         r["created_at"] = _iso(r.get("created_at"))
     return {"due": rows, "count": len(rows)}
+
+
+class ReviewIn(BaseModel):
+    outcome: str = Field(min_length=1, max_length=20)   # worked | partly | didnt
+    actual: Optional[str] = Field(default=None, max_length=2000)
+    impact_inr: Optional[int] = None
 
 
 @router.post("/decisions/{decision_id}/review")
@@ -1029,6 +1176,14 @@ def review_decision(decision_id: str, body: ReviewIn, user: dict = Depends(curre
     if body.impact_inr is not None:
         upd["impact_inr"] = body.impact_inr
     decisions_col.update_one({"id": decision_id}, {"$set": upd})
+    # ---- Ch.18 Autopsy: structured post-mortem when prediction met reality ----
+    if d.get("predicted_outcome"):
+        try:
+            autopsy = run_autopsy(d, OUTCOME_MAP[oc])
+            if autopsy:
+                decisions_col.update_one({"id": decision_id}, {"$set": {"autopsy": autopsy}})
+        except Exception as e:
+            log.warning(f"autopsy run failed (non-fatal): {e}")
     return {"ok": True, "decision_id": decision_id, "outcome": upd["outcome"],
             "impact_inr": upd.get("impact_inr"),
             "calibration": calibration_for({"user_id": user["id"]})}

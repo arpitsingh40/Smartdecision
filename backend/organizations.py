@@ -26,7 +26,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, EmailStr
 
-from db import orgs_col, members_col, invites_col, users_col, decisions_col, plans_col, tasks_col, threads_col
+from db import orgs_col, members_col, invites_col, users_col, decisions_col, plans_col, tasks_col, threads_col, org_memory_col, resource_requests_col, projects_col, automation_templates_col
 from security import current_user, now_utc
 from engine import client, _extract_json, PRIMARY_MODEL
 
@@ -530,6 +530,27 @@ def cockpit(user: dict = Depends(current_user)):
         {"_id": 0, "id": 1, "user_name": 1, "question": 1, "strategic_alignment": 1, "created_at": 1},
     ).sort("created_at", -1).limit(10))
 
+    needs_attention = []
+    if org:
+        na_rows = list(decisions_col.find(
+            {"$or": [
+                {**base, "strategic_alignment.score": {"$lt": 40}},
+                {**base, "strategic_alignment.confidence": "low", "strategic_alignment.score": {"$lt": 70}},
+            ]},
+            {"_id": 0, "id": 1, "user_name": 1, "question": 1, "strategic_alignment": 1, "committed_action": 1, "created_at": 1},
+        ).sort("created_at", -1).limit(10))
+        for na in na_rows:
+            al = na.get("strategic_alignment") or {}
+            needs_attention.append({
+                "id": na["id"], "user_name": na.get("user_name", ""),
+                "question": (na.get("question") or "")[:200],
+                "score": al.get("score"), "reason": al.get("reason", ""),
+                "confidence": al.get("confidence"), "basis": al.get("basis", ""),
+                "action": na.get("committed_action", "") or "",
+            })
+    low_conf_count = sum(1 for r in scored_rows
+                         if (r.get("strategic_alignment") or {}).get("confidence") in ("low", None))
+
     # in-flight committed actions across the team (drives the founder's live timers)
     now = now_utc()
 
@@ -609,6 +630,14 @@ def cockpit(user: dict = Depends(current_user)):
     align_trend = (recent_avg - prior_avg) if (recent_avg is not None and prior_avg is not None) else None
     pacing = _pacing(org)
 
+    # ---- Layer 5: Rs impact from reviewed decisions ----
+    imp_pipe = list(decisions_col.aggregate([
+        {"$match": {**base, "impact_inr": {"$ne": None}}},
+        {"$group": {"_id": None, "total": {"$sum": "$impact_inr"}, "n": {"$sum": 1}, "positive": {"$sum": {"$cond": [{"$gte": ["$impact_inr", 0]}, 1, 0]}}}}]))
+    impact = {"total_inr": int(imp_pipe[0]["total"]) if imp_pipe else 0,
+              "reviewed": int(imp_pipe[0]["n"]) if imp_pipe else 0,
+              "positive": int(imp_pipe[0]["positive"]) if imp_pipe else 0}
+
     # ---- Layer 4: deterministic contradiction detection (declared vs observed) ----
     prox_rows = list(decisions_col.find({**base, "revenue_proximity": {"$ne": None}}, {"_id": 0, "revenue_proximity": 1}))
     internal_share = round(100 * sum(1 for r in prox_rows if r["revenue_proximity"] == "internal") / len(prox_rows)) if prox_rows else None
@@ -633,7 +662,9 @@ def cockpit(user: dict = Depends(current_user)):
     return {
         "north_star": _strategy_view(org),
         "totals": {"decisions": total, "last_7d": last7, "members": len(members)},
-        "alignment": {"avg": avg_align, "high": high, "medium": medium, "low": low, "scored": len(scores)},
+        "alignment": {"avg": avg_align, "high": high, "medium": medium, "low": low, "scored": len(scores),
+                     "low_confidence_count": low_conf_count},
+        "needs_attention": needs_attention,
         "execution": {"committed": committed, "open": open_count, "done": done,
                       "dropped": dropped, "overdue": overdue, "follow_through_pct": follow_through},
         "effectiveness": effectiveness,
@@ -645,10 +676,49 @@ def cockpit(user: dict = Depends(current_user)):
         "contradictions": contradictions,
         "per_member": per_member,
         "drift": drift,
+        "impact": impact,
         "active_actions": active_actions,
         "results": results_feed,
     }
 
+
+# ----------------------------------------------------------------- momentum trend (Upgrade 1)
+@router.get("/cockpit/trend")
+def cockpit_trend(weeks: int = 8, user: dict = Depends(current_user)):
+    """Owner-only. Weekly momentum: alignment, decisions, follow-through over time."""
+    m = _require_owner(user)
+    org_id = m["org_id"]
+    base = {"org_id": org_id}
+    weeks = max(1, min(weeks, 26))
+    now = now_utc()
+    weeks_out = []
+    for i in range(weeks - 1, -1, -1):
+        monday = (now - timedelta(days=now.weekday() + 7 * i)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = monday + timedelta(days=7)
+        wdec = list(decisions_col.find(
+            {**base, "created_at": {"$gte": monday, "$lt": end}},
+            {"_id": 0, "strategic_alignment": 1, "status": 1, "committed_action": 1}))
+        scores = [r.get("strategic_alignment", {}).get("score") for r in wdec
+                  if isinstance(r.get("strategic_alignment"), dict) and r["strategic_alignment"].get("score") is not None]
+        done = sum(1 for r in wdec if r.get("status") == "done")
+        dropped = sum(1 for r in wdec if r.get("status") == "dropped")
+        acted = done + dropped
+        weeks_out.append({
+            "week_start": monday.isoformat()[:10],
+            "decisions": len(wdec),
+            "avg_alignment": round(sum(scores) / len(scores)) if scores else None,
+            "committed": sum(1 for r in wdec if r.get("committed_action")),
+            "done": done,
+            "dropped": dropped,
+            "follow_through_pct": round(100 * done / acted) if acted else None,
+        })
+    latest = weeks_out[-1] if weeks_out else None
+    prev = weeks_out[-2] if len(weeks_out) > 1 else None
+    delta = lambda k: (latest[k] - prev[k]) if (latest and prev and latest.get(k) is not None and prev.get(k) is not None) else None
+    return {"weeks": weeks_out,
+            "deltas": {"avg_alignment": delta("avg_alignment"),
+                       "follow_through_pct": delta("follow_through_pct"),
+                       "decisions": delta("decisions")}}
 
 # ----------------------------------------------------------------- Layer 6: autonomous planning (human-gated)
 DEP_FUNCTIONS = ("sales", "marketing", "product", "engineering", "operations", "finance", "leadership", "general")
@@ -778,7 +848,11 @@ def ratify_plan(plan_id: str, user: dict = Depends(current_user)):
     if not p:
         raise HTTPException(404, "Plan not found")
     plans_col.update_many({"org_id": org_id, "status": "active"}, {"$set": {"status": "archived"}})
-    plans_col.update_one({"id": plan_id}, {"$set": {"status": "active", "activated_at": now_utc()}})
+    org = orgs_col.find_one({"id": org_id})
+    plans_col.update_one({"id": plan_id}, {"$set": {
+        "status": "active", "activated_at": now_utc(),
+        "mission_version": (org or {}).get("strategy_version", 0),  # Ch.33: traceability
+    }})
     p = plans_col.find_one({"id": plan_id})
     return _plan_view(p, org_id)
 
@@ -818,6 +892,14 @@ TASK_STAGE_SYSTEM = (
     "Stages: not_started, researching, in_progress, almost_done, complete\n\n"
     "Return ONLY JSON: {\"stage\": \"...\", \"confidence\": 0.0-1.0}"
 )
+
+# Ch.44: Verification confidence thresholds by impact level
+VERIFICATION_THRESHOLDS = {
+    "low": 0.3,       # self-report sufficient
+    "medium": 0.6,    # AI review required
+    "high": 0.8,      # system evidence required
+    "critical": 0.95, # external verification required
+}
 
 
 class TaskGenerateIn(BaseModel):
@@ -934,6 +1016,7 @@ def generate_weekly_tasks(body: TaskGenerateIn, user: dict = Depends(current_use
             "created_at": now_utc().isoformat(),
             "updated_at": now_utc().isoformat(),
             "completed_at": None,
+            "mission_version": plan.get("mission_version", 0),  # Ch.33: traceability
         }
         tasks.append(task)
 
@@ -1022,13 +1105,25 @@ def review_task_proof(task_id: str, user: dict = Depends(current_user)):
 
 
 def _review_task_proof(task_id: str) -> dict:
+    """Ch.44: Layered verification. Task completion is verified at increasing confidence
+    thresholds based on impact: low (0.3, self-report), medium (0.6, AI review),
+    high (0.8, system evidence), critical (0.95, external)."""
     task = tasks_col.find_one({"id": task_id})
     if not task:
         raise HTTPException(404, "Task not found")
 
     proof = task.get("proof_files") or []
+    impact = task.get("impact", "medium")
+    threshold = VERIFICATION_THRESHOLDS.get(impact, 0.6)
+
     if not proof:
-        return {"approved": False, "confidence": 0, "notes": "No proof files uploaded", "auto_completed": False}
+        confidence = 0.3  # self-report only
+        approved = confidence >= threshold
+        return {"approved": approved, "confidence": confidence,
+                "method": "self_report", "threshold": threshold,
+                "notes": "No proof files — trusting member self-report" if approved
+                         else f"Proof required (threshold {threshold})",
+                "auto_completed": False}
 
     prompt = (
         f"TASK: {task['title']}\n"
@@ -1050,7 +1145,12 @@ def _review_task_proof(task_id: str) -> dict:
     approved = bool(data.get("approved", False))
     confidence = float(data.get("confidence", 0))
     notes = str(data.get("notes", ""))
-    auto_completed = approved and confidence > 0.8
+    # Ch.44: gated by impact threshold
+    method = "ai_review"
+    if confidence < threshold:
+        approved = False
+        notes = f"[Verification threshold {threshold}] {notes}"
+    auto_completed = approved and confidence >= threshold
 
     update = {
         "ai_review.status": "approved" if approved else "flagged",
@@ -1064,7 +1164,8 @@ def _review_task_proof(task_id: str) -> dict:
         update["completed_at"] = now_utc().isoformat()
 
     tasks_col.update_one({"id": task_id}, {"$set": update})
-    return {"approved": approved, "confidence": confidence, "notes": notes, "auto_completed": auto_completed}
+    return {"approved": approved, "confidence": confidence, "notes": notes,
+            "method": method, "threshold": threshold, "auto_completed": auto_completed}
 
 
 @router.post("/tasks/{task_id}/stage")
@@ -1215,3 +1316,1014 @@ def set_department_head(body: dict, user: dict = Depends(current_user)):
             current[func] = {"user_id": uid, "name": (u or {}).get("name", "Member")}
     orgs_col.update_one({"id": m["org_id"]}, {"$set": {"department_heads": current}})
     return {"department_heads": current}
+
+
+# ----------------------------------------------------------------- Ch.37: Risk Planning
+class RiskIn(BaseModel):
+    description: str = Field(min_length=2, max_length=500)
+    likelihood: str = Field(default="medium")   # low | medium | high
+    impact: str = Field(default="medium")        # low | medium | high
+    mitigation: str = Field(default="", max_length=800)
+    owner_name: str = Field(default="")
+
+
+@router.get("/plan/risks")
+def get_plan_risks(user: dict = Depends(current_user)):
+    """Owner-only. Risk register for the active plan."""
+    m = _require_owner(user)
+    plan = plans_col.find_one({"org_id": m["org_id"], "status": "active"})
+    if not plan:
+        return {"risks": [], "count": 0, "note": "No active plan. Ratify a plan first."}
+    risks = plan.get("risks", []) or []
+    return {"risks": risks, "count": len(risks),
+            "high_count": sum(1 for r in risks if r.get("likelihood") == "high" or r.get("impact") == "high")}
+
+
+@router.post("/plan/risks")
+def add_plan_risk(body: RiskIn, user: dict = Depends(current_user)):
+    """Owner-only. Add a risk to the active plan's register."""
+    m = _require_owner(user)
+    plan = plans_col.find_one({"org_id": m["org_id"], "status": "active"})
+    if not plan:
+        raise HTTPException(400, "No active plan. Ratify a plan first.")
+    risk = {
+        "id": str(uuid.uuid4()),
+        "description": body.description.strip(),
+        "likelihood": body.likelihood if body.likelihood in ("low", "medium", "high") else "medium",
+        "impact": body.impact if body.impact in ("low", "medium", "high") else "medium",
+        "mitigation": body.mitigation.strip(),
+        "owner_name": body.owner_name.strip(),
+        "status": "active",
+        "created_at": now_utc().isoformat(),
+        "created_by": user["id"],
+    }
+    plans_col.update_one({"id": plan["id"]}, {"$push": {"risks": risk}})
+    return {"risk": risk}
+
+
+@router.delete("/plan/risks/{risk_id}")
+def remove_plan_risk(risk_id: str, user: dict = Depends(current_user)):
+    """Owner-only. Remove a risk from the register."""
+    m = _require_owner(user)
+    plan = plans_col.find_one({"org_id": m["org_id"], "status": "active"})
+    if not plan:
+        raise HTTPException(404, "No active plan found")
+    plans_col.update_one({"id": plan["id"]}, {"$pull": {"risks": {"id": risk_id}}})
+    return {"ok": True, "risk_id": risk_id}
+
+
+# ----------------------------------------------------------------- Ch.33: Mission Traceability
+@router.get("/mission/trace")
+def mission_trace(user: dict = Depends(current_user)):
+    """Owner-only. Checks what in the org traces back to the current mission.
+    Returns orphans (items not linked to mission) and coverage %."""
+    m = _require_owner(user)
+    org_id = m["org_id"]
+    org = orgs_col.find_one({"id": org_id})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    current_version = org.get("strategy_version", 0)
+    north_star = (org.get("north_star") or "").strip()
+
+    # Active plans
+    plans = list(plans_col.find({"org_id": org_id, "status": "active"}))
+    # Active goal threads (check mission_version stamp)
+    goal_threads = list(threads_col.find({"user_id": {"$in": [m["user_id"] for m in
+                        list(members_col.find({"org_id": org_id, "status": "active"}))]}}))
+    # Active tasks
+    tasks = list(tasks_col.find({"org_id": org_id, "status": {"$nin": ["done", "dropped"]}}))
+
+    orphans = []
+    traced_count = 0
+    total_items = 0
+
+    for t in goal_threads:
+        total_items += 1
+        tv = t.get("mission_version")
+        if tv is None or tv < current_version:
+            orphans.append({"type": "goal_thread", "id": t.get("thread_id", ""),
+                           "title": t.get("goal", "")[:100], "mission_version": tv,
+                           "issue": "No mission trace" if tv is None else "Stale mission version"})
+        else:
+            traced_count += 1
+
+    for t in tasks:
+        total_items += 1
+        tv = t.get("mission_version")
+        if tv is None or tv < current_version:
+            orphans.append({"type": "task", "id": t.get("id", ""),
+                           "title": t.get("title", "")[:100], "mission_version": tv,
+                           "issue": "No mission trace" if tv is None else "Stale mission version"})
+        else:
+            traced_count += 1
+
+    for p in plans:
+        total_items += 1
+        tv = p.get("mission_version")
+        if tv is None or tv < current_version:
+            orphans.append({"type": "plan", "id": p.get("id", ""),
+                           "title": p.get("target", "")[:100], "mission_version": tv,
+                           "issue": "No mission trace" if tv is None else "Stale mission version"})
+        else:
+            traced_count += 1
+
+    coverage_pct = round(100 * traced_count / total_items) if total_items > 0 else 100
+    return {
+        "north_star": north_star,
+        "strategy_version": current_version,
+        "total_items": total_items,
+        "traced": traced_count,
+        "orphans": orphans[:20],
+        "coverage_pct": coverage_pct,
+        "status": "healthy" if coverage_pct >= 80 else ("needs_attention" if coverage_pct >= 50 else "drift_detected"),
+    }
+
+
+# ================================================================= Ch.19: Organization Engine
+ORG_GEN_SYSTEM = """You design executive organizations that achieve missions. Given a company's mission,
+stage, team size, and industry, generate the organization structure that best serves the mission.
+
+Principles:
+- Structure follows strategy. Every division must trace back to the mission.
+- Lean by default. Start with minimum viable organization for the company stage.
+- Stage-appropriate: startup (3-5 departments), growth (5-10), enterprise (10-20+).
+- Each department has: function, purpose, objective, 2-3 measurable KPIs.
+- Reporting structure: clear hierarchy, one head per department.
+
+Return ONLY JSON:
+{"divisions": [{
+    "name": "Division name",
+    "purpose": "Why this division exists (trace to mission)",
+    "budget_pct": 30,
+    "departments": [{
+        "function": "sales|marketing|product|engineering|operations|finance|leadership",
+        "objective": "One line objective for this quarter",
+        "kpis": ["measurable KPI 1", "measurable KPI 2"],
+        "headcount_recommendation": 2,
+        "budget_pct_of_division": 50
+    }]
+}],
+"reporting_structure": "Brief description of reporting lines",
+"spans_and_layers": "How many layers and typical span of control",
+"key_hires_needed": ["role 1", "role 2"],
+"risks_in_this_structure": ["risk 1", "risk 2"],
+"stage_rationale": "Why this structure fits their current stage"
+}"""
+
+
+def validate_org_structure(structure: dict, stage: str) -> list:
+    """Ch.19: Deterministic validation before presenting to founder. Returns list of issues."""
+    issues = []
+    if not structure:
+        return ["Empty structure"]
+    divisions = structure.get("divisions") or []
+    if not divisions:
+        issues.append("No divisions generated")
+
+    total_budget = 0
+    all_dept_funcs = set()
+    valid_funcs = {"sales", "marketing", "product", "engineering", "operations", "finance", "leadership", "general"}
+
+    for div in divisions:
+        total_budget += div.get("budget_pct", 0)
+        depts = div.get("departments") or []
+        if not depts:
+            issues.append(f"Division '{div.get('name', '?')}' has no departments")
+        for d in depts:
+            func = d.get("function", "").lower()
+            if func and func not in valid_funcs:
+                issues.append(f"Unknown function '{func}' in {div.get('name', '?')}")
+            if func in all_dept_funcs:
+                issues.append(f"Duplicate function '{func}' across divisions")
+            all_dept_funcs.add(func)
+
+    if abs(total_budget - 100) > 2:
+        issues.append(f"Division budgets sum to {total_budget}%, not 100%")
+
+    if stage == "startup" and len(divisions) > 3:
+        issues.append(f"Generated {len(divisions)} divisions for a startup (max recommended: 3)")
+
+    return issues
+
+
+def generate_org_structure(north_star: str, stage: str, team_size: int, industry: str = "",
+                            priorities: list = None, members_text: str = "") -> dict:
+    """Ch.19: One LLM call. Transform mission into a complete org structure."""
+    prompt = (
+        f"MISSION (North Star): {north_star}\n"
+        f"COMPANY STAGE: {stage}\n"
+        f"TEAM SIZE: {team_size}\n"
+        + (f"INDUSTRY: {industry}\n" if industry else "")
+        + (f"STRATEGIC PRIORITIES: {'; '.join(priorities)}\n" if priorities else "")
+        + (f"AVAILABLE MEMBERS:\n{members_text}\n" if members_text else "")
+        + f"\nGenerate the organization structure that best serves this mission at their current stage."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=2000,
+            system=[{"type": "text", "text": ORG_GEN_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        structure = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"org generation failed: {e}")
+        raise HTTPException(502, "Could not generate organization structure. Try again.")
+
+    issues = validate_org_structure(structure, stage)
+    return {"structure": structure, "issues": issues, "ready": len(issues) == 0}
+
+
+@router.get("/structure")
+def get_org_structure(user: dict = Depends(current_user)):
+    """Owner-only. View current org structure (generated or custom)."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    structure = org.get("organization") or {}
+    return {
+        "active": bool(structure.get("approved_at")),
+        "structure": structure,
+        "north_star": org.get("north_star", ""),
+    }
+
+
+class GenerateOrgIn(BaseModel):
+    stage: str = Field(default="startup")  # startup | growth | enterprise
+    team_size: int = Field(default=5, ge=1, le=10000)
+    industry: str = Field(default="", max_length=100)
+
+
+@router.post("/structure/generate")
+def generate_structure(body: GenerateOrgIn, user: dict = Depends(current_user)):
+    """Owner-only. AI generates org structure from the North Star. Founder reviews before activation."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    north_star = (org.get("north_star") or "").strip()
+    if not north_star:
+        raise HTTPException(400, "Set your North Star first (Strategy page)")
+    priorities = org.get("priorities") or []
+    members = list(members_col.find({"org_id": m["org_id"], "status": "active"}))
+    member_text = "\n".join(
+        f"- {(users_col.find_one({'id': mm['user_id']}, {'_id': 0, 'name': 1, 'function': 1}) or {}).get('name', 'Member')}"
+        f" ({(users_col.find_one({'id': mm['user_id']}, {'_id': 0, 'function': 1}) or {}).get('function', 'general')})"
+        for mm in members) or "(no members)"
+
+    result = generate_org_structure(north_star, body.stage, body.team_size, body.industry,
+                                     priorities, member_text)
+
+    # Store as draft (not yet activated)
+    orgs_col.update_one({"id": m["org_id"]}, {"$set": {
+        "organization_draft": {
+            "structure": result["structure"],
+            "generated_at": now_utc().isoformat(),
+            "stage": body.stage,
+            "team_size": body.team_size,
+        },
+    }})
+    return result
+
+
+@router.post("/structure/activate")
+def activate_structure(user: dict = Depends(current_user)):
+    """Owner-only. Human ratification gate: the generated org goes live only when approved."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    draft = org.get("organization_draft") or {}
+    if not draft.get("structure"):
+        raise HTTPException(400, "Generate an organization structure first")
+    orgs_col.update_one({"id": m["org_id"]}, {"$set": {
+        "organization": {**draft["structure"], "approved_at": now_utc().isoformat(),
+                         "version": (org.get("organization") or {}).get("version", 0) + 1},
+        "organization_draft": None,
+    }})
+    return {"ok": True, "message": "Organization structure activated"}
+
+
+# ================================================================= Ch.20-21: Executive Org Architecture + Division Generator
+# ponytail: Ch.20 (architecture) and Ch.21 (division generator) are merged — the structure
+# generation above already produces divisions, departments, KPIs, and reporting lines.
+# Ch.20-21 are satisfied by the Ch.19 endpoint + the per-department view below.
+
+@router.get("/structure/departments")
+def list_departments(user: dict = Depends(current_user)):
+    """Owner-only. Flattened view of all departments across divisions."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    structure = (org or {}).get("organization") or {}
+    divisions = structure.get("divisions") or []
+    depts = []
+    for div in divisions:
+        for d in (div.get("departments") or []):
+            depts.append({
+                "function": d.get("function", "general"),
+                "objective": d.get("objective", ""),
+                "kpis": d.get("kpis", []),
+                "division": div.get("name", ""),
+                "budget_pct": d.get("budget_pct_of_division", 0),
+                "headcount": d.get("headcount_recommendation", 1),
+            })
+    return {"departments": depts, "count": len(depts),
+            "active": bool(structure.get("approved_at"))}
+
+
+# ================================================================= Ch.24: Internal Economy Engine
+ECONOMY_SYSTEM = """You are SALAAR's resource allocation function. Given resource requests from departments,
+allocate the available budget based on: strategic alignment (40%), past ROI (30%), and risk of underfunding (30%).
+Be explicit about trade-offs. Every denial comes with reasoning the department can learn from.
+Return ONLY JSON:
+{"allocations": [{"department_function": "sales", "allocated_inr": 50000, "approved": true,
+                  "reasoning": "one line on why", "conditions": "what must be true for this to work"}]}"""
+
+
+@router.get("/economy/requests")
+def list_resource_requests(user: dict = Depends(current_user)):
+    """Owner-only. All pending resource requests from departments."""
+    m = _require_owner(user)
+    rows = list(resource_requests_col.find(
+        {"org_id": m["org_id"], "status": "submitted"},
+        {"_id": 0}).sort("created_at", -1).limit(50))
+    return {"requests": rows, "count": len(rows)}
+
+
+@router.post("/economy/requests")
+def submit_resource_request(body: dict, user: dict = Depends(current_user)):
+    """Department head submits a resource request."""
+    m = _active_membership(user)
+    if not m:
+        raise HTTPException(403, "Not in an organization")
+    now = now_utc()
+    req = {
+        "id": str(uuid.uuid4()),
+        "org_id": m["org_id"],
+        "executive_id": user["id"],
+        "period_start": body.get("period_start", now.isoformat()),
+        "period_end": body.get("period_end", ""),
+        "department_function": body.get("department_function", "general"),
+        "requested_budget_inr": int(body.get("requested_budget_inr", 0)),
+        "requested_headcount": int(body.get("requested_headcount", 0)),
+        "justification": str(body.get("justification", ""))[:800],
+        "expected_outcomes": body.get("expected_outcomes", []),
+        "status": "submitted",
+        "allocated_budget_inr": 0,
+        "salaar_reasoning": "",
+        "founder_modified": False,
+        "created_at": now.isoformat(),
+    }
+    resource_requests_col.insert_one(req)
+    return {"request": req}
+
+
+@router.post("/economy/allocate")
+def allocate_resources(user: dict = Depends(current_user)):
+    """Owner-only. SALAAR evaluates pending requests and produces an allocation proposal.
+    Founder reviews and approves before it takes effect."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    requests = list(resource_requests_col.find({"org_id": m["org_id"], "status": "submitted"}))
+    if not requests:
+        return {"allocations": [], "note": "No pending resource requests"}
+
+    north_star = (org.get("north_star") or "").strip()
+    priorities = org.get("priorities") or []
+    total_budget_hint = int(org.get("total_budget_inr", 0) or 0)
+
+    # Build context for SALAAR
+    req_text = "\n".join(
+        f"- {r['department_function']}: requests Rs{r['requested_budget_inr']}, "
+        f"{r['requested_headcount']} headcount. Justification: {r['justification'][:200]}"
+        for r in requests[:20])
+
+    # Include past performance data per department
+    perf_lines = []
+    for func in set(r["department_function"] for r in requests):
+        dept_rows = list(decisions_col.find(
+            {"org_id": m["org_id"], "function": func,
+             "outcome.status": {"$in": ["success", "partial", "failed"]}},
+            {"_id": 0, "outcome": 1}))
+        if dept_rows:
+            succ = sum(1 for d in dept_rows if d["outcome"]["status"] == "success")
+            part = sum(1 for d in dept_rows if d["outcome"]["status"] == "partial")
+            roi = round(100 * (succ + 0.5 * part) / len(dept_rows)) if dept_rows else None
+            perf_lines.append(f"- {func}: {len(dept_rows)} decisions, {roi}% effectiveness")
+
+    prompt = (
+        f"NORTH STAR: {north_star}\n"
+        f"PRIORITIES: {'; '.join(priorities)}\n"
+        f"TOTAL BUDGET: Rs{total_budget_hint}\n\n"
+        f"PAST PERFORMANCE:\n{chr(10).join(perf_lines) if perf_lines else '(no data)'}\n\n"
+        f"RESOURCE REQUESTS:\n{req_text}\n\n"
+        f"Allocate budget to departments. Score each on: alignment to North Star (40%), "
+        f"past ROI (30%), risk of underfunding (30%). Deny what you must, explain every denial. "
+        f"Total allocated must not exceed total budget."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=1500,
+            system=[{"type": "text", "text": ECONOMY_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        allocations = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"economy allocation failed: {e}")
+        raise HTTPException(502, "Could not allocate resources. Try again.")
+
+    allocated = allocations.get("allocations", [])
+    for alloc in allocated:
+        func = alloc.get("department_function", "")
+        if func:
+            resource_requests_col.update_many(
+                {"org_id": m["org_id"], "department_function": func, "status": "submitted"},
+                {"$set": {"status": "approved", "allocated_budget_inr": alloc.get("allocated_inr", 0),
+                          "salaar_reasoning": alloc.get("reasoning", ""),
+                          "resolved_at": now_utc().isoformat()}})
+
+    return {"allocations": allocated, "note": "Founder must approve allocations before funds are released."}
+
+
+# ================================================================= Ch.26: Organization Memory
+@router.get("/memory")
+def list_org_memory(domain: Optional[str] = None, knowledge_type: Optional[str] = None,
+                     limit: int = 20, user: dict = Depends(current_user)):
+    """Owner-only. What the organization has learned — patterns, lessons, processes.
+    Feeds from Autopsy Engine (Ch.18) and executive archival (Ch.30)."""
+    m = _require_owner(user)
+    q = {"org_id": m["org_id"]}
+    if domain:
+        q["domain"] = domain
+    if knowledge_type:
+        q["knowledge_type"] = knowledge_type
+
+    rows = list(org_memory_col.find(q, {"_id": 0}).sort("created_at", -1).limit(limit))
+    domains = org_memory_col.distinct("domain", {"org_id": m["org_id"]})
+    types = org_memory_col.distinct("knowledge_type", {"org_id": m["org_id"]})
+
+    return {
+        "memories": rows,
+        "count": len(rows),
+        "domains": domains,
+        "knowledge_types": types,
+        "high_confidence": sum(1 for r in rows if r.get("confidence", 0) >= 0.7),
+    }
+
+
+@router.post("/memory")
+def add_org_memory(body: dict, user: dict = Depends(current_user)):
+    """Owner-only. Manually add a lesson or pattern to organization memory."""
+    m = _require_owner(user)
+    mem = {
+        "id": str(uuid.uuid4()),
+        "org_id": m["org_id"],
+        "domain": body.get("domain", "general"),
+        "topic": body.get("topic", ""),
+        "knowledge_type": body.get("knowledge_type", "lesson"),
+        "content": {
+            "summary": str(body.get("summary", ""))[:500],
+            "detail": str(body.get("detail", ""))[:1000],
+            "evidence": str(body.get("evidence", ""))[:500],
+            "counter_evidence": str(body.get("counter_evidence", ""))[:500],
+        },
+        "confidence": float(body.get("confidence", 0.5)),
+        "observation_count": int(body.get("observation_count", 1)),
+        "source": [{"type": "manual", "id": user["id"], "timestamp": now_utc().isoformat()}],
+        "tags": body.get("tags", []),
+        "created_at": now_utc().isoformat(),
+    }
+    org_memory_col.insert_one(mem)
+    return {"memory": mem}
+
+
+@router.get("/memory/search")
+def search_org_memory(query: str = "", limit: int = 10, user: dict = Depends(current_user)):
+    """Owner-only. Full-text search across organization memory."""
+    m = _require_owner(user)
+    if not query.strip():
+        return {"memories": [], "count": 0}
+
+    q = {"org_id": m["org_id"], "$text": {"$search": query.strip()}}
+    try:
+        rows = list(org_memory_col.find(q, {"_id": 0, "score": {"$meta": "textScore"}})
+                    .sort([("score", {"$meta": "textScore"})]).limit(limit))
+    except Exception:
+        org_memory_col.create_index([("content.summary", "text"), ("content.detail", "text"),
+                                     ("topic", "text"), ("tags", "text")])
+        rows = list(org_memory_col.find(q, {"_id": 0, "score": {"$meta": "textScore"}})
+                    .sort([("score", {"$meta": "textScore"})]).limit(limit))
+
+    return {"memories": rows, "count": len(rows), "query": query}
+
+
+# ================================================================= Ch.36: Project & Resource Planning
+class ProjectIn(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    department_function: str = Field(default="general")
+    target_outcome: str = Field(default="", max_length=500)
+    budget_inr: int = Field(default=0, ge=0)
+    deadline: Optional[str] = None
+    milestones: list[dict] = Field(default_factory=list)
+
+
+@router.post("/projects")
+def create_project(body: ProjectIn, user: dict = Depends(current_user)):
+    """Owner-only. Create a project under a department."""
+    m = _require_owner(user)
+    func = norm_dep_function(body.department_function)
+    now = now_utc()
+    project = {
+        "id": str(uuid.uuid4()),
+        "org_id": m["org_id"],
+        "name": body.name.strip(),
+        "description": body.description.strip(),
+        "department_function": func,
+        "target_outcome": body.target_outcome.strip(),
+        "budget_inr": body.budget_inr,
+        "deadline": body.deadline,
+        "milestones": [{"id": str(uuid.uuid4()), "title": str(ms.get("title", ""))[:200],
+                         "status": "pending", "due_at": ms.get("due_at")}
+                        for ms in body.milestones if isinstance(ms, dict) and ms.get("title")][:20],
+        "status": "active",
+        "created_at": now.isoformat(),
+        "created_by": user["id"],
+        "completed_at": None,
+    }
+    projects_col.insert_one(project)
+    return {"project": project}
+
+
+@router.get("/projects")
+def list_projects(department_function: Optional[str] = None, status: Optional[str] = None,
+                  user: dict = Depends(current_user)):
+    """Owner-only. All projects with filters."""
+    m = _require_owner(user)
+    q = {"org_id": m["org_id"]}
+    if department_function:
+        q["department_function"] = department_function
+    if status:
+        q["status"] = status
+    rows = list(projects_col.find(q, {"_id": 0}).sort("created_at", -1).limit(50))
+    return {"projects": rows, "count": len(rows)}
+
+
+@router.patch("/projects/{project_id}")
+def update_project(project_id: str, body: dict, user: dict = Depends(current_user)):
+    """Owner-only. Update project status or add milestones."""
+    m = _require_owner(user)
+    proj = projects_col.find_one({"id": project_id, "org_id": m["org_id"]})
+    if not proj:
+        raise HTTPException(404, "Project not found")
+    upd = {}
+    if body.get("status"):
+        upd["status"] = body["status"]
+        if body["status"] == "completed":
+            upd["completed_at"] = now_utc().isoformat()
+    if body.get("milestones"):
+        upd["milestones"] = body["milestones"]
+    if upd:
+        projects_col.update_one({"id": project_id}, {"$set": upd})
+    return {"ok": True, "project_id": project_id}
+
+
+# ================================================================= Ch.38: Department Automation
+class AutomationTemplateIn(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    department_function: str = Field(default="general")
+    description_template: str = Field(default="", max_length=1000)
+    frequency: str = Field(default="weekly")   # daily | weekly | monthly
+    day_of_week: int = Field(default=1, ge=0, le=6)       # 0=Monday
+    assign_to_function: str = Field(default="general")
+    auto_generate: bool = False
+
+
+@router.post("/automation/templates")
+def create_template(body: AutomationTemplateIn, user: dict = Depends(current_user)):
+    """Owner-only. Define a recurring task template for a department."""
+    m = _require_owner(user)
+    template = {
+        "id": str(uuid.uuid4()),
+        "org_id": m["org_id"],
+        "name": body.name.strip(),
+        "department_function": norm_dep_function(body.department_function),
+        "description_template": body.description_template.strip(),
+        "frequency": body.frequency if body.frequency in ("daily", "weekly", "monthly") else "weekly",
+        "day_of_week": body.day_of_week,
+        "assign_to_function": norm_dep_function(body.assign_to_function),
+        "auto_generate": body.auto_generate,
+        "created_at": now_utc().isoformat(),
+    }
+    automation_templates_col.insert_one(template)
+    return {"template": template}
+
+
+@router.get("/automation/templates")
+def list_templates(department_function: Optional[str] = None, user: dict = Depends(current_user)):
+    """Owner-only. List recurring task templates."""
+    m = _require_owner(user)
+    q = {"org_id": m["org_id"]}
+    if department_function:
+        q["department_function"] = department_function
+    rows = list(automation_templates_col.find(q, {"_id": 0}).sort("created_at", -1).limit(50))
+    return {"templates": rows, "count": len(rows)}
+
+
+@router.delete("/automation/templates/{template_id}")
+def delete_template(template_id: str, user: dict = Depends(current_user)):
+    m = _require_owner(user)
+    automation_templates_col.delete_one({"id": template_id, "org_id": m["org_id"]})
+    return {"ok": True}
+
+
+# ================================================================= Ch.41: Dependency Engine
+class DependencyIn(BaseModel):
+    depends_on_task_id: str = Field(min_length=1)
+
+
+@router.post("/tasks/{task_id}/dependencies")
+def add_task_dependency(task_id: str, body: DependencyIn, user: dict = Depends(current_user)):
+    """Owner-only. Mark that this task depends on another task being completed first."""
+    m = _require_owner(user)
+    task = tasks_col.find_one({"id": task_id, "org_id": m["org_id"]})
+    if not task:
+        raise HTTPException(404, "Task not found")
+    dep_task = tasks_col.find_one({"id": body.depends_on_task_id, "org_id": m["org_id"]})
+    if not dep_task:
+        raise HTTPException(404, "Dependency task not found")
+    if task_id == body.depends_on_task_id:
+        raise HTTPException(400, "A task cannot depend on itself")
+
+    deps = task.get("dependencies") or []
+    existing = [d for d in deps if d.get("task_id") == body.depends_on_task_id]
+    if existing:
+        return {"ok": True, "already_exists": True}
+
+    deps.append({"task_id": body.depends_on_task_id, "added_at": now_utc().isoformat(),
+                 "title": dep_task.get("title", "")[:100]})
+    tasks_col.update_one({"id": task_id}, {"$set": {"dependencies": deps}})
+
+    # Mark task as blocked if dependency is not done
+    if dep_task["status"] != "done":
+        tasks_col.update_one({"id": task_id}, {"$set": {"status": "blocked", "blocked_by": body.depends_on_task_id}})
+
+    return {"ok": True, "dependencies": deps}
+
+
+@router.get("/tasks/{task_id}/dependencies")
+def get_task_dependencies(task_id: str, user: dict = Depends(current_user)):
+    """View what this task depends on and what depends on it."""
+    m = _require_owner(user)
+    task = tasks_col.find_one({"id": task_id, "org_id": m["org_id"]})
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    depends_on = task.get("dependencies") or []
+    # Find tasks that depend on this one
+    blocked_by_this = list(tasks_col.find(
+        {"org_id": m["org_id"], "dependencies.task_id": task_id},
+        {"_id": 0, "id": 1, "title": 1, "status": 1, "assigned_to_name": 1}))
+
+    # Check for circular dependencies
+    visited = set()
+
+    def has_circular(tid, path=None):
+        if path is None:
+            path = set()
+        if tid in path:
+            return True
+        path.add(tid)
+        t = tasks_col.find_one({"id": tid}, {"_id": 0, "dependencies": 1})
+        for d in (t.get("dependencies") or []) if t else []:
+            if has_circular(d["task_id"], path.copy()):
+                return True
+        return False
+
+    circular = has_circular(task_id)
+
+    return {
+        "depends_on": depends_on,
+        "blocked_by_this": blocked_by_this,
+        "has_circular_dependency": circular,
+    }
+
+
+@router.post("/tasks/resolve-blockers")
+def resolve_blockers(user: dict = Depends(current_user)):
+    """Owner-only. Auto-resolve blocked tasks whose dependencies are now done."""
+    m = _require_owner(user)
+    blocked = list(tasks_col.find({"org_id": m["org_id"], "status": "blocked"}))
+    resolved = 0
+    for task in blocked:
+        blocker_id = task.get("blocked_by")
+        if blocker_id:
+            blocker = tasks_col.find_one({"id": blocker_id})
+            if blocker and blocker.get("status") == "done":
+                tasks_col.update_one({"id": task["id"]}, {"$set": {"status": "pending", "blocked_by": None}})
+                resolved += 1
+    return {"resolved": resolved, "still_blocked": len(blocked) - resolved}
+
+
+# ================================================================= Ch.43: Simulation Engine
+SIMULATION_SYSTEM = """You are a company simulator. Given a proposed organizational change and the current
+state of the company, project the likely outcomes across multiple scenarios.
+
+Analyze second-order effects: if department X gets more budget, what happens to department Y?
+If headcount changes, how does that cascade through dependencies?
+Be honest about assumptions and uncertainty.
+
+Return ONLY JSON:
+{"best_case": {"outcome": "one line describing the best plausible outcome", "probability": 20,
+               "key_assumptions": ["assumption that makes this happen"]},
+ "most_likely": {"outcome": "one line describing the most likely outcome", "probability": 60,
+                 "key_assumptions": ["assumption that drives this"]},
+ "worst_case": {"outcome": "one line describing the worst plausible outcome", "probability": 20,
+                "key_assumptions": ["assumption that causes this"]},
+ "second_order_effects": ["unexpected ripple effect 1", "ripple effect 2"],
+ "recommendation": "one line: ship, modify, or abandon this change"}"""
+
+
+class SimulateIn(BaseModel):
+    change_description: str = Field(min_length=5, max_length=1000)
+    scenario_type: str = Field(default="reorg")  # reorg | budget | hiring | strategy
+
+
+@router.post("/simulate")
+def simulate_change(body: SimulateIn, user: dict = Depends(current_user)):
+    """Owner-only. What-if simulation: project the effects of a proposed organizational change."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    structure = org.get("organization") or {}
+    north_star = (org.get("north_star") or "").strip()
+
+    # Gather current state for context
+    dept_text = ""
+    divisions = structure.get("divisions") or []
+    for div in divisions:
+        for d in (div.get("departments") or []):
+            func = d.get("function", "general")
+            perf = _effectiveness_by_function(m["org_id"])
+            eff = next((p for p in perf if p["function"] == func), None)
+            eff_pct = f"{eff.get('effectiveness_pct', '?')}%" if eff and eff.get("effectiveness_pct") is not None else "?"
+            dept_text += f"- {func}: {d.get('objective', '')} (effectiveness: {eff_pct})\n"
+
+    prompt = (
+        f"COMPANY NORTH STAR: {north_star}\n\n"
+        f"CURRENT STRUCTURE:\n{dept_text}\n"
+        f"PROPOSED CHANGE: {body.change_description}\n"
+        f"SCENARIO TYPE: {body.scenario_type}\n\n"
+        f"Simulate this change. Project best/most-likely/worst case, find second-order effects, "
+        f"and give a clear recommendation."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=1200,
+            system=[{"type": "text", "text": SIMULATION_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        result = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"simulation failed: {e}")
+        raise HTTPException(502, "Could not run simulation. Try again.")
+
+    return {
+        "scenario": body.change_description,
+        "simulation": result,
+        "context": {"north_star": north_star, "departments": len(divisions)},
+    }
+
+
+# ================================================================= Ch.46: Recovery & Rollback
+@router.post("/tasks/{task_id}/reopen")
+def reopen_task(task_id: str, reason: str = "", user: dict = Depends(current_user)):
+    """Owner-only. Reopen a failed or dropped task with a recovery plan."""
+    m = _require_owner(user)
+    task = tasks_col.find_one({"id": task_id, "org_id": m["org_id"]})
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if task["status"] not in ("done", "dropped", "failed"):
+        raise HTTPException(400, f"Task is {task['status']}, not done/dropped/failed")
+
+    upd = {
+        "status": "pending",
+        "reopened_at": now_utc().isoformat(),
+        "reopen_reason": reason.strip() or "Recovery — reattempting",
+        "completed_at": None,
+        "ai_review": {"status": "pending", "notes": "", "confidence": 0.0, "reviewed_at": None},
+    }
+    tasks_col.update_one({"id": task_id}, {"$set": upd})
+
+    # ponytail: record in org_memory so the org learns from the failure
+    if org_memory_col is not None:
+        org_memory_col.insert_one({
+            "id": str(uuid.uuid4()),
+            "org_id": m["org_id"],
+            "domain": task.get("department_function", "general"),
+            "topic": "task_recovery",
+            "knowledge_type": "lesson",
+            "content": {"summary": f"Task '{task.get('title','')}' reopened after {task['status']}",
+                       "detail": reason.strip() or "No recovery reason provided",
+                       "evidence": f"Status was {task['status']}", "counter_evidence": ""},
+            "confidence": 0.5, "observation_count": 1,
+            "source": [{"type": "recovery", "id": task_id, "timestamp": now_utc().isoformat()}],
+            "tags": ["recovery", task.get("department_function", "general")],
+            "created_at": now_utc().isoformat(),
+        })
+
+    return {"ok": True, "task_id": task_id, "status": "pending", "previous_status": task["status"]}
+
+
+# ================================================================= Ch.47-49: Optimization, Health, Continuous Improvement
+OPTIMIZATION_SYSTEM = """You are a weekly optimization engine. Analyze the organization's performance data
+and produce: 3 things to AMPLIFY (what's working and should get more resources), 3 things to FIX (what's
+broken and needs attention), and 1 thing to TRY (a bold experiment that could unlock step-change improvement).
+
+Be specific and data-driven. Every recommendation must reference actual numbers from the data provided.
+Return ONLY JSON:
+{"amplify": [{"what": "one line", "evidence": "the data point", "expected_impact": "one line"}],
+ "fix": [{"what": "one line", "evidence": "the data point", "how": "one line on the fix"}],
+ "try": {"what": "one bold experiment", "rationale": "why it could work", "cost_to_test": "one line"},
+ "overall_assessment": "one honest line on how the org is doing"}"""
+
+HEALTH_SYSTEM = """You are an organization health diagnostician. Given department performance data,
+diagnose the health of the organization along these dimensions and score each 0-100:
+- Capacity: workload vs headcount per department
+- Performance: KPI trends and success rates
+- Communication: escalation rates and cross-department collaboration
+- Budget: burn rate vs plan
+- Alignment: activities traceable to mission
+- Knowledge: concentration risk and gaps
+
+Return ONLY JSON:
+{"overall_score": 65, "dimensions": {"capacity": {"score": 70, "issues": []}, ...},
+ "top_issues": [{"severity": "high|medium|low", "description": "...", "affected_department": "...", "recommendation": "..."}],
+ "trend": "improving|stable|declining"}"""
+
+
+@router.get("/optimization/weekly-brief")
+def weekly_optimization_brief(user: dict = Depends(current_user)):
+    """Owner-only. AI-generated weekly brief: what to amplify, fix, and try."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    # Gather data directly (ponytail: simpler than calling cockpit recursively)
+    org_id = m["org_id"]
+    perf = _effectiveness_by_function(org_id)
+
+    perf_text = "\n".join(
+        f"- {p['function']}: {p['decisions']} decisions, {p['avg_alignment']} avg alignment, "
+        f"{p.get('effectiveness_pct', '?')}% effectiveness" for p in perf)
+
+    prompt = (
+        f"NORTH STAR: {org.get('north_star', '') or '(not set)'}\n"
+        f"PERFORMANCE DATA:\n{perf_text}\n\n"
+        f"Produce the weekly optimization brief."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=1000,
+            system=[{"type": "text", "text": OPTIMIZATION_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        brief = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"optimization brief failed: {e}")
+        raise HTTPException(502, "Could not generate brief. Try again.")
+
+    # Ch.49: Store for continuous improvement tracking
+    brief["id"] = str(uuid.uuid4())
+    brief["week_start"] = now_utc().isoformat()[:10]
+    brief["created_at"] = now_utc().isoformat()
+    # Track implementation later
+    orgs_col.update_one({"id": m["org_id"]}, {"$push": {
+        "optimization_briefs": {"$each": [brief], "$slice": -26}}
+    })
+
+    return brief
+
+
+@router.get("/optimization/health")
+def organization_health(user: dict = Depends(current_user)):
+    """Owner-only. Weekly health diagnostic across all departments."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    perf = _effectiveness_by_function(m["org_id"])
+    perf_text = "\n".join(
+        f"- {p['function']}: {p['decisions']} decisions, {p['avg_alignment']} avg, "
+        f"{p.get('effectiveness_pct', '?')}% effective" for p in perf)
+
+    prompt = (
+        f"NORTH STAR: {org.get('north_star', '') or '(not set)'}\n"
+        f"DEPARTMENT PERFORMANCE:\n{perf_text}\n\n"
+        f"Diagnose the org's health."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=1000,
+            system=[{"type": "text", "text": HEALTH_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        health = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"health check failed: {e}")
+        raise HTTPException(502, "Could not run health check. Try again.")
+
+    health["id"] = str(uuid.uuid4())
+    health["week_start"] = now_utc().isoformat()[:10]
+    health["created_at"] = now_utc().isoformat()
+    orgs_col.update_one({"id": m["org_id"]}, {"$push": {
+        "health_snapshots": {"$each": [health], "$slice": -52}}
+    })
+    return health
+
+
+# ================================================================= Ch.50-52: Organization Evolution
+EVOLUTION_SYSTEM = """You are an organization evolution advisor. Given the company's current structure,
+performance data, and growth trajectory, propose structural changes that would improve outcome achievement.
+
+Options: split an overgrown department, merge two underperforming ones, create a new division,
+promote an executive, archive a role, or adjust reporting lines.
+
+Every proposal must be: backed by evidence, have expected impact, and address a real problem.
+Return ONLY JSON:
+{"proposals": [{"type": "split|merge|create|archive|promote|restructure",
+                "description": "one line on the change",
+                "affected_entities": ["dept_or_exec"],
+                "evidence": "the data justifying it",
+                "expected_impact": "one line",
+                "risks": ["risk of this change"],
+                "priority": "high|medium|low"}]}"""
+
+
+@router.get("/evolution/review")
+def evolution_review(user: dict = Depends(current_user)):
+    """Owner-only. Quarterly evolution review: structural change proposals backed by data."""
+    m = _require_owner(user)
+    org = orgs_col.find_one({"id": m["org_id"]})
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    structure = org.get("organization") or {}
+    perf = _effectiveness_by_function(m["org_id"])
+
+    dept_text = ""
+    divisions = structure.get("divisions") or []
+    for div in divisions:
+        for d in (div.get("departments") or []):
+            func = d.get("function", "general")
+            p = next((x for x in perf if x["function"] == func), {})
+            dept_text += (
+                f"- {func} (Division: {div.get('name','?')}): objective={d.get('objective','')[:100]}, "
+                f"decisions={p.get('decisions',0)}, avg_align={p.get('avg_alignment','?')}, "
+                f"effectiveness={p.get('effectiveness_pct','?')}%\n"
+            )
+
+    prompt = (
+        f"NORTH STAR: {org.get('north_star', '') or '(not set)'}\n"
+        f"STAGE: {(org.get('organization_draft') or {}).get('stage', 'startup')}\n"
+        f"CURRENT STRUCTURE:\n{dept_text}\n"
+        f"Propose structural changes that would improve outcome achievement."
+    )
+
+    try:
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=1200,
+            system=[{"type": "text", "text": EVOLUTION_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        evolution = json.loads(_extract_json(txt))
+    except Exception as e:
+        log.error(f"evolution review failed: {e}")
+        raise HTTPException(502, "Could not run evolution review. Try again.")
+
+    evolution["quarter"] = f"Q{(now_utc().month-1)//3+1}-{now_utc().year}"
+    evolution["reviewed_at"] = now_utc().isoformat()
+    orgs_col.update_one({"id": m["org_id"]}, {"$push": {
+        "evolution_proposals": {"$each": [evolution], "$slice": -12}}
+    })
+
+    # Ch.52: Institutional memory review — surface patterns from org_memory
+    memories = list(org_memory_col.find(
+        {"org_id": m["org_id"]},
+        {"_id": 0, "domain": 1, "topic": 1, "content.summary": 1, "confidence": 1}
+    ).sort("created_at", -1).limit(20)) if org_memory_col is not None else []
+
+    return {
+        "evolution": evolution,
+        "institutional_memory_snapshot": {
+            "total_memories": org_memory_col.count_documents({"org_id": m["org_id"]}) if org_memory_col is not None else 0,
+            "recent_patterns": [m.get("content", {}).get("summary", "")[:150] for m in memories[:5]],
+            "domains": list(set(m.get("domain", "") for m in memories)),
+        } if org_memory_col is not None else None,
+    }

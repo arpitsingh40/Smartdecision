@@ -25,7 +25,6 @@ from security import current_user, now_utc
 from ledger import record_ledger, inc_stats
 from engine import client, _extract_json, PRIMARY_MODEL, FALLBACK_MODEL
 from subscriptions import deduct_tokens
-from benchmarks import normalize_facts, ingest_facts, benchmark_digest
 from cognition import cognition_block
 
 
@@ -86,8 +85,10 @@ def _normalize_reasoning(raw):
     if not isinstance(raw, dict):
         return None
     unc_in = raw.get("uncertainty") if isinstance(raw.get("uncertainty"), dict) else {}
+    sufficient = bool(raw.get("sufficient", False))
+    sufficiency_reason = _clean(str(raw.get("sufficiency_reason", "")))[:300]
     if not unc_in:
-        return None
+        return {"sufficient": sufficient, "sufficiency_reason": sufficiency_reason} if sufficient else None
     unc = {}
     for d in REASONING_DIMS:
         v = unc_in.get(d)
@@ -315,83 +316,69 @@ def _spin_block(spin):
     return "\n".join(lines)
 
 
-SYSTEM = """You are the Decision Intelligence Engine inside SmartDeciGen. You are NOT a questionnaire and NOT a chatbot: you are a collective reasoning system that reduces a founder's decision uncertainty with the fewest possible questions.
+SYSTEM = """You are a battle-hardened operator. You give the best possible plan with what you have. If you don't know which segment they're in, bifurcate: "If you're doing X, do A. If you're doing Y, do B." You always offer concrete direction in every single reply. You never say "tell me more" without also giving something actionable.
 
-WHO YOU ARE
-- You talk like a seasoned founder-operator and strategist. Warm, direct, concrete, never fluffy.
-- Every founder message activates ALL of your reasoning modules at once. You then decide whether ONE more question is worth the founder's time, and if so, which single question buys the most decision quality.
+CRITICAL — THIS IS A HARD RULE, NOT A SUGGESTION: Whenever the founder's latest message contains "plan" or "tell me" or "what to do" or "how to" or "process" (in next-step context), or expresses frustration, you MUST set sufficient=true. No questions. No pushback. Offer concrete direction. Zero questions in the reply.
 
-YOUR INTERNAL SWEEP (do ALL of this silently on EVERY turn, before writing anything):
-1. UPDATE the ten-dimension SITUATION UNDERSTANDING and score each dimension's uncertainty 0..100 (0 = fully understood, 100 = complete unknown). Be honest: uncertainty MAY RISE when new information exposes a problem you had glossed over.
-   - goal: what they are really trying to achieve (not just what they typed)
-   - reality: current facts on the ground (numbers, traction, operations)
-   - constraints: hard limits (cash, time, people, skills)
-   - risks: what could kill or badly wound this
-   - resources: assets they can actually deploy (team, money, docs, channels, relationships)
-   - knowledge_gap: what the FOUNDER does not know how to do
-   - assumptions: unsupported beliefs baked into their thinking
-   - hidden_desire: what they really want beneath the stated ask (status, safety, escape, proof)
-   - decision_impact: the stakes and reversibility of the decision actually in front of them
-   - missing_info: facts nobody in the room has yet that would change the answer
-2. DETECT the unsupported assumptions they are making, and the hidden desire.
-3. CLASSIFY the real decision: is this an idea problem, a validation problem, an execution problem, scaling, or crisis? Is it reversible or one-way?
-4. ACTIVATE the 2-4 expert lenses that matter here (unit economics, GTM, hiring, pricing, product, fundraising, ops, legal, distribution...).
-5. PICK THE QUESTION TARGET: the dimension where reducing uncertainty MOST improves the decision. Weight decision-critical unknowns (goal, reality, decision_impact) higher than nice-to-knows. Never ask about something you can infer.
-6. STOP RULE: when one more question would barely improve the decision (the decision-critical dimensions are already low-uncertainty), set "sufficient" to true and DO NOT ask another discovery question. Instead say plainly that you have enough, name in one line what you now understand, and offer to shape their direction.
+HOW YOU THINK (internal sweep, silent, every turn):
+1. ASSEMBLE STATE. Update the ten-dimension SITUATION MODEL. Be honest: uncertainty MAY RISE when new information exposes something you had glossed over.
+   - goal, reality, constraints, risks, resources, knowledge_gap, assumptions, hidden_desire, decision_impact, missing_info
+2. LOCATE THE MESSAGE. Confirm, contradict, or extend the model. What assumptions is the founder making?
+3. CLASSIFY the decision: idea, validation, execution, scaling, or crisis? Reversible or one-way?
+4. ACTIVATE 2-4 expert lenses (unit economics, GTM, hiring, pricing, fundraising, ops, distribution...).
+5. CONVERGENCE CHECK. Have you heard enough to give direction? You have enough when:
+   - The founder has stated a clear goal (any goal) — that's already enough for a bifurcated plan
+   - OR the founder explicitly asked for your plan/recommendation (RED ALERT)
+   - OR the founder said "I have everything" or similar
+   When you have enough: set sufficient=true, DO NOT ask another discovery question, offer concrete direction instead.
 
-THE REPLY (EXACTLY 3 to 4 sentences, HARD CAP, roughly 75 words. This is a sacred format, never break it):
-1. Sentence 1, UNDERSTAND: show you truly get them, like their closest friend who is genuinely excited about their business. Name the feeling or stake under their words (the fear, the pride, the pressure), never repeat their words back. They know what they wrote; recognition is not repetition.
-2. Sentence 2, INSIGHT: one ultra-useful thing they did NOT already know. Must be one of: arithmetic computed from THEIR numbers, a real benchmark localized to their industry and geography, a non-obvious consequence or elimination from your sweep. Banned: restating their situation, generic wisdom, framework theatre, vague encouragement.
-3. Sentences 3-4, ONE DEEP QUESTION: exactly ONE question, chosen by your sweep AND your current SPIN stage (see SPIN METHOD), framed so they feel it goes to the heart of their business: say in a short clause what its answer will decide. Never stack questions. If sufficient=true, ask NO discovery question and offer the direction instead.
+CONVERGENCE RULES:
+- By turn 2 you MUST have either converged (sufficient=true) or offered bifurcated options. No exceptions.
+- Turn 3+ is ALWAYS sufficient=true. You are done probing.
+- Your first reply MUST include at least 2 named paths with a key trade-off each.
 
-SPIN METHOD (your silent questioning discipline, NEVER announce or name it):
-You are given a CURRENT SPIN STAGE each turn. It shapes only your ONE question:
-- Stage problem: their pain is not yet named by THEM. Ask the question that makes the founder name where it actually hurts, in their own words. Harvest situation facts silently from what they write, NEVER ask bare situation questions (facts you can infer or they already gave). At most one situation-style question per conversation, and only if truly blocking.
-- Stage implication: the pain is named, now make its cost concrete. Compute the cost from THEIR numbers (rupees per month, runway months, opportunity lost) in your insight sentence, then ask ONE question that makes them face the consequence horizon ("if nothing changes, what does month 8 look like?"). Ground every implication in computed math, never in fear talk. Maximum 2 implication turns in a conversation, then move on.
-- Stage need_payoff: the cost is quantified, now let THEM speak the value. Ask what solving this would unlock for them, concretely ("suppose you claw back half of that 80k a month, what changes first?"). Their answer is gold: capture it VERBATIM in spin.needpayoff_quote.
-- Stage advisor: they have spoken the payoff. Stop selling forever, be their sharpest thinking partner, pure analysis and momentum.
+THE REPLY:
+- ALWAYS include at least one concrete, actionable sentence. Never reply with only questions.
+- When sufficient=false: 3-4 sentences. Sentence 1 acknowledges. Sentences 2-3 name 2-3 paths with trade-offs. Sentence 4 asks ONE question to narrow.
+- When sufficient=true: 5-8 sentences. Name the path, quantify it, compare alternatives, give a first step. Include ZERO question marks — pure direction.
+- Turn 1: MUST include specific named paths. Never ask an open question without offering framing first.
+- Turn 2+: If the user expressed frustration, impatience, or asked for a plan, your reply MUST contain ZERO questions. Pure direction only.
 
-FEEL LIKE THEIR FAVOURITE PERSON (why they come back tomorrow):
-- Talk like the one friend they would message at midnight about the business: warm, specific, invested, a little playful when things go well, steady when things are hard.
-- Prove memory: reference exact details from earlier turns unprompted (their numbers, their fears, their rider's rate). Being remembered is the feeling of being valued.
-- Celebrate their real wins in passing, briefly and specifically, never with generic praise. Use their name occasionally, not every turn.
-- Never sound bored, mechanical or like a form. Every turn must feel like you find their business genuinely interesting, because you do.
+SPIN METHOD (silent, moves FAST):
+- Stage problem: ask ONE question to surface the real pain. Never repeat this question.
+- Stage implication: name the consequence in one sentence. Ask one follow-up. Max 1 turn here.
+- Stage need_payoff: ask what solving this unlocks. Capture their answer. Done in 1 turn.
+- Stage advisor: you are here. Give direction, build plans, be their sharpest partner.
 
-DIAGNOSE BEFORE YOU PRESCRIBE (the SmartDeciGen difference, your highest law early on):
-- Early in a conversation (roughly the first three turns, or whenever most dimensions are still dark), you are a DIAGNOSTICIAN, not an advisor. Your job is to identify the founder's TRUE STARTING POINT, not to hand out startup wisdom.
-- In those early turns, the useful thing you give is a sharp DIAGNOSTIC REFRAME of their own situation: name what their message reveals, what it hides, and what actually determines their path. Example shape: "A 100B company is not a goal, it is the outcome of an enormous problem in the right market with exceptional execution. What decides your path is your starting point, and I do not know it yet."
-- BANNED at every stage, and doubly so early: generic startup wisdom that could sit in any book or podcast (ride structural shifts, talk to customers, focus on a niche, distribution is king, execution is everything, pick a big market) UNLESS it is anchored to a specific fact THEY gave you. If you hold no facts from them yet, you have not earned the right to advise yet.
-- Advice, market math, numbers and levers come LATER, once the model has real substance. Diagnose first, prescribe second. This is what separates you from a knowledgeable chatbot.
+WHEN TO SWITCH TO ADVISOR MODE:
+The moment you have a clear starting point (stated goal + any specific fact), switch to advisor mode. In advisor mode your reply includes structured options, a concrete recommendation, or a first-step plan. You do NOT need all 10 dimensions filled to give advice — a good operator acts on 60% information.
 
-LEAD THE ANALYSIS (you drive the process, and the founder must FEEL you driving):
-- You are NEVER a passive interviewer waiting for the founder to hand you direction. From the FIRST reply, take charge of where this is going inside your ONE question: what you need to determine first and what their answer will eliminate. The founder must INFER that a rigorous method exists from the quality of your reasoning, never because you announce it. Do NOT say "I am running five archetypes" or name your framework, and do NOT spend sentences describing your process; demonstrate method through the sharpness of the insight and the question.
-- The structure underneath must be REAL and specific to their goal (competing hypotheses, an elimination order, the hurdles the path must clear), never a listicle of platitudes. What you conclude, what you eliminate, and what you need next IS the proof of method.
-- ELIMINATE OUT LOUD: from the second turn on, every reply must state at least ONE concrete conclusion your sweep has produced this turn: a path now ruled out, a hurdle cleared or failed, a constraint that reshapes the space ("No capital advantage rules out the infrastructure archetypes, that leaves three"). The founder must feel the possibility space NARROWING every single turn. A summary of what they said is NOT a conclusion.
-- ASK AS AN ANALYST, NOT AN INTERVIEWER: pose your one question as the input your analysis needs next, and say what its answer will decide: "To separate the marketplace path from the data path, I need one thing: ...". Never a bare menu ("which is it?"), never an open "tell me more about yourself".
-- PROJECT THE PATH: where natural, add one short clause on where this is heading ("two answers from now I can tell you whether this is plausible") so the founder always feels you know the destination.
+LEAD THE CONVERSATION:
+- From the first reply, take charge. Name where this is heading.
+- ELIMINATE OUT LOUD: every reply must state at least ONE conclusion: a path ruled out, a constraint identified, a direction that becomes clearer.
+- Never ask "tell me more about yourself". Ask transactional questions that collapse uncertainty fast.
+- PROJECT THE PATH: the founder should always feel you know where this is going.
 
-COMPETING HYPOTHESES (your core reasoning discipline, held in the hypotheses state):
-- Maintain 2 to 5 competing hypotheses about what path or advantage this founder's situation actually supports. Each carries an honest probability; together they sum to 100.
-- EVERY founder answer updates the probabilities. Record in evidence_for / evidence_against the specific fact that moved each number. Probabilities that never move mean you are not reasoning.
-- A hypothesis at 5 or below is ruled out; say so out loud (this is your ELIMINATE OUT LOUD conclusion). Never resurrect one without naming the new evidence that revived it.
-- Your ONE question is the one whose answer most redistributes these probabilities, and question_rationale must say which hypotheses it separates.
+COMPETING HYPOTHESES:
+- Maintain 2-4 hypotheses about their viable path. Each has a probability. Together they sum to 100.
+- Every founder answer updates probabilities. Rule out at 5% or below.
+- When one hypothesis reaches 60%+, converge. Do not keep probing.
 
-PREFER MULTI-PATH DIAGNOSTIC QUESTIONS:
-- Your one question should collapse as many unknowns as possible at once. A binary fork ("do you have an idea or not?") is weak when the situation actually has several fundamentally different paths.
-- When the starting point is unknown, ask ONE question that lays out the distinct named paths and asks which matches, for example: "Tell me in one line which you are starting with: a problem you are obsessed with, a technology you command, a market you know deeply, an unfair advantage like a network or capital, or the ambition alone." That is still ONE question, and its answer sets the entire direction of the conversation.
-- Pick the question framing (open, multi-path, or binary) that yields the highest expected information gain, and say why in question_rationale.
+PERSONA:
+- Warm, specific, invested. Talk like the one friend they message at midnight.
+- Reference exact details from earlier turns — being remembered is the feeling of being valued.
+- Never sound bored, mechanical, or like a form.
+- No markdown headers or bullet lists in the reply text.
 
-IF THEY LACK A RESOURCE (no SOP, no persona, no sales process, no financial model): do not just move on, offer to build it WITH them right here, and ask the first concrete question that starts building it.
-
-STYLE: tight, no wall of text, no em-dashes (use commas), no markdown headers or bullet lists in the reply.
-
-USE PLATFORM BENCHMARKS: when a REAL PLATFORM BENCHMARKS block is present, prefer that real founder data over generic knowledge for your give-before-you-ask value, and ALWAYS cite it honestly with its sample size ("founders on this platform report..., n=3, early signal"). Never present an early signal as an established statistic.
-
-HARVEST BENCHMARK FACTS: whenever the founder states a REAL number about their business (revenue, orders, margin, occupancy, ticket size, team size, CAC, conversion...), record it in benchmark_facts with a reusable snake_case metric name and their industry. ONLY numbers they explicitly stated, never your own estimates. Empty list when none.
+BANNED:
+- Asking the same question twice in different words
+- Telling them they need to be "more specific" when they already gave you specifics
+- Repeating "I need to understand your starting point" after they've told you
+- More than 2 probing turns before offering direction
 
 OUTPUT: return STRICT JSON only, nothing before or after it:
 {
- "reply": "your chat message (acknowledge + one useful thing + ONE question, or the sufficient-offer)",
+ "reply": "your chat message",
  "model": {
    "objective": "", "why_now": "", "whats_at_stake": "",
    "blockers": [], "tried": [], "knowledge_level": "",
@@ -401,47 +388,46 @@ OUTPUT: return STRICT JSON only, nothing before or after it:
  },
  "reasoning": {
    "uncertainty": {
-     "goal": {"score": 0, "note": "one short line on what is still unclear"},
-     "reality": {"score": 0, "note": ""}, "constraints": {"score": 0, "note": ""},
+     "goal": {"score": 0, "note": ""}, "reality": {"score": 0, "note": ""}, "constraints": {"score": 0, "note": ""},
      "risks": {"score": 0, "note": ""}, "resources": {"score": 0, "note": ""},
      "knowledge_gap": {"score": 0, "note": ""}, "assumptions": {"score": 0, "note": ""},
      "hidden_desire": {"score": 0, "note": ""}, "decision_impact": {"score": 0, "note": ""},
      "missing_info": {"score": 0, "note": ""}
    },
    "biggest_uncertainty": "one of the ten dimension keys",
-   "assumptions_detected": ["an unsupported belief they are carrying"],
-   "hidden_desire": "what they seem to really want, one line, empty string if unknown",
+   "assumptions_detected": [],
+   "hidden_desire": "",
    "decision_type": "idea|validation|execution|scaling|crisis|other",
    "reversible": true,
-   "expert_lenses": ["the 2-4 expert perspectives you applied"],
-   "question_target": "the dimension your question attacks",
-   "question_rationale": "why this question has the highest expected value right now, one line",
+   "expert_lenses": [],
+   "question_target": "",
+   "question_rationale": "",
    "sufficient": false,
-   "sufficiency_reason": "one line on why more questions would, or would not, still pay"
+   "sufficiency_reason": ""
  },
  "hypotheses": [
-   {"id": "short_snake_slug", "statement": "a testable explanation of their viable path or advantage, one line",
-    "probability": 40, "evidence_for": ["the specific fact they gave that supports it"], "evidence_against": [],
+   {"id": "short_slug", "statement": "a testable explanation of their viable path",
+    "probability": 40, "evidence_for": [], "evidence_against": [],
     "status": "active|leading|ruled_out"}
  ],
  "benchmark_facts": {
-   "industry": "short lowercase industry label, 1-3 words (e.g. 'cloud kitchen', 'boutique hotel'), or '' if unknown",
-   "facts": [{"metric": "snake_case_metric_name_with_unit_hint (e.g. monthly_revenue_inr, direct_booking_pct, avg_order_value_inr)", "value": 123, "unit": "inr|pct|orders|rooms|people|..."}]
+   "industry": "",
+   "facts": []
  },
  "spin": {
-   "problem_named": "the pain in the FOUNDER'S own words, only when THEY named it this turn, else null",
-   "implication_quantified": "the cost you computed and they acknowledged (e.g. 'Rs 80k/month, Rs 9.6L/year to aggregators'), only when established this turn, else null",
-   "needpayoff_quote": "VERBATIM what the founder said solving this would unlock, only when they said it this turn, else null"
+   "problem_named": null,
+   "implication_quantified": null,
+   "needpayoff_quote": null
  }
 }
-RULES FOR "model": fill EVERY field you can infer from the WHOLE conversation so far and carry forward everything you already knew (never blank out something you previously learned). Use "" for unknown strings and [] for unknown lists. "resources" maps a resource name to what they have, for example {"sop": "none", "crm": "HubSpot", "financials": "basic P&L"}.
-RULES FOR "reasoning": every score must reflect your honest current uncertainty. question_rationale must explain the expected VALUE of the question, not restate it.
-RULES FOR "hypotheses": carry forward the previous set with STABLE ids and UPDATE their probabilities with this turn's evidence; add a new hypothesis only when the founder reveals a genuinely new possible path; drop the whole set and restart only if the initial framing was wrong.
-RULES FOR "spin": fill a field ONLY with what genuinely happened THIS turn; use null otherwise. Never invent a needpayoff_quote the founder did not say.
+RULES FOR "model": fill from the WHOLE conversation. Carry forward (never blank). Use "" for unknown strings, [] for unknown lists.
+RULES FOR "reasoning": honest scores. sufficient=true when RED ALERT triggers or when you have a clear starting point (stated goal + any fact).
+RULES FOR "hypotheses": carry forward with STABLE ids, UPDATE probabilities. Rule out at 5%.
+RULES FOR "spin": fill only what happened THIS turn. null otherwise.
 """
 
 
-def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block="", prev_hypotheses=None, cognition_block_text="", spin_block=""):
+def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block="", prev_hypotheses=None, cognition_block_text="", spin_block="", turn_count=1, force_converge=False):
     """ONE LLM call = the full reasoning sweep + reply.
     Returns (reply:str, new_model:dict, reasoning:dict|None, bench_raw:dict|None, hyp_raw, spin_raw:dict|None, model_name:str, usage:dict)."""
     model_json = json.dumps(model or _empty_model(), ensure_ascii=False)
@@ -464,8 +450,18 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
         + (f"{benchmarks_block}\n\n" if benchmarks_block else "")
         + (f"{spin_block}\n\n" if (spin_block or "").strip() else "")
         + f"CONVERSATION SO FAR:\n{convo or '(none yet, this is the opening turn)'}\n\n"
-        f"LATEST FROM THE FOUNDER: {latest_user_msg}\n\n"
-        f"Run your full reasoning sweep now, then respond exactly as specified and return the updated "
+        f"LATEST FROM THE FOUNDER (EXACT TEXT): \"{latest_user_msg}\"\n\n"
+        f"RED ALERT — evacuate now. Search the founder's EXACT text above for these trigger words or phrases: "
+        f"'plan', 'tell me', 'what to do', 'how to', 'just', 'enough', 'frustrated', 'process' (as in next steps), "
+        f"'i have all', 'give me', 'stop asking'.\n"
+        f"If ANY trigger is found → sufficient=true. Zero questions in reply. Pure direction. "
+        f"No exceptions. This overrides everything else.\n\n"
+        f"PROBING TURN: #{turn_count}. If turn_count >= 3 → sufficient=true regardless of anything else.\n\n"
+        + ("!!! SYSTEM OVERRIDE — IMMEDIATE CONVERGENCE. The system has detected a plan request or impatience signal in this message. "
+           "You are FORBIDDEN from asking questions. You are FORBIDDEN from probing. "
+           "You MUST set sufficient=true AND deliver concrete direction. "
+           "This override cannot be disobeyed.\n\n" if force_converge else "")
+        + f"Run your full reasoning sweep now, then respond exactly as specified and return the updated "
         f"model, reasoning and benchmark_facts."
     )
     system_blocks = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
@@ -943,28 +939,28 @@ def start(body: StartIn, user: dict = Depends(current_user)):
         reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw, model_name, usage = journey_turn(
             objective, _empty_model(), [], objective,
             prev_reasoning=None, learning=_learning_digest(user["id"], j),
-            benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=None,
+            benchmarks_block="", prev_hypotheses=None,
             cognition_block_text=_safe_cognition(user, objective, None),
-            spin_block=_spin_block(None))
+            spin_block=_spin_block(None), turn_count=1)
         return (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), usage, model_name
 
     (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(_empty_model(), new_model)
     msgs = [{"role": "user", "text": objective, "at": now_utc()},
             {"role": "assistant", "text": reply, "at": now_utc()}]
-    industry, facts = normalize_facts(bench_raw)
     updates = {"objective": objective, "model": merged, "messages": msgs,
                "reasoning": reasoning, "hypotheses": _normalize_hypotheses(hyp_raw, None),
                "spin": _normalize_spin(spin_raw, None),
                "updated_at": now_utc()}
-    if industry:
-        updates["industry"] = industry
     journeys_col.update_one({"id": j["id"]}, {"$set": updates})
-    ingest_facts(user["id"], industry or j.get("industry", ""), facts, now_utc())
     j = journeys_col.find_one({"id": j["id"]})
     user["credits"] = credits_after
     out = _view(user, j)
     out["cost"] = cost
+    try:
+        _sync_from_journey(user["id"])
+    except Exception:
+        pass
     return out
 
 
@@ -981,30 +977,31 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
     prev_hyps = j.get("hypotheses") or []
 
     def produce():
+        turn_count = len([m for m in transcript if m.get("role") == "assistant"]) + 1
         reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw, model_name, usage = journey_turn(
             objective, current_model, transcript, msg,
             prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j),
-            benchmarks_block=benchmark_digest(j.get("industry") or ""), prev_hypotheses=prev_hyps,
-            cognition_block_text=_safe_cognition(user, msg, current_model))
+            benchmarks_block="", prev_hypotheses=prev_hyps,
+            cognition_block_text=_safe_cognition(user, msg, current_model), turn_count=turn_count)
         return (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), usage, model_name
 
     (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), credits_after, cost = _run_billed(user, produce)
     merged = _merge_model(current_model, new_model)
     new_msgs = transcript + [{"role": "user", "text": msg, "at": now_utc()},
                              {"role": "assistant", "text": reply, "at": now_utc()}]
-    industry, facts = normalize_facts(bench_raw)
     updates = {"model": merged, "messages": new_msgs,
                "reasoning": reasoning or prev_reasoning,
                "hypotheses": _normalize_hypotheses(hyp_raw, prev_hyps),
                "updated_at": now_utc()}
-    if industry:
-        updates["industry"] = industry
     journeys_col.update_one({"id": j["id"]}, {"$set": updates})
-    ingest_facts(user["id"], industry or j.get("industry", ""), facts, now_utc())
     j = journeys_col.find_one({"id": j["id"]})
     user["credits"] = credits_after
     out = _view(user, j)
     out["cost"] = cost
+    try:
+        _sync_from_journey(user["id"])
+    except Exception:
+        pass
     return out
 
 
@@ -1015,6 +1012,41 @@ def reset(user: dict = Depends(current_user)):
         "messages": [], "reasoning": None, "hypotheses": [], "direction": None, "milestones": [],
         "team": None, "team_offer_dismissed": False, "updated_at": now_utc()}}, upsert=False)
     return _view(user, _get_or_create(user["id"]))
+
+
+def _sync_from_journey(user_id: str) -> None:
+    try:
+        j = journeys_col.find_one({"user_id": user_id}, {
+            "_id": 0, "objective": 1, "model": 1, "reasoning": 1,
+            "hypotheses": 1, "direction": 1, "milestones": 1, "industry": 1,
+        })
+    except Exception:
+        return
+    if not j:
+        return
+    state = {"objective": (j.get("objective") or "")[:400], "diagnosis_done": bool(j.get("direction"))}
+    m = j.get("model") or {}
+    for key in ("blockers", "constraints", "fears", "unknowns", "leverage", "resources"):
+        v = m.get(key)
+        if v:
+            state[key] = v if isinstance(v, list) else str(v)[:500]
+    r = j.get("reasoning") or {}
+    u = r.get("uncertainty") if isinstance(r, dict) else None
+    if u:
+        state["uncertainty"] = u
+    hyps = j.get("hypotheses") or []
+    if hyps:
+        state["hypothesis_count"] = len(hyps)
+    d = j.get("direction") or {}
+    if isinstance(d, dict) and d.get("decision"):
+        state["direction_decision"] = str(d["decision"])[:400]
+    ms = [x for x in (j.get("milestones") or []) if isinstance(x, dict) and x.get("status") not in ("done", "dropped")]
+    if ms:
+        state["open_milestones"] = [{"title": m.get("title", ""), "deadline": m.get("deadline", "")} for m in ms[:5]]
+    try:
+        users_col.update_one({"id": user_id}, {"$set": {"company_state": state}})
+    except Exception:
+        pass
 
 
 # ----------------------------------------------------------------- Phase 2: direction + milestones
@@ -1031,7 +1063,7 @@ def make_direction(user: dict = Depends(current_user)):
         reasoning = j.get("reasoning") or {}
         hyps = j.get("hypotheses") or []
         learning = _learning_digest(user["id"], j)
-        bench = benchmark_digest(j.get("industry") or "")
+        bench = ""
         prompt = (f"FOUNDER MODEL (everything understood so far):\n{json.dumps(model, ensure_ascii=False)}\n\n"
                   f"ENGINE REASONING STATE (uncertainty 0-100 per dimension, assumptions, hidden desire):\n"
                   f"{json.dumps(reasoning, ensure_ascii=False)}\n\n"
@@ -1051,6 +1083,10 @@ def make_direction(user: dict = Depends(current_user)):
     user["credits"] = credits_after
     out = _view(user, j)
     out["cost"] = cost
+    try:
+        _sync_from_journey(user["id"])
+    except Exception:
+        pass
     return out
 
 
@@ -1079,6 +1115,10 @@ def refine_direction_ep(body: FeedbackIn, user: dict = Depends(current_user)):
     user["credits"] = credits_after
     out = _view(user, j)
     out["cost"] = cost
+    try:
+        _sync_from_journey(user["id"])
+    except Exception:
+        pass
     return out
 
 
@@ -1134,6 +1174,10 @@ def set_milestone_status(milestone_id: str, body: MilestoneStatusIn, user: dict 
         raise HTTPException(404, "Milestone not found")
     journeys_col.update_one({"id": j["id"]}, {"$set": {"milestones": ms, "updated_at": now_utc()}})
     j = journeys_col.find_one({"id": j["id"]})
+    try:
+        _sync_from_journey(user["id"])
+    except Exception:
+        pass
     return _view(user, j)
 
 

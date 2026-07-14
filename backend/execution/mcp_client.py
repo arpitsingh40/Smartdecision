@@ -37,11 +37,15 @@ def _composio_init():
         from composio import Composio
         _composio_client = Composio()
         _composio_session = _composio_client.create(user_id="default")
-        _mcp_url = _composio_session.mcp.url
-        _mcp_headers = _composio_session.mcp.headers
+        # ponytail: mcp endpoint is optional — session.execute() is the primary path
+        mcp = getattr(_composio_session, "mcp", None)
+        if mcp:
+            _mcp_url = mcp.url
+            _mcp_headers = mcp.headers
     except Exception as e:
         log.warning("Composio v3 init failed: %s", e)
         _composio_client = False
+        _composio_session = None
 
 
 def _mcp_call(method: str, params: dict = None) -> dict:

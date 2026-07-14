@@ -520,12 +520,12 @@ export default function JourneyPage() {
   );
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-dvh flex flex-col">
       <TopBar />
-      <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 overflow-hidden">
         {/* conversation */}
-        <section className="flex flex-col min-h-[60vh]" data-testid="journey-chat">
-          <div className="flex-1 space-y-5 py-4">
+        <section className="flex flex-col min-h-0" data-testid="journey-chat">
+          <div className="flex-1 overflow-y-auto space-y-5 py-4">
             {journey.messages.map((m, i) => (
               m.role === 'assistant' ? (
                 <div key={i} className="flex gap-3 items-start" data-testid="journey-msg-assistant">
@@ -861,7 +861,7 @@ export default function JourneyPage() {
           )}
 
           {/* composer */}
-          <div className="sticky bottom-3">
+          <div className="mt-3">
             <div className="rounded-2xl border border-border/70 bg-card shadow-sm p-2 flex items-end gap-2">
               <Textarea
                 data-testid="journey-message-input"
@@ -869,8 +869,8 @@ export default function JourneyPage() {
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={(e) => onKey(e, send)}
                 placeholder="Type your answer…"
-                rows={1}
-                className="min-h-[44px] max-h-40 resize-none border-0 focus-visible:ring-0 shadow-none text-[15px] px-2 py-2.5"
+                rows={3}
+                className="min-h-[90px] max-h-40 resize-none border-0 focus-visible:ring-0 shadow-none text-[15px] px-2 py-2.5"
               />
               <Button
                 data-testid="journey-send-btn"

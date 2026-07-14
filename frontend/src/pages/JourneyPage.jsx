@@ -78,7 +78,7 @@ export default function JourneyPage() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get('/api/chat');
+      const r = await api.get('/journey');
       if (r.data?.started) {
         setJourney(r.data);
         if (r.data.session_id) setSessionId(r.data.session_id);
@@ -118,7 +118,7 @@ export default function JourneyPage() {
     if (!obj || busy) return;
     setBusy(true);
     try {
-      const r = await api.post('/api/chat', { message: obj });
+      const r = await api.post('/journey/start', { message: obj });
       setJourney((prev) => (prev ? { ...prev, ...r.data } : r.data));
       if (r.data.session_id) setSessionId(r.data.session_id);
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);
@@ -139,7 +139,7 @@ export default function JourneyPage() {
     }
     setMessage('');
     try {
-      const r = await api.post(teamMode ? '/journey/team/message' : '/api/chat', { message: msg, ...(sessionId ? { session_id: sessionId } : {}) });
+      const r = await api.post(teamMode ? '/journey/team/message' : '/journey/message', { message: msg, ...(sessionId ? { session_id: sessionId } : {}) });
       setJourney((prev) => (prev ? { ...prev, ...r.data } : r.data));
       if (r.data.session_id) setSessionId(r.data.session_id);
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);
@@ -147,7 +147,7 @@ export default function JourneyPage() {
       handleError(e);
       setMessage(msg);
       // resync clean state from server
-      api.get('/api/chat').then((r) => r.data && setJourney(r.data)).catch(() => {});
+      api.get('/journey').then((r) => r.data && setJourney(r.data)).catch(() => {});
     } finally { setBusy(false); }
   }, [message, busy, journey, setCredits, sessionId]);
 

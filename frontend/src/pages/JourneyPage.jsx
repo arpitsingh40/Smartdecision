@@ -248,8 +248,27 @@ export default function JourneyPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="animate-spin text-muted-foreground" size={22} />
+      <div className="min-h-screen flex flex-col">
+        <TopBar />
+        <div className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 space-y-6">
+          <div className="flex gap-6 h-[70vh]">
+            <div className="flex-1 space-y-4">
+              <div className="h-10 w-3/5 animate-pulse rounded-lg bg-primary/10" />
+              <div className="h-4 w-full animate-pulse rounded-lg bg-primary/10" />
+              <div className="h-4 w-4/5 animate-pulse rounded-lg bg-primary/10" />
+              <div className="h-4 w-2/5 animate-pulse rounded-lg bg-primary/10" />
+              <div className="h-20 w-full animate-pulse rounded-2xl bg-primary/10 mt-6" />
+              <div className="h-20 w-full animate-pulse rounded-2xl bg-primary/10" />
+            </div>
+            <div className="w-72 space-y-4 hidden lg:block">
+              <div className="h-4 w-24 animate-pulse rounded-md bg-primary/10" />
+              <div className="h-16 animate-pulse rounded-xl bg-primary/10" />
+              <div className="h-16 animate-pulse rounded-xl bg-primary/10" />
+              <div className="h-16 animate-pulse rounded-xl bg-primary/10" />
+              <div className="h-16 animate-pulse rounded-xl bg-primary/10" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

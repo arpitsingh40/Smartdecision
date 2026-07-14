@@ -131,8 +131,10 @@ export default function DecisionsPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-12 justify-center">
-            <Loader2 className="animate-spin" size={16} /> Loading your decisions…
+          <div className="space-y-3 py-6">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-20 animate-pulse rounded-2xl bg-primary/10" />
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl border bg-card p-10 text-center">

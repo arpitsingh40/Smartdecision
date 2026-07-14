@@ -156,8 +156,20 @@ export default function TeamPage() {
       <main data-testid="team-page" className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 pt-4">
 
         {loading && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-20 justify-center">
-            <Loader2 className="animate-spin" size={16} /> Loading your workspace…
+          <div className="space-y-4 py-10">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 animate-pulse rounded-2xl bg-primary/10" />
+              <div className="space-y-2 flex-1">
+                <div className="h-6 w-48 animate-pulse rounded-md bg-primary/10" />
+                <div className="h-4 w-32 animate-pulse rounded-md bg-primary/10" />
+              </div>
+            </div>
+            <div className="h-px bg-border/50" />
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-16 animate-pulse rounded-xl bg-primary/10" />
+              ))}
+            </div>
           </div>
         )}
 

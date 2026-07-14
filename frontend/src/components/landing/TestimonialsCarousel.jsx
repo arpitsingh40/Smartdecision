@@ -103,14 +103,14 @@ export default function TestimonialsCarousel() {
           </div>
 
           <div className="flex items-center justify-center gap-4 mt-8">
-            <button onClick={goPrev}
+            <button onClick={goPrev} aria-label="Previous testimonial"
               className="w-9 h-9 rounded-full border border-[#e5dccf]/60 flex items-center justify-center hover:border-[#b89165]/40 hover:bg-[#b89165]/5 transition-all duration-300 group">
               <ChevronLeft size={16} className="text-[#6b645c] group-hover:text-[#b89165] transition-colors" strokeWidth={1.5} />
             </button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" role="tablist" aria-label="Testimonial navigation">
               {TESTIMONIALS.map((_, i) => (
-                <button key={i} onClick={() => goTo(i)}
+                <button key={i} onClick={() => goTo(i)} role="tab" aria-selected={i === current} aria-label={`Testimonial ${i + 1}`}
                   className="h-2 rounded-full transition-all duration-500"
                   style={{
                     width: i === current ? '24px' : '8px',
@@ -120,7 +120,7 @@ export default function TestimonialsCarousel() {
               ))}
             </div>
 
-            <button onClick={goNext}
+            <button onClick={goNext} aria-label="Next testimonial"
               className="w-9 h-9 rounded-full border border-[#e5dccf]/60 flex items-center justify-center hover:border-[#b89165]/40 hover:bg-[#b89165]/5 transition-all duration-300 group">
               <ChevronRight size={16} className="text-[#6b645c] group-hover:text-[#b89165] transition-colors" strokeWidth={1.5} />
             </button>

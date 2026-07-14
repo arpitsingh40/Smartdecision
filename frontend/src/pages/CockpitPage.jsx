@@ -107,8 +107,22 @@ export default function CockpitPage() {
     return (
       <div className="min-h-screen">
       <TopBar title="Founder Cockpit" backTo="/app/team" />
-        <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground py-24">
-          <Loader2 className="animate-spin" size={16} /> Loading your cockpit…
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 space-y-8">
+          <div className="space-y-2">
+            <div className="h-4 w-24 animate-pulse rounded-md bg-primary/10" />
+            <div className="h-8 w-72 animate-pulse rounded-md bg-primary/10" />
+            <div className="h-4 w-48 animate-pulse rounded-md bg-primary/10" />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-24 animate-pulse rounded-2xl bg-primary/10" />
+            ))}
+          </div>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="h-64 animate-pulse rounded-2xl bg-primary/10" />
+            <div className="h-64 animate-pulse rounded-2xl bg-primary/10" />
+          </div>
+          <div className="h-48 animate-pulse rounded-2xl bg-primary/10" />
         </div>
       </div>
     );

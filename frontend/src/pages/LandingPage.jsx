@@ -5,6 +5,8 @@ import HowItWorks from '../components/landing/HowItWorks';
 import FeaturesSection from '../components/landing/FeaturesSection';
 import TestimonialsCarousel from '../components/landing/TestimonialsCarousel';
 import CTASection from '../components/landing/CTASection';
+import PricingSection from '../components/landing/PricingSection';
+import DemoSection from '../components/landing/DemoSection';
 import Footer from '../components/landing/Footer';
 import { Button } from '../components/ui/button';
 
@@ -102,8 +104,7 @@ function ParticleCanvas({ mousePos }) {
 }
 
 function StatsBar() {
-  // Honest commitments, not invented metrics — real numbers come from the
-  // outcome ledger once founding customers generate them.
+  // ponytail: honest commitments, not invented metrics
   const stats = [
     { num: '1', suffix: '', label: 'Goal. One next action. 48 hours.' },
     { num: 'You', suffix: '', label: 'Approve every high-stakes action' },
@@ -327,7 +328,9 @@ export default function LandingPage() {
         <StatsBar />
         <HowItWorks />
         <FeaturesSection />
+        <DemoSection />
         <TestimonialsCarousel />
+        <PricingSection />
         <CTASection />
         <Footer />
       </div>

@@ -108,8 +108,17 @@ export default function GoalSetupPage() {
     return (
       <div className="min-h-screen">
         <TopBar />
-        <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground py-24">
-          <Loader2 className="animate-spin" size={16} /> Loading your goal setup…
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-6">
+          <div className="h-4 w-20 animate-pulse rounded-md bg-primary/10" />
+          <div className="h-8 w-64 animate-pulse rounded-md bg-primary/10" />
+          <div className="h-4 w-48 animate-pulse rounded-md bg-primary/10" />
+          <div className="h-4 w-36 animate-pulse rounded-md bg-primary/10" />
+          <div className="h-px bg-border/50" />
+          <div className="space-y-3">
+            <div className="h-12 animate-pulse rounded-xl bg-primary/10" />
+            <div className="h-12 animate-pulse rounded-xl bg-primary/10" />
+            <div className="h-12 animate-pulse rounded-xl bg-primary/10" />
+          </div>
         </div>
       </div>
     );

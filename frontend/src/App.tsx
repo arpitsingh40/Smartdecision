@@ -2,6 +2,7 @@ import { useState, useEffect, createContext, useContext, useCallback, lazy, Susp
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from './components/ui/sonner';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Button } from './components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -166,7 +167,8 @@ const App: FC = () => {
       <div className="paper min-h-screen">
         <BrowserRouter>
           <InsufficientCreditsModal />
-          <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><p className="text-muted-foreground">Loading...</p></div>}>
+          <ErrorBoundary>
+          <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-background"><div className="space-y-4 w-full max-w-md mx-auto px-6"><div className="h-8 w-3/5 animate-pulse rounded-lg bg-primary/10" /><div className="h-4 w-2/5 animate-pulse rounded-lg bg-primary/10" /><div className="mt-8 space-y-3"><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-4/5 animate-pulse rounded-lg bg-primary/10" /></div></div></div>}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/auth" element={token ? <Navigate to="/app" replace /> : <AuthPage />} />
@@ -191,6 +193,7 @@ const App: FC = () => {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </Suspense>
+          </ErrorBoundary>
         </BrowserRouter>
         <Toaster position="bottom-right" />
       </div>

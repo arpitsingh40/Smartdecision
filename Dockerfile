@@ -5,7 +5,7 @@ RUN npm ci
 COPY frontend/ .
 RUN npx vite build
 
-FROM python:3.13-slim
+FROM python:3.11-slim
 WORKDIR /app
 # Force clean rebuild — Stage 1 trust rails deployed 2026-07-13
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends build-essential gcc g++ && rm -rf /var/lib/apt/lists/*

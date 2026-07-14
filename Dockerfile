@@ -13,6 +13,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --timeout=120 -r requirements.txt
 COPY backend/ .
 COPY memory/ ./memory/
+RUN ls -la /app/memory/ || echo "NO MEMORY DIR"
 COPY --from=frontend-builder /app/frontend/build /frontend/build
 EXPOSE 8000
 CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}

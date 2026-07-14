@@ -4,6 +4,7 @@ import { useAuth } from '../App';
 import { api } from '../lib/api';
 import { TopBar } from '../components/TopBar';
 import { Button } from '../components/ui/button';
+import BrainSection from '../components/BrainSection';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
 import {
@@ -64,6 +65,7 @@ export default function JourneyPage() {
   const [busy, setBusy] = useState(false);
   const [phIdx, setPhIdx] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [mode, setMode] = useState('journey'); // 'journey' | 'brain'
   const [shaping, setShaping] = useState(false);
   const [refining, setRefining] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -522,8 +524,21 @@ export default function JourneyPage() {
   return (
     <div className="h-dvh flex flex-col">
       <TopBar />
-      <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 overflow-hidden">
-        {/* conversation */}
+      <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 overflow-hidden flex flex-col">
+        {/* mode toggle */}
+        <div className="flex items-center gap-1 py-3 shrink-0">
+          <button onClick={() => setMode('journey')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'journey' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            Journey
+          </button>
+          <button onClick={() => setMode('brain')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'brain' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            Brain
+          </button>
+        </div>
+
+        {mode === 'journey' ? (
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 overflow-hidden min-h-0">
         <section className="flex flex-col min-h-0" data-testid="journey-chat">
           <div className="flex-1 overflow-y-auto space-y-5 py-4">
             {journey.messages.map((m, i) => (
@@ -888,12 +903,18 @@ export default function JourneyPage() {
           </div>
         </section>
 
-        {/* understanding panel (desktop) */}
+          {/* understanding panel (desktop) */}
         <aside className="hidden lg:block">
           <div className="sticky top-4 rounded-2xl border border-border/70 bg-card/60 p-5" data-testid="journey-understanding-panel">
             {Panel}
           </div>
         </aside>
+      </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <BrainSection compact />
+        </div>
+      )}
       </main>
     </div>
   );

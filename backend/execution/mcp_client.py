@@ -186,35 +186,42 @@ def list_tools(refresh: bool = False, toolkit: str = None, org_id: str = None) -
                     seen.add(name)
                     result.append(t)
 
-    # Catalog tools for all configured services
-    import os as _os
-    configured = set()
-    for key, val in _os.environ.items():
-        if not val:
-            continue
-        ukey = key.upper()
-        if ukey in ("COMPOSIO_API_KEY",):
-            continue
-        if ukey.endswith("_ACCESS_TOKEN"):
-            configured.add(ukey.replace("_ACCESS_TOKEN", "").lower())
-        elif ukey.endswith("_API_KEY"):
-            configured.add(ukey.replace("_API_KEY", "").lower())
-        elif ukey.endswith("_TOKEN"):
-            prefix = ukey.replace("_TOKEN", "").lower()
-            if not prefix.endswith("access") and not prefix.endswith("api"):
-                configured.add(prefix)
-
-    for service in configured:
-        if service in ("composio",):  # gateway itself, not a user service
-            continue
-        if service.upper() in native_handlers:
-            continue
-        tools = catalog_tools(toolkit=service, limit=30)
-        for t in tools:
+    # Catalog tools: if we have a Composio session, surface ALL 1403 toolkits
+    # ponytail: full catalog instead of per-env-var filtering — user has 1403 toolkits
+    if _composio_session and not isinstance(_composio_session, bool):
+        for t in catalog_tools():
             name = t.get("name", "")
             if name not in seen:
                 seen.add(name)
                 result.append(t)
+    else:
+        import os as _os
+        configured = set()
+        for key, val in _os.environ.items():
+            if not val:
+                continue
+            ukey = key.upper()
+            if ukey in ("COMPOSIO_API_KEY",):
+                continue
+            if ukey.endswith("_ACCESS_TOKEN"):
+                configured.add(ukey.replace("_ACCESS_TOKEN", "").lower())
+            elif ukey.endswith("_API_KEY"):
+                configured.add(ukey.replace("_API_KEY", "").lower())
+            elif ukey.endswith("_TOKEN"):
+                prefix = ukey.replace("_TOKEN", "").lower()
+                if not prefix.endswith("access") and not prefix.endswith("api"):
+                    configured.add(prefix)
+        for service in configured:
+            if service in ("composio",):
+                continue
+            if service.upper() in native_handlers:
+                continue
+            tools = catalog_tools(toolkit=service, limit=30)
+            for t in tools:
+                name = t.get("name", "")
+                if name not in seen:
+                    seen.add(name)
+                    result.append(t)
 
     return result
 

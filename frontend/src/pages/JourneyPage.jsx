@@ -118,7 +118,7 @@ export default function JourneyPage() {
     if (!obj || busy) return;
     setBusy(true);
     try {
-      const r = await api.post('/journey/start', { message: obj });
+      const r = await api.post('/journey/start', { objective: obj });
       setJourney((prev) => (prev ? { ...prev, ...r.data } : r.data));
       if (r.data.session_id) setSessionId(r.data.session_id);
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);

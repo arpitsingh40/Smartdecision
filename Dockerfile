@@ -12,6 +12,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends build-e
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --timeout=120 -r requirements.txt
 COPY backend/ .
+COPY memory/composio_catalog.json /app/composio_catalog.json
 COPY --from=frontend-builder /app/frontend/build /frontend/build
 EXPOSE 8000
 CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}

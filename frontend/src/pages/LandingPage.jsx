@@ -8,6 +8,7 @@ import CTASection from '../components/landing/CTASection';
 import PricingSection from '../components/landing/PricingSection';
 import DemoSection from '../components/landing/DemoSection';
 import Footer from '../components/landing/Footer';
+import AnimateIn from '../components/AnimateIn';
 import { Button } from '../components/ui/button';
 
 function ParticleCanvas({ mousePos }) {
@@ -325,13 +326,13 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <StatsBar />
-        <HowItWorks />
-        <FeaturesSection />
-        <DemoSection />
-        <TestimonialsCarousel />
-        <PricingSection />
-        <CTASection />
+        <AnimateIn><StatsBar /></AnimateIn>
+        <AnimateIn delay={0.1}><HowItWorks /></AnimateIn>
+        <AnimateIn delay={0.2}><FeaturesSection /></AnimateIn>
+        <AnimateIn delay={0.1}><DemoSection /></AnimateIn>
+        <AnimateIn delay={0.2}><TestimonialsCarousel /></AnimateIn>
+        <AnimateIn delay={0.1}><PricingSection /></AnimateIn>
+        <AnimateIn delay={0.2}><CTASection /></AnimateIn>
         <Footer />
       </div>
 

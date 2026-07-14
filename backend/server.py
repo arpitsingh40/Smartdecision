@@ -109,6 +109,11 @@ app = FastAPI(title="SmartDecigen Deep Discussion Engine",
 
 @app.middleware("http")
 async def _security_middleware(request: Request, call_next):
+    host = request.headers.get("host", "").lower().split(":")[0]
+    if host == "smartdecigen.com":
+        from fastapi.responses import RedirectResponse
+        url = str(request.url).replace("://smartdecigen.com", "://www.smartdecigen.com", 1)
+        return RedirectResponse(url, status_code=301)
     ct = request.headers.get("content-type", "")
     if "multipart" in ct:
         body = await request.body()

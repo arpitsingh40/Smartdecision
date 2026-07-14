@@ -3,7 +3,7 @@
 One ask box for a whole company. A user (owner, manager, or ground employee) types a
 question, a judgment call, or an objective. We retrieve from the company's own documents
 (reusing doc_memory's RAPTOR tree + local embeddings) and make ONE grounded LLM call that
-auto-routes to ANSWER / DECIDE / PLAN, cites its sources, and refuses to invent facts.
+auto-routes to ANSWER / DECIDE / PLAN, cites its sources, and refuses to invent facts.o
 
 Isolated from the existing coach engine: new router (/api/brain), its own retrieval over a
 per-user knowledge-base namespace, never modifies engine.py or doc_memory.py behaviour.
@@ -26,7 +26,7 @@ from pymongo import ReturnDocument
 import doc_memory
 from cognition import cognition_block
 from engine import client, _extract_json
-from db import users_col, db, members_col, orgs_col, decisions_col, journeys_col, org_memory_col
+from db import users_col, db, members_col, orgs_col, decisions_col, journeys_col
 from security import current_user
 from subscriptions import deduct_tokens
 from journey import _normalize_reasoning, _public_reasoning
@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/brain")
 trees_col = db.doc_trees if db is not None else None
 nodes_col = db.doc_nodes if db is not None else None
 
-PRIMARY_MODEL = os.environ.get("LLM_MODEL", "deepseek-flash").strip()
+PRIMARY_MODEL = os.environ.get("LLM_MODEL", "gemini-3.5-flash").strip()
 FALLBACK_MODEL = os.environ.get("LLM_MODEL_FALLBACK", PRIMARY_MODEL).strip()
 
 CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
@@ -496,73 +496,6 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
 
 
 # ---------------------------------------------------------------- models
-# ---------------------------------------------------------------- KillCritic Engine (Ch.17)
-KILLCRITIC_SYSTEM = """You are the KillCritic — an adversarial reviewer who attacks decisions BEFORE they ship.
-Your job: find every weakness, blind spot, unstated assumption, and missing alternative in the decision below.
-You are not polite. You are not balanced. You are the devil's advocate with one job: make this decision stronger by trying to break it.
-
-Attack these dimensions:
-1. WEAKEST ASSUMPTION — the one belief that, if wrong, makes the entire decision wrong
-2. MISSING ALTERNATIVE — the option they didn't consider that a smart competitor would
-3. BLIND SPOT — what the decision-maker cannot see from their position
-4. REVERSIBILITY CHECK — if this goes wrong, can they undo it, and at what cost?
-5. NUMBER HONESTY — are the numbers/claims grounded or aspirational?
-6. FOUNDER PATTERN — does this match a recurring blind spot in the founder's history?
-
-Return ONLY JSON, no fences:
-{"weakest_assumption": "one line naming it",
- "severity": "low|medium|high|critical",
- "attack_lines": ["specific weakness 1", "specific weakness 2", "specific weakness 3"],
- "would_flip_if": "the one fact that, if true, reverses this recommendation entirely",
- "verdict": "ship_as_is|refine_before_shipping|do_not_ship"}"""
-
-
-def killcritic_review(question: str, mode: str, answer: str, recommendation: str,
-                       plan: list, next_action: str, predicted_outcome: dict,
-                       citations: list) -> dict:
-    """Adversarial review of a decision before presenting to user. One cheap LLM call.
-    Returns critique dict stored in the decision record (founder-only, never shown to user)."""
-    rec_text = f"Recommendation: {recommendation}" if recommendation else ""
-    plan_text = f"Plan: {' | '.join(plan)}" if plan else ""
-    pred_text = ""
-    if predicted_outcome:
-        pred_text = f"Predicted: {predicted_outcome.get('claim','')} (confidence {predicted_outcome.get('confidence','?')}%)"
-    cites_text = f"Sources: {'; '.join(c.get('doc','')+' > '+c.get('chapter','') for c in citations)}" if citations else "(no sources)"
-    prompt = (
-        f"QUESTION: {question[:800]}\n"
-        f"MODE: {mode}\n"
-        f"ANSWER/BODY: {answer[:1200]}\n"
-        f"{rec_text}\n{plan_text}\n"
-        f"NEXT ACTION: {next_action[:400]}\n"
-        f"{pred_text}\n"
-        f"{cites_text}\n\n"
-        f"Attack every weakness in this decision. Be specific and surgical."
-    )
-    try:
-        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=600,
-            system=[{"type": "text", "text": KILLCRITIC_SYSTEM}],
-            messages=[{"role": "user", "content": prompt}])
-        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
-        out = json.loads(_extract_json(txt))
-        severity = out.get("severity", "medium")
-        if severity not in ("low", "medium", "high", "critical"):
-            severity = "medium"
-        verdict = out.get("verdict", "ship_as_is")
-        if verdict not in ("ship_as_is", "refine_before_shipping", "do_not_ship"):
-            verdict = "ship_as_is"
-        return {
-            "severity": severity,
-            "verdict": verdict,
-            "weakest_assumption": str(out.get("weakest_assumption", ""))[:300],
-            "attack_lines": [str(x)[:300] for x in (out.get("attack_lines") or []) if str(x).strip()][:3],
-            "would_flip_if": str(out.get("would_flip_if", ""))[:300],
-        }
-    except Exception as e:
-        log.warning(f"killcritic review failed (non-fatal): {e}")
-        return {"severity": "unknown", "verdict": "ship_as_is", "weakest_assumption": "",
-                "attack_lines": [], "would_flip_if": ""}
-
-
 class UploadIn(BaseModel):
     filename: str = Field(min_length=1, max_length=300)
     mime: str = ""
@@ -755,7 +688,7 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
         history = _session_history(user["id"], session_id)
         cog_block = ""
         try:
-            cog_block = cognition_block(user, question, include_company_state=True, include_dna=True)
+            cog_block = cognition_block(user, question, include_company_state=True)
         except Exception as cog_err:
             log.warning(f"cognition block failed (non-fatal): {cog_err}")
         out, model, usage = brain_answer(question, passages, doc_names, instructions,
@@ -781,12 +714,6 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
     users_col.update_one({"id": user["id"]}, {
         "$inc": {"tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]},
         "$set": {"last_active_at": now_utc()}})
-
-    # ---- KillCritic adversarial review (Ch.17): silent quality gate, never shown to user ----
-    killcritic = killcritic_review(
-        question, out.get("mode", "answer"), out.get("answer", ""),
-        out.get("recommendation"), out.get("plan"), out.get("next_action", ""),
-        out.get("predicted_outcome"), out.get("citations", []))
 
     # ---- Decision Ledger: persist; alignment is FOUNDER-ONLY (stripped from member response) ----
     alignment = _sanitize_alignment(out.pop("strategic_alignment", None))
@@ -834,7 +761,6 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
                           if out.get("predicted_outcome") else None),
             "reviewed_at": None,
             "impact_inr": None,
-            "killcritic": killcritic,   # Ch.17: adversarial quality gate (founder-only) 
         })
     except Exception as e:
         log.warning(f"decision persist failed: {e}")
@@ -857,7 +783,7 @@ def my_decisions(user: dict = Depends(current_user)):
     """A member's own decision history. Never exposes the founder-only alignment field."""
     rows = list(decisions_col.find(
         {"user_id": user["id"]},
-        {"_id": 0, "strategic_alignment": 0, "alignment_band": 0, "reasoning": 0, "killcritic": 0},
+        {"_id": 0, "strategic_alignment": 0, "alignment_band": 0, "reasoning": 0},
     ).sort("created_at", -1).limit(50))
     return {"decisions": rows}
 
@@ -876,7 +802,6 @@ def get_decision(decision_id: str, user: dict = Depends(current_user)):
     _, is_owner, org, _ = _resolve_context(user)
     raw_alignment = d.pop("strategic_alignment", None)
     d.pop("alignment_band", None)
-    d.pop("killcritic", None)   # Ch.17: founder-only quality gate
     reasoning = _public_reasoning(d.pop("reasoning", None))
     goal_impact = _goal_impact(raw_alignment, org, is_owner)
     return {**d, "reasoning": reasoning,
@@ -1059,78 +984,10 @@ def calibration_for(match: dict) -> dict:
             "calibration_gap": gap, "label": label}
 
 
-# ---------------------------------------------------------------- Autopsy Engine (Ch.18)
-AUTOPSY_SYSTEM = """You are the Autopsy Engine. A decision's outcome has been reviewed. Your job:
-extract the SINGLE most important lesson from what actually happened vs what was predicted.
-
-Rules:
-- If prediction was accurate: identify what made it predictable (which signal was reliable?)
-- If prediction was wrong: identify the ROOT CAUSE of the gap (wrong assumption? missing info? external shock?)
-- Extract one reusable if-then principle for the organization's rulebook
-- Be specific to this decision, not generic advice
-
-Return ONLY JSON, no fences:
-{"gap_analysis": "one line: what actually happened vs predicted",
- "root_cause": "the deepest reason for the gap (or why it was predictable)",
- "signal_that_mattered": "what data point, if known earlier, would have changed the call",
- "lesson": "one if-then principle to carry forward (max 200 chars)",
- "decision_pattern": "one label for the recurring pattern if any (e.g. over-optimism, anchoring, delay-bias)",
- "worth_remembering": true or false}"""
-
-
-def run_autopsy(decision: dict, outcome_status: str) -> dict:
-    """Run a structured post-mortem when an outcome review shows a gap vs prediction.
-    One cheap LLM call. Store result in org_memory for cross-decision learning."""
-    pred = decision.get("predicted_outcome") or {}
-    pred_claim = pred.get("claim", "") or ""
-    pred_conf = pred.get("confidence")
-    question = (decision.get("question") or "")[:400]
-    rec = (decision.get("recommendation") or decision.get("answer") or "")[:400]
-    actual = decision.get("review_note") or ""
-    if not pred_claim:
-        return None
-    prompt = (
-        f"QUESTION: {question}\n"
-        f"RECOMMENDATION: {rec}\n"
-        f"PREDICTED OUTCOME: {pred_claim} (confidence {pred_conf}%)\n"
-        f"ACTUAL OUTCOME STATUS: {outcome_status}\n"
-        f"WHAT HAPPENED: {actual[:400]}\n\n"
-        f"Extract the lesson."
-    )
-    try:
-        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=400,
-            system=[{"type": "text", "text": AUTOPSY_SYSTEM}],
-            messages=[{"role": "user", "content": prompt}])
-        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
-        out = json.loads(_extract_json(txt))
-        result = {
-            "gap_analysis": str(out.get("gap_analysis", ""))[:300],
-            "root_cause": str(out.get("root_cause", ""))[:300],
-            "signal_that_mattered": str(out.get("signal_that_mattered", ""))[:200],
-            "lesson": str(out.get("lesson", ""))[:200],
-            "decision_pattern": str(out.get("decision_pattern", ""))[:100],
-            "worth_remembering": bool(out.get("worth_remembering", False)),
-            "run_at": now_utc().isoformat(),
-        }
-        if result["worth_remembering"] and org_memory_col is not None and decision.get("org_id"):
-            org_memory_col.insert_one({
-                "id": str(uuid.uuid4()),
-                "org_id": decision["org_id"],
-                "domain": norm_function(decision.get("function", "general")),
-                "topic": result["decision_pattern"] or "outcome_lesson",
-                "knowledge_type": "lesson",
-                "content": {"summary": result["lesson"], "detail": result["gap_analysis"],
-                           "evidence": f"Predicted: {pred_claim}. Actual: {outcome_status}. {actual[:200]}",
-                           "counter_evidence": ""},
-                "confidence": 0.7, "observation_count": 1,
-                "source": [{"type": "autopsy", "id": decision["id"], "timestamp": now_utc().isoformat()}],
-                "tags": [outcome_status],
-                "created_at": now_utc().isoformat(),
-            })
-        return result
-    except Exception as e:
-        log.warning(f"autopsy failed (non-fatal): {e}")
-        return None
+class ReviewIn(BaseModel):
+    outcome: str = Field(min_length=2, max_length=20)      # worked | partly | didnt
+    actual: Optional[str] = Field(default=None, max_length=2000)
+    impact_inr: Optional[int] = Field(default=None, ge=-1000000000, le=1000000000)
 
 
 @router.get("/reviews/due")
@@ -1149,12 +1006,6 @@ def reviews_due(user: dict = Depends(current_user)):
         r["review_at"] = _iso(r.get("review_at"))
         r["created_at"] = _iso(r.get("created_at"))
     return {"due": rows, "count": len(rows)}
-
-
-class ReviewIn(BaseModel):
-    outcome: str = Field(min_length=1, max_length=20)   # worked | partly | didnt
-    actual: Optional[str] = Field(default=None, max_length=2000)
-    impact_inr: Optional[int] = None
 
 
 @router.post("/decisions/{decision_id}/review")
@@ -1176,14 +1027,6 @@ def review_decision(decision_id: str, body: ReviewIn, user: dict = Depends(curre
     if body.impact_inr is not None:
         upd["impact_inr"] = body.impact_inr
     decisions_col.update_one({"id": decision_id}, {"$set": upd})
-    # ---- Ch.18 Autopsy: structured post-mortem when prediction met reality ----
-    if d.get("predicted_outcome"):
-        try:
-            autopsy = run_autopsy(d, OUTCOME_MAP[oc])
-            if autopsy:
-                decisions_col.update_one({"id": decision_id}, {"$set": {"autopsy": autopsy}})
-        except Exception as e:
-            log.warning(f"autopsy run failed (non-fatal): {e}")
     return {"ok": True, "decision_id": decision_id, "outcome": upd["outcome"],
             "impact_inr": upd.get("impact_inr"),
             "calibration": calibration_for({"user_id": user["id"]})}

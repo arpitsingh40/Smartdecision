@@ -9,11 +9,7 @@ from typing import Optional
 
 log = logging.getLogger("execution.catalog")
 
-_here = Path(__file__).parent
-# Try Docker path first, then local path
-CATALOG_PATH = _here.parent.parent / "memory" / "composio_catalog.json"
-if not CATALOG_PATH.exists():
-    CATALOG_PATH = _here.parent.parent.parent / "memory" / "composio_catalog.json"
+CATALOG_PATH = Path(__file__).parent.parent / "composio_catalog.json"
 
 _toolkits: dict = {}
 _capabilities: dict = {}

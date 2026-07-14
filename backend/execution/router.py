@@ -101,7 +101,8 @@ def execute(body: dict, user: dict = Depends(current_user)):
     if issues:
         return {"status": "rejected", "issues": issues}
 
-    result = execute_plan(plan, _department_for_user(user))
+    dept = "leadership" if m["role"] == "owner" else _department_for_user(user)
+    result = execute_plan(plan, dept)
     return {
         "execution_id": "exec_" + uuid.uuid4().hex[:16],
         "status": "completed",
@@ -129,6 +130,7 @@ def execute_single_tool(tool_name: str, body: dict, user: dict = Depends(current
     return {
         "tool": tool_name,
         "result": result.get("result", "")[:2000],
+        "error": result.get("error", ""),
         "successful": result.get("successful", False),
         "elapsed_ms": result.get("execution_time_ms", 0),
     }

@@ -503,7 +503,7 @@ export default function ThreadPage() {
                   value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={onKeyDown}
                   disabled={thinking || inactive}
                   placeholder={inactive ? `This thread is ${thread.status}. Reactivate it to continue.` : 'Say where things actually are. Attach a file if it helps. Enter to send \u00B7 Shift+Enter for a new line.'}
-                  className="min-h-[80px] rounded-xl bg-surface border-hairline text-[15px] leading-6 focus-visible:ring-2 focus-visible:ring-accent" />
+                  className="min-h-[120px] rounded-xl bg-surface border-hairline text-[15px] leading-6 focus-visible:ring-2 focus-visible:ring-accent" />
                 {attachment && (
                   <div data-testid="attachment-preview"
                     className="mt-2 flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-surface-2 border border-hairline">

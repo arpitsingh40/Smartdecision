@@ -112,8 +112,9 @@ async def _security_middleware(request: Request, call_next):
     host = request.headers.get("host", "").lower().split(":")[0]
     if host == "smartdecigen.com":
         from fastapi.responses import RedirectResponse
-        url = str(request.url).replace("://smartdecigen.com", "://www.smartdecigen.com", 1)
-        return RedirectResponse(url, status_code=301)
+        path = request.url.path
+        qs = ("?" + request.url.query) if request.url.query else ""
+        return RedirectResponse(f"https://www.smartdecigen.com{path}{qs}", status_code=301)
     ct = request.headers.get("content-type", "")
     if "multipart" in ct:
         body = await request.body()

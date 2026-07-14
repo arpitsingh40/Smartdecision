@@ -1,6 +1,6 @@
 """Execution API — public surface for the Execution Runtime.
 Endpoints: connection status, tool listing, plan execution.
-Uses composio CLI under the hood — one binary, no SDK deps.
+Self-hosted MCP gateway — Python handlers for each service, 1403 toolkits in catalog.
 """
 import uuid
 import json
@@ -43,7 +43,7 @@ def _department_for_user(user: dict) -> str:
 def execution_status(user: dict = Depends(current_user)):
     """MCP health: CLI installed? logged in? toolkits connected?"""
     if not mcp_enabled():
-        return {"mcp_enabled": False, "message": "Install composio CLI: curl -fsSL https://composio.dev/install | bash"}
+        return {"mcp_enabled": False, "message": "Set a service token (e.g. GMAIL_ACCESS_TOKEN) in .env"}
 
     connected = is_connected()
     toolkits = linked_toolkits() if connected else []
@@ -85,7 +85,7 @@ def execute(body: dict, user: dict = Depends(current_user)):
     if not mcp_enabled():
         raise HTTPException(503, "MCP disabled")
     if not is_connected():
-        raise HTTPException(412, "Not authenticated. Run 'composio login'")
+        raise HTTPException(412, "No connected services — set service tokens in .env")
 
     m = _active_membership(user)
     if not m:

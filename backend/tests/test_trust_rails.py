@@ -10,7 +10,7 @@ import os
 import sys
 import uuid
 
-os.environ.setdefault("DISABLE_MCP", "1")            # no composio on CI/dev
+os.environ.setdefault("DISABLE_MCP", "1")            # MCP disabled in tests
 os.environ.setdefault("ORG_MONTHLY_SPEND_CAP_INR", "25000")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))

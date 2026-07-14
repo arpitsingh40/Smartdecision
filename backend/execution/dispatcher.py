@@ -1,8 +1,6 @@
-"""Execution Dispatcher — plan → atomic actions → MCP execution.
+"""Execution Dispatcher — plan → atomic actions → MCP gateway execution.
 Accepts execution plans from SALAAR/engine, queues actions respecting
-dependencies, executes via MCP, handles retries, reports progress.
-
-MCP is infrastructure here — the dispatcher owns orchestration.
+dependencies, executes via self-hosted MCP gateway, handles retries, reports progress.
 """
 import uuid
 import time
@@ -38,7 +36,7 @@ def execute_plan(plan: dict, department_function: str = "general",
     Plan shape: {"goal": "...", "actions": [{tool, args, depends_on, description}]}
     """
     if not mcp_enabled():
-        return {"error": "MCP disabled — set COMPOSIO_API_KEY", "actions": []}
+        return {"error": "MCP disabled — set service tokens (e.g. GMAIL_ACCESS_TOKEN) in .env", "actions": []}
 
     actions = plan.get("actions", [])
     if not actions:

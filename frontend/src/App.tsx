@@ -170,7 +170,7 @@ const App: FC = () => {
           <ErrorBoundary>
           <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-background"><div className="space-y-4 w-full max-w-md mx-auto px-6"><div className="h-8 w-3/5 animate-pulse rounded-lg bg-primary/10" /><div className="h-4 w-2/5 animate-pulse rounded-lg bg-primary/10" /><div className="mt-8 space-y-3"><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-4/5 animate-pulse rounded-lg bg-primary/10" /></div></div></div>}>
           <Routes>
-            <Route path="/" element={<LandingPage />} />
+            <Route path="/" element={token ? <Navigate to="/app" replace /> : <LandingPage />} />
             <Route path="/auth" element={token ? <Navigate to="/app" replace /> : <AuthPage />} />
             <Route path="/app" element={token ? <JourneyPage /> : <Navigate to="/auth" replace />} />
             <Route path="/app/decisions" element={token ? <DecisionsPage /> : <Navigate to="/auth" replace />} />

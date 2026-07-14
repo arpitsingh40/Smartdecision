@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../App';
 import Navbar from '../components/landing/Navbar';
 import HowItWorks from '../components/landing/HowItWorks';
 import FeaturesSection from '../components/landing/FeaturesSection';
@@ -212,12 +211,7 @@ function AnimatedOrb() {
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const { token } = useAuth();
   const mousePos = useRef({ x: -1000, y: -1000 });
-
-  useEffect(() => {
-    if (token) navigate('/app', { replace: true });
-  }, [token, navigate]);
 
   useEffect(() => {
     const onMouse = (e) => {

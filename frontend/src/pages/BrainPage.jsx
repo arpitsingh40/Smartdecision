@@ -267,11 +267,11 @@ export default function BrainPage() {
           {/* ---------- main column: ask + answer ---------- */}
           <section className="min-w-0">
             <h2 className="font-display text-3xl sm:text-4xl tracking-[-0.02em] leading-[1.05]">
-              Your decision workspace.
+              Your company brain.
             </h2>
             <p className="mt-3 text-sm md:text-base text-muted-foreground leading-6 max-w-xl">
-              Bring any call, big or small. You get a grounded answer, the one move to make next,
-              and a clock to keep you honest. Just type. It works out the rest.
+              Upload your documents — PDFs, slides, spreadsheets, whatever. The brain reads and indexes them,
+              then answers your questions grounded in what your team actually knows. No more hunting for context.
             </p>
 
             {/* ask box */}
@@ -281,14 +281,14 @@ export default function BrainPage() {
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder="What's our refund window for damaged goods? · Should I approve this discount? · Plan our Q3 launch in Pune."
+                placeholder='e.g. "What did we decide about refund windows?" · "Summarise the Q3 plan deck." · "Should I approve this discount?"'
                 className="min-h-[96px] border-0 bg-transparent focus-visible:ring-0 resize-none text-[15px] leading-6"
               />
               <div className="flex items-center justify-between px-1 pt-1 gap-2">
                 <span className="text-xs text-muted-foreground min-w-0 truncate">
                   {readyCount > 0
                     ? `${readyCount} document${readyCount > 1 ? 's' : ''} in knowledge`
-                    : (canTrain ? 'No documents yet — upload some on the right' : 'Ask anything — backed by your team’s knowledge')}
+                    : (canTrain ? <span className="text-amber-600 font-medium">Upload documents on the right to ground answers in your data →</span> : 'Ask anything — backed by your team’s knowledge')}
                 </span>
                 <div className="flex items-center gap-2 shrink-0">
                   {result && (

@@ -3,8 +3,11 @@ All collection handles live here so routers never create their own clients.
 Provides both sync (pymongo) and async (motor) clients.
 Falls back to mongomock (in-memory) when MONGO_URL is not set."""
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
+
+_log = logging.getLogger("db")
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -18,7 +21,7 @@ if mongo_url:
     db = mongo[os.environ.get("DB_NAME", "smartdecision")]
     async_mongo = motor.motor_asyncio.AsyncIOMotorClient(mongo_url, maxPoolSize=100, serverSelectionTimeoutMS=5000)
     async_db = async_mongo[os.environ.get("DB_NAME", "smartdecision")]
-    print(f"[db] Connected to MongoDB at {mongo_url}")
+    _log.info("Connected to MongoDB at %s", mongo_url)
 else:
     try:
         import mongomock
@@ -26,13 +29,13 @@ else:
         db = mongo["smartdecision"]
         async_mongo = None
         async_db = None
-        print("[db] Using mongomock (in-memory) — set MONGO_URL for production MongoDB")
+        _log.warning("Using mongomock (in-memory) — set MONGO_URL for production MongoDB")
     except ImportError:
         mongo = None
         db = None
         async_mongo = None
         async_db = None
-        print("[db] WARNING: No MongoDB configured and mongomock not available")
+        _log.warning("No MongoDB configured and mongomock not available")
 
 
 def _col(name):
@@ -131,6 +134,9 @@ exec_tasks_col = _col("exec_tasks")                   # Ch.40 Executive task que
 genesis_pipelines_col = _col("genesis_pipelines")     # Genesis session state (survives restarts)
 evidence_col = _col("evidence")                       # Ch.44 Verification evidence (the proof engine)
 learning_col = _col("learning_events")                # Ch.47 Verified organizational learning
+playbooks_col = _col("playbooks")                     # Playbook Engine state
+habits_col = _col("habits")                           # Habit Tracker
+weekly_reviews_col = _col("weekly_reviews")           # Weekly Review
 
 async_users_col = _async_col("users")
 async_threads_col = _async_col("goal_threads")

@@ -28,6 +28,13 @@ from subscriptions import deduct_tokens
 from cognition import cognition_block
 
 
+def _bio_block(context: str) -> str:
+    try:
+        from playbooks import biography_block
+        return biography_block(context=context)
+    except Exception:
+        return ""
+
 def _safe_cognition(user, text, model):
     """Cognition layers for a journey turn: founder identity + decision algorithm + book lenses.
     Memory layer excluded (journey already injects its own learning digest). Never fatal."""
@@ -448,6 +455,7 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
         + (f"WHAT THIS FOUNDER HAS ACTUALLY DONE BEFORE (real outcomes from their ledger, build on what "
            f"worked, never re-suggest what failed):\n{learning}\n\n" if learning else "")
         + (f"{benchmarks_block}\n\n" if benchmarks_block else "")
+        + (_bio_block(latest_user_msg) + "\n" if _bio_block(latest_user_msg) else "")
         + (f"{spin_block}\n\n" if (spin_block or "").strip() else "")
         + f"CONVERSATION SO FAR:\n{convo or '(none yet, this is the opening turn)'}\n\n"
         f"LATEST FROM THE FOUNDER (EXACT TEXT): \"{latest_user_msg}\"\n\n"

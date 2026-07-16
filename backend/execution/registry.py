@@ -8,10 +8,8 @@ Built from the composio_catalog.json taxonomy (112 categories, 14 sections).
 """
 
 import json
-import os
 import logging
 from pathlib import Path
-from typing import Optional
 from collections import defaultdict
 
 log = logging.getLogger("execution.registry")

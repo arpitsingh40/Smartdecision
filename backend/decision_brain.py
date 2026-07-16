@@ -9,7 +9,6 @@ Isolated from the existing coach engine: new router (/api/brain), its own retrie
 per-user knowledge-base namespace, never modifies engine.py or doc_memory.py behaviour.
 """
 import os
-import re
 import json
 import math
 import uuid
@@ -26,7 +25,7 @@ from pymongo import ReturnDocument
 import doc_memory
 from cognition import cognition_block
 from engine import client, _extract_json
-from db import users_col, db, members_col, orgs_col, decisions_col, journeys_col
+from db import users_col, db, members_col, orgs_col, decisions_col
 from security import current_user
 from subscriptions import deduct_tokens
 from journey import _normalize_reasoning, _public_reasoning

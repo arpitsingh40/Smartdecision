@@ -3,16 +3,13 @@ Endpoints: connection status, tool listing, plan execution.
 Self-hosted MCP gateway — Python handlers for each service, 1403 toolkits in catalog.
 """
 import uuid
-import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, Field
+from typing import Optional
 
-from security import current_user, now_utc
-from db import members_col, orgs_col
+from security import current_user
+from db import members_col
 
 from .mcp_client import (
     list_tools, search_tools, call_tool, mcp_enabled,

@@ -13,7 +13,6 @@ Public surface:
     recall(thread_id, user_msg, max_passages=5) -> str        # ready-to-inject DOC block
     list_active_trees(thread_id) -> list of {filename, status, node_count}
 """
-import os
 import io
 import re
 import base64

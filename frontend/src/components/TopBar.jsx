@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, ShieldCheck } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, ShieldCheck, Flame, Compass } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -159,6 +159,16 @@ export const TopBar = () => {
                 ))}
                 <DropdownMenuSeparator />
               </div>
+              <DropdownMenuItem onClick={() => navigate('/app/habits')} className="text-sm cursor-pointer">
+                <Flame size={16} strokeWidth={1.75} className="mr-2" /> Habits
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/app/playbooks')} className="text-sm cursor-pointer">
+                <BookOpen size={16} strokeWidth={1.75} className="mr-2" /> Playbooks
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/app/weekly-review')} className="text-sm cursor-pointer">
+                <Compass size={16} strokeWidth={1.75} className="mr-2" /> Weekly Review
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem data-testid="buy-credits-menu" onClick={() => navigate('/app/billing')} className="text-sm cursor-pointer">
                 <Plus size={16} strokeWidth={1.75} className="mr-2" /> Subscription & tokens
               </DropdownMenuItem>

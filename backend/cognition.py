@@ -16,7 +16,7 @@ cognition_block() returns one string ready to inject into any engine prompt.
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from db import users_col, decisions_col, journeys_col, members_col, orgs_col, threads_col, telemetry_col
+from db import users_col, decisions_col, journeys_col, members_col, orgs_col, telemetry_col
 from lenses import select_lenses
 
 log = logging.getLogger("cognition")
@@ -28,7 +28,8 @@ CATEGORIES = {
         "kw": ["distributor", "deal", "offer from", "contract", "terms", "exclusiv", "negotiat", "vendor",
                "supplier", "partnership", "agreement", "mou", "franchise", "counter offer", "listing fee",
                "wants 3", "wants 4", "margin they", "their offer"],
-        "lenses": ["munger_incentives", "taleb_antifragile", "voss_negotiation", "thorndike_capital", "lafley_wwhtt"],
+        "lenses": ["munger_incentives", "taleb_antifragile", "voss_negotiation", "thorndike_capital", "lafley_wwhtt",
+                    "art_of_war", "art_of_strategy", "how_to_win_friends"],
         "algo": ("DEAL/NEGOTIATION ALGORITHM: 1) Trace the counterparty's incentives: what do they gain, where "
                  "do interests diverge? 2) Price the optionality being traded: what flexibility does this deal "
                  "sell, is the payment worth years of it, can a pilot keep the option alive? 3) What would have "
@@ -41,7 +42,9 @@ CATEGORIES = {
         "kw": ["hire", "hiring", "fire ", "firing", "cofounder", "co-founder", "employee", "team member",
                "cto", "salary", "quit", "resign", "underperform", "delegate", "first hire", "intern",
                "agency or in-house", "freelancer"],
-        "lenses": ["grove_leverage", "horowitz_struggle", "dalio_principles", "bungay_action", "coyle_culture"],
+        "lenses": ["grove_leverage", "horowitz_struggle", "dalio_principles", "bungay_action", "coyle_culture",
+                    "seven_habits", "effective_executive", "team_of_teams", "turn_the_ship_around", "e_myth_revisited",
+                    "how_to_win_friends", "start_with_why", "delivering_happiness", "creativity_inc", "reinventing_organizations"],
         "algo": ("PEOPLE/TEAM ALGORITHM: 1) Wartime or peacetime? Survival pressure changes the right call. "
                  "2) Person or machine: is this individual failing, or is the design (role, incentives, "
                  "information) producing the failure? 3) Task-relevant maturity: does their freedom match their "
@@ -53,7 +56,8 @@ CATEGORIES = {
         "kw": ["grow", "customers", "marketing", "ads", "instagram", "sales dropped", "channel", "traffic",
                "leads", "awareness", "brand", "followers", "reach", "promotion", "campaign", "word of mouth",
                "referral"],
-        "lenses": ["weinberg_traction", "sharp_growth", "ries_positioning", "berger_contagious", "cialdini_influence"],
+        "lenses": ["weinberg_traction", "sharp_growth", "ries_positioning", "berger_contagious", "cialdini_influence",
+                    "purple_cow", "this_is_marketing", "tipping_point", "made_to_stick", "pre_suasion", "immutable_laws", "hooked"],
         "algo": ("GROWTH/MARKETING ALGORITHM: 1) Penetration math first: does this reach NEW and light buyers, "
                  "or re-touch existing fans? 2) Channel discipline: test few channels cheaply with real numbers, "
                  "then concentrate on the one that works; hunt the underpriced channel others ignore. 3) Position "
@@ -63,7 +67,8 @@ CATEGORIES = {
     "pricing_offer": {
         "kw": ["price", "pricing", "discount", "premium", "charge", "subscription", "pack", "offer", "rate card",
                "underpricing", "raise prices", "mrp", "margin on"],
-        "lenses": ["sutherland_alchemy", "cialdini_influence", "helmer_power", "meadows_systems"],
+        "lenses": ["sutherland_alchemy", "cialdini_influence", "helmer_power", "meadows_systems",
+                    "personal_mba", "business_model_generation"],
         "algo": ("PRICING/OFFER ALGORITHM: 1) Perceived value is real value: what signals (name, packaging, "
                  "story, ritual) justify the price before touching the number? 2) Choose the door: structurally "
                  "cheaper or provably worth more; the middle loses to both. 3) Second-order check: what does this "
@@ -74,7 +79,8 @@ CATEGORIES = {
     "product_validation": {
         "kw": ["product idea", "feature", "mvp", "launch", "validate", "prototype", "build a", "new product",
                "feedback from customers", "beta", "app idea", "would they buy", "customer interview"],
-        "lenses": ["fitzpatrick_momtest", "christensen_jtbd", "ries_leanstartup", "heath_wrap"],
+        "lenses": ["fitzpatrick_momtest", "christensen_jtbd", "ries_leanstartup", "heath_wrap",
+                    "the_right_it", "innovators_solution", "sprint", "range", "super_thinking"],
         "algo": ("PRODUCT/VALIDATION ALGORITHM: 1) The Mom Test: collect past behavior and commitments, never "
                  "opinions about the idea; compliments are not data. 2) Find the job-to-be-done: what progress "
                  "is the customer hiring this for, in what circumstance, firing what? 3) Name the riskiest "
@@ -84,7 +90,8 @@ CATEGORIES = {
     "crisis_survival": {
         "kw": ["runway", "cash crisis", "can't pay", "cannot pay", "losing money", "shut down", "survive",
                "emergency", "debt", "loan due", "salaries due", "out of money", "3 months left", "burn"],
-        "lenses": ["horowitz_struggle", "taleb_swan", "rumelt_kernel", "bevelin_wisdom"],
+        "lenses": ["horowitz_struggle", "taleb_swan", "rumelt_kernel", "bevelin_wisdom",
+                    "skin_in_the_game", "mans_search_for_meaning", "shoe_dog", "the_dip"],
         "algo": ("CRISIS/SURVIVAL ALGORITHM: 1) Wartime rules: exactly one priority; strip every peacetime "
                  "initiative. 2) Sacred-runway math: what cash is untouchable, what is the honest date, which "
                  "single dependency's failure is fatal? 3) The kernel: name the ONE critical obstacle between "
@@ -95,7 +102,10 @@ CATEGORIES = {
     "strategy_direction": {
         "kw": ["strategy", "direction", "pivot", "focus on what", "vision", "long term", "which market",
                "expand", "where to play", "next year plan", "diversify", "new city", "second location"],
-        "lenses": ["rumelt_kernel", "helmer_power", "lafley_wwhtt", "moore_chasm", "kim_blueocean"],
+        "lenses": ["rumelt_kernel", "helmer_power", "lafley_wwhtt", "moore_chasm", "kim_blueocean",
+                    "competitive_strategy", "good_to_great", "zero_to_one", "innovators_dilemma", "measure_what_matters",
+                    "business_model_generation", "your_strategy_needs_strategy", "the_halo_effect",
+                    "infinite_game", "start_with_why"],
         "algo": ("STRATEGY/DIRECTION ALGORITHM: 1) Build the kernel: diagnosis of the critical obstacle, a "
                  "guiding policy that rules options OUT, 2-3 coherent actions. 2) Where to play: which single "
                  "field can they WIN in 6-12 months, and who is deliberately not served? 3) Power check: which "
@@ -106,7 +116,9 @@ CATEGORIES = {
     "money_allocation": {
         "kw": ["invest", "spend on", "budget", "surplus", "profit this", "savings", "allocate", "buy equipment",
                "capex", "extra cash", "where should the money", "reinvest"],
-        "lenses": ["thorndike_capital", "taleb_antifragile", "munger_incentives"],
+        "lenses": ["thorndike_capital", "taleb_antifragile", "munger_incentives",
+                    "intelligent_investor", "most_important_thing", "warren_buffett_way",
+                    "personal_mba", "compound_effect"],
         "algo": ("CAPITAL ALLOCATION ALGORITHM: 1) Surplus is a decision: enumerate the uses (product, growth, "
                  "debt, buffer, new bets) and compare expected returns explicitly. 2) Compare against the best "
                  "alternative, never against doing nothing. 3) Barbell the risk: sacred core, small capped "
@@ -117,7 +129,10 @@ CATEGORIES = {
     "ops_execution": {
         "kw": ["process", "operations", "inventory", "delivery", "quality issue", "bottleneck", "time management",
                "productivity", "overwhelmed with work", "systems", "sop", "automation", "supply"],
-        "lenses": ["grove_leverage", "meadows_systems", "flyvbjerg_bigthings"],
+        "lenses": ["grove_leverage", "meadows_systems", "flyvbjerg_bigthings",
+                    "essentialism", "deep_work", "getting_things_done", "pareto_principle",
+                    "four_disciplines_execution", "the_one_thing", "execution", "first_things_first",
+                    "e_myth_revisited", "four_hour_workweek", "compound_effect", "rework", "indistractable"],
         "algo": ("OPS/EXECUTION ALGORITHM: 1) Find the limiting step: map the stages, locate the constraint, "
                  "refuse to optimize anything else. 2) Structure over blame: recurring failures indict the "
                  "design (incentives, information, delays), not the people. 3) Fix problems at the lowest-value "

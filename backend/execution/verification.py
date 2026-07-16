@@ -11,13 +11,11 @@ Evidence and learning events persist in MongoDB (evidence / learning_events coll
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
 from collections import defaultdict
 
 from ontology import (
     Evidence, LearningEvent, LearningImpact,
-    OutcomeStatus, Volatility, Trace, new_id, utcnow,
+    OutcomeStatus, Volatility, new_id, utcnow,
 )
 from db import evidence_col, learning_col
 

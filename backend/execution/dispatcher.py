@@ -2,10 +2,8 @@
 Accepts execution plans from SALAAR/engine, queues actions respecting
 dependencies, executes via self-hosted MCP gateway, handles retries, reports progress.
 """
-import uuid
 import time
 import logging
-from typing import Optional
 from datetime import datetime, timezone
 
 from .mcp_client import call_tool, mcp_enabled, tools_for_department

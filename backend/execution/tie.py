@@ -8,8 +8,6 @@ No LLM required. Cold-start priors from catalog metadata.
 """
 
 import logging
-from typing import Optional
-from datetime import datetime, timezone
 
 from .registry import find
 

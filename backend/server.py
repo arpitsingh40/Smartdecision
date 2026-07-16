@@ -44,6 +44,9 @@ from execution.router import router as execution_router
 from execution.tasks_router import router as tasks_router
 from genesis_router import router as genesis_router
 import doc_memory
+from playbooks import router as playbooks_router
+from habits import router as habits_router
+from weekly_review import router as weekly_review_router
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
@@ -78,7 +81,7 @@ def _rate_limit(key: str, max_reqs: int = 60, window: float = 60.0):
 
 import re as _re
 
-_XSS_PAT = _re.compile(r'<[^>]*\s*(?:on\w+\s*=|javascript\s*:|data\s*:)', _re.I)
+_XSS_PAT = _re.compile(r'(?:<[^>]*\s*(?:on\w+\s*=|javascript\s*:|data\s*:)|<script\b|<iframe\b|<object\b|<embed\b)', _re.I)
 
 
 @asynccontextmanager
@@ -96,6 +99,11 @@ async def _lifespan(app: FastAPI):
             log.warning(f"Startup init failed (DB may not be ready): {e}")
         scheduler.start()
         log.info("scheduler started")
+        try:
+            from playbooks import PLAYBOOKS as _P
+            log.info(f"playbooks loaded: {len(_P)} frameworks")
+        except Exception:
+            pass
     else:
         log.warning("MONGO_URL not set — skipping DB startup.")
     yield
@@ -116,14 +124,18 @@ async def _security_middleware(request: Request, call_next):
         qs = ("?" + request.url.query) if request.url.query else ""
         return RedirectResponse(f"https://www.smartdecigen.com{path}{qs}", status_code=301)
     ct = request.headers.get("content-type", "")
-    if "multipart" in ct:
-        body = await request.body()
+    body = await request.body()
+    if body:
         text = body.decode("utf-8", errors="replace")
         if _XSS_PAT.search(text):
             raise HTTPException(400, "Request blocked: suspicious content detected")
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://*.firebaseapp.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https:; frame-src 'none'; object-src 'none'"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 api = APIRouter(prefix="/api")
@@ -150,7 +162,7 @@ def as_aware(dt):
 
 class SignupIn(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8)
     name: str = ""
     ref: str = ""
 
@@ -181,6 +193,7 @@ async def public_config():
 
 @api.post("/auth/signup")
 async def signup(body: SignupIn, request: Request):
+    _rate_limit(f"signup:{client_ip(request)}", max_reqs=5, window=300.0)
     existing = await async_users_col.find_one({"email": body.email.lower()})
     if existing:
         raise HTTPException(409, "An account with this email already exists")
@@ -220,6 +233,7 @@ async def signup(body: SignupIn, request: Request):
 
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
+    _rate_limit(f"login:{client_ip(request)}", max_reqs=10, window=300.0)
     user = await async_users_col.find_one({"email": body.email.lower()})
     if not user or not pwd.verify(body.password, user["password_hash"]):
         raise HTTPException(401, "Incorrect email or password")
@@ -660,6 +674,9 @@ app.include_router(executive_router)
 app.include_router(execution_router)
 app.include_router(tasks_router)
 app.include_router(genesis_router)
+app.include_router(playbooks_router)
+app.include_router(habits_router)
+app.include_router(weekly_review_router)
 
 scheduler = BackgroundScheduler(daemon=True)
 
@@ -799,10 +816,13 @@ scheduler.add_job(_monday_morning_digest, CronTrigger(day_of_week="mon", hour=6,
 scheduler.add_job(_six_hour_housekeeping, IntervalTrigger(hours=6))
 
 
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")
+if not CORS_ORIGINS:
+    log.warning("CORS_ORIGINS not set — allowing no cross-origin requests. Set to comma-separated origins for production.")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=CORS_ORIGINS.split(",") if CORS_ORIGINS else [],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )

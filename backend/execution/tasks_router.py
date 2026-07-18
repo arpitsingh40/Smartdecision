@@ -273,7 +273,8 @@ def approve(task_id: str, user: dict = Depends(current_user)):
             issues = validate_plan(plan)
             if issues:
                 raise ValueError(f"Invalid plan: {issues}")
-            result = execute_plan(plan, department_function=ex.get("department_id", "general"))
+            result = execute_plan(plan, department_function=ex.get("department_id", "general"),
+                                   org_id=task.get("org_id"))
             set_task_fields(task_id, {"execution": result})
 
             done = result.get("summary", {}).get("done", 0)

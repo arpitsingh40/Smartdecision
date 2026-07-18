@@ -2,10 +2,8 @@
 Accepts execution plans from SALAAR/engine, queues actions respecting
 dependencies, executes via self-hosted MCP gateway, handles retries, reports progress.
 """
-import uuid
 import time
 import logging
-from typing import Optional
 from datetime import datetime, timezone
 
 from .mcp_client import call_tool, mcp_enabled, tools_for_department
@@ -29,7 +27,7 @@ def now_iso():
 
 
 def execute_plan(plan: dict, department_function: str = "general",
-                 on_progress=None) -> dict:
+                 on_progress=None, org_id: str = None) -> dict:
     """Execute a complete plan: N actions, respecting dependencies.
     Returns {actions: [{status, result, error, elapsed_ms}], summary: {total, done, failed}}.
 
@@ -41,6 +39,18 @@ def execute_plan(plan: dict, department_function: str = "general",
     actions = plan.get("actions", [])
     if not actions:
         return {"actions": [], "summary": {"total": 0, "done": 0, "failed": 0}}
+
+    # Wire 4: budget enforcement before execution
+    if org_id:
+        try:
+            from execution.bridge import enforce_budget, record_spend
+            estimated_cost = sum(int(a.get("estimated_cost_inr", 0) or 0) for a in actions)
+            if estimated_cost > 0 and not enforce_budget(org_id, estimated_cost):
+                return {"error": "BUDGET_EXCEEDED", "actions": [],
+                        "summary": {"total": len(actions), "done": 0, "failed": 0,
+                                    "skipped": len(actions), "budget_blocked": True}}
+        except Exception:
+            pass  # budget check is advisory when bridge is unavailable
 
     available_tools = {t["name"] for t in tools_for_department(department_function)}
     results = [None] * len(actions)
@@ -97,6 +107,19 @@ def execute_plan(plan: dict, department_function: str = "general",
                 on_progress(i, len(actions), action.get("description", tool_name))
 
             result = call_tool(tool_name, args)
+            # Special: SMARTDECIGEN_BUILD routes to capability platform
+            if tool_name == "SMARTDECIGEN_BUILD" and "error" in result:
+                try:
+                    from capabilities import execute_capability
+                    build_result = execute_capability(
+                        args.get("description", ""),
+                        deploy_target=args.get("deploy_target", "github"),
+                    )
+                    if build_result.get("url") or build_result.get("status") == "complete":
+                        result = {"result": f"Built: {build_result.get('label', 'artifact')}",
+                                  "successful": True, "execution_time_ms": 0}
+                except Exception:
+                    pass
             if "error" in result and retry_counts[i] < MAX_RETRIES:
                 retry_counts[i] += 1
                 delay = RETRY_DELAY_BASE ** retry_counts[i]

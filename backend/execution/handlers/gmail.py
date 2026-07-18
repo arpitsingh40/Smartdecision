@@ -4,7 +4,7 @@ import os
 import time
 import base64
 import logging
-import requests
+import httpx
 
 from . import register
 
@@ -34,7 +34,7 @@ def handle(tool_name: str, args: dict) -> dict:
                 return {"error": "Missing recipient (to)", "successful": False, "execution_time_ms": round((time.time()-t0)*1000)}
             msg = f"To: {to}\r\nSubject: {subject}\r\n\r\n{body}"
             encoded = base64.urlsafe_b64encode(msg.encode()).decode()
-            r = requests.post("https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            r = httpx.post("https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
                               headers=headers, json={"raw": encoded}, timeout=30)
             if r.status_code == 200:
                 data = r.json()
@@ -42,7 +42,7 @@ def handle(tool_name: str, args: dict) -> dict:
             return {"error": f"Gmail API {r.status_code}: {r.text[:200]}", "successful": False, "execution_time_ms": round((time.time()-t0)*1000)}
 
         if tool_name == "GMAIL_SEARCH_MESSAGES":
-            r = requests.get("https://gmail.googleapis.com/gmail/v1/users/me/messages",
+            r = httpx.get("https://gmail.googleapis.com/gmail/v1/users/me/messages",
                              headers=headers, params={"q": args.get("query", ""), "maxResults": args.get("max_results", 10)}, timeout=30)
             if r.status_code == 200:
                 msgs = r.json().get("messages", [])
@@ -51,7 +51,7 @@ def handle(tool_name: str, args: dict) -> dict:
 
         return {"error": f"Unsupported Gmail tool: {tool_name}", "successful": False, "execution_time_ms": round((time.time()-t0)*1000)}
 
-    except requests.RequestException as e:
+    except httpx.RequestError as e:
         return {"error": str(e)[:300], "successful": False, "execution_time_ms": round((time.time()-t0)*1000)}
 
 handle.tool_list = TOOLS

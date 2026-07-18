@@ -8,8 +8,7 @@ Zero per-turn LLM cost after initial assembly.
 
 import json
 import logging
-from typing import Optional
-from datetime import datetime, timezone
+
 
 log = logging.getLogger("execution.mission_context")
 

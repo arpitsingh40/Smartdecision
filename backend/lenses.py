@@ -1,6 +1,6 @@
 """Reasoning Lenses — the applied layer of the 20-book decision-science knowledge base.
 
-Each of the 20 dossiers in /app/backend/knowledge/ is distilled here into a compact,
+Each of the 111 dossiers in /app/backend/knowledge/ is distilled here into a compact,
 imperative reasoning MODULE. select_lenses() scores modules against the founder's
 latest message + situation model and returns the top matches as a prompt block, so
 the engine APPLIES frameworks (Munger, Tetlock, Rumelt, Meadows, Klein...) silently
@@ -8,6 +8,8 @@ instead of summarizing books. Pure functions, zero LLM cost, ~600 extra tokens/t
 """
 
 import json
+import os
+import re
 from typing import Optional
 
 # (id, book label, [(trigger substring, weight)], lens instruction text)
@@ -435,18 +437,904 @@ MODULES = [
                  "rehearsal (pilot batch, landing page, pre-orders), before capital commits. Convert big moves "
                  "into repeatable modules where unit two learns from unit one. Compress the delivery window: "
                  "every week a project stays open is another spin of the black-swan wheel. Define done and dead "
-                 "in numbers, now, while no ego is invested."),
+                 "before done. Probe error bars before they become reality."),
     },
+    {
+        "id": "bed_of_procrustes", "book": "Taleb's only aphorism book (and the last in the Incerto series) contains ~450 ep",
+        "triggers": [["procrusteantaleb", 2], ["concentrated", 2], ["explanations", 2], ["procrustean", 2], ["categories", 2], ["skepticism", 2], ["stochastic", 2], ["confident", 2], ["interpret", 2], ["knowledge", 2]],
+        "lens": ("Taleb's only aphorism book (and the last in the Incerto series) contains ~450 epigrams organized into thematic sections. The book has no single argument — it IS the argument, in concentrated form, tha - WHEN a founder's data fits their story perfectly → APPLY Procrustean skepticism: 'what data does NOT fit this story? Find it. That's the signal.' - WHEN a founder talks about what they'll do but hasn't started → APPLY action-over-talk: 'what's the smallest tinker you can do today instead of talking about it?' - WHEN a founder is over-confident about past success → APPLY stochastic humility: 'ho"),
+    },
+    {
+        "id": "signal_and_noise", "book": "Silver, the statistician who correctly predicted 49/50 states in the 2008 US ele",
+        "triggers": [["statistician", 2], ["fluctuation", 2], ["forecasters", 2], ["forecasting", 2], ["predictions", 2], ["confidence", 2], ["decoration", 2], ["difference", 2], ["everything", 2], ["humisilver", 2]],
+        "lens": ("Silver, the statistician who correctly predicted 49/50 states in the 2008 US election and 50/50 in 2012, argues that forecasting is broken in most domains (economics, politics, punditry) because forec - WHEN a founder makes a confident forecast → APPLY Bayes surface: 'what's the base rate for this kind of thing? What evidence would change your mind by how much?' - WHEN a founder is drowning in data → APPLY noise reduction: 'which three metrics actually predict outcomes? Everything else is dashboard decoration.' - WHEN a founder interprets one data point as proof → APPLY pattern test: 'if this "),
+    },
+    {
+        "id": "super_thinking", "book": "Weinberg (DuckDuckGo founder) and McCann compile and systematize the most useful",
+        "triggers": [["psychological", 2], ["alternative", 2], ["curiosities", 2], ["disciplines", 2], ["explanation", 2], ["opportunity", 2], ["systematize", 2], ["biological", 2], ["duckduckgo", 2], ["frameworks", 2]],
+        "lens": ("Weinberg (DuckDuckGo founder) and McCann compile and systematize the most useful mental models across physics, biology, psychology, economics, and strategy. Their core point: mental models are not aca - WHEN a founder is stuck on a problem → APPLY model scan: 'what models apply here? Inversion? Hanlon's Razor? Opportunity cost? Feedback loops?' - WHEN a founder has a single explanation → APPLY lattice expansion: 'what would this look like through a different model — psychological, economic, biological?' - WHEN a founder can't choose between options → APPLY opportunity-cost model: 'what's the e"),
+    },
+    {
+        "id": "range", "book": "Range (Epstein) — why generalists triumph in a specialized world",
+        "triggers": [["entrepreneurship", 2], ["specialization", 2], ["complementary", 2], ["consistently", 2], ["generalists", 2], ["specialists", 2], ["background", 2], ["completely", 2], ["deliberate", 2], ["dismantles", 2]],
+        "lens": ("Epstein dismantles the '10,000-hour rule' (deliberate practice from early specialization) as the only path to excellence. That rule applies in KIND domains (chess, golf, violin) where the rules are st - WHEN a founder doubts their broad background → APPLY range reframe: 'in wicked domains like startups, breadth is an asset — your diverse experience gives you analogies that narrow experts lack.' - WHEN a founder is stuck on a problem → APPLY analogic thinking: 'what's a completely different domain where a similar problem was solved? Steal that solution.' - WHEN a founder is building a team → AP"),
+    },
+    {
+        "id": "skin_in_the_game", "book": "Taleb's fourth Incerto book explores the ethics and pragmatics of SKIN IN THE GA",
+        "triggers": [["recommendations", 2], ["consequences", 2], ["informataleb", 2], ["arrangement", 2], ["prescribing", 2], ["consultant", 2], ["foundation", 2], ["pragmatics", 2], ["confident", 2], ["decisions", 2]],
+        "lens": ("Taleb's fourth Incerto book explores the ethics and pragmatics of SKIN IN THE GAME — the principle that decision-makers must share in the downside of their decisions. The core mechanism: when someone  - WHEN a founder gives advice they don't follow → APPLY symmetry principle: 'are you taking the same medicine you're prescribing to others?' - WHEN an advisor/consultant gives confident recommendations → APPLY skin audit: 'what does this advisor lose if they're wrong? If nothing, discount their advice by 50%.' - WHEN a founder evaluates a contract with personal guarantee → APPLY Bob Rubin audit: "),
+    },
+    {
+        "id": "competitive_strategy", "book": "Porter's framework is the foundational language of strategy: five forces determi",
+        "triggers": [["differentiation", 2], ["attractiveness", 2], ["differentiator", 2], ["configuration", 2], ["foundational", 2], ["competition", 2], ["distinctive", 2], ["outperforms", 2], ["reinfporter", 2], ["substitutes", 2]],
+        "lens": ("Porter's framework is the foundational language of strategy: five forces determine industry attractiveness (rivalry, threat of entry, supplier power, buyer power, substitutes); three generic strategie - WHEN a founder plans growth → APPLY activity-system audit: does the new product/channel/customer fit the existing activity configuration, or does it blur the position? - WHEN a founder faces margin pressure → APPLY five-force diagnosis: which force is extracting margin? Supplier, buyer, or rival? Target the solution at the specific force. - WHEN a founder can't articulate their advantage → APPL"),
+    },
+    {
+        "id": "good_to_great", "book": "Collins' research identified companies that outperformed the market 3x+ for 15 y",
+        "triggers": [["consistently", 2], ["contribution", 2], ["outperformed", 2], ["professional", 2], ["calibration", 2], ["charismatic", 2], ["description", 2], ["disciplined", 2], ["spectacular", 2], ["celebrates", 2]],
+        "lens": ("Collins' research identified companies that outperformed the market 3x+ for 15 years after a transition point. The core: Level 5 leaders (personal humility + professional will) get the right people on - WHEN a founder celebrates personal vision or charisma → APPLY Level 5 calibration: does the founder talk about the team's contribution or their own? Is the company built to survive their absence? - WHEN hiring is done reactively → APPLY first-who discipline: define the bus test — would this person add value in ANY early role, regardless of the specific job description? - WHEN a plan is too opti"),
+    },
+    {
+        "id": "innovators_dilemma", "book": "Christensen separates innovation into two kinds: SUSTAINING (better performance ",
+        "triggers": [["becachristensen", 2], ["overshooting", 2], ["consumption", 2], ["performance", 2], ["accessible", 2], ["competitor", 2], ["disruption", 2], ["disruptive", 2], ["incumbents", 2], ["innovation", 2]],
+        "lens": ("Christensen separates innovation into two kinds: SUSTAINING (better performance for existing customers — incumbents almost always win these) and DISRUPTIVE (worse performance by existing metrics but c - WHEN a founder enters an existing market → APPLY disruption test: is the incumbent overshooting? Are you attacking from below or from non-consumption? If entering at parity, warn of sustaining-game  - WHEN a founder is dismissed by an incumbent → APPLY dilemma reversal: the dismissal is a green flag if the threat is genuinely disruptive; red flag if the threat is sustaining (they'll respond and"),
+    },
+    {
+        "id": "zero_to_one", "book": "Thiel argues from first principles: technology (doing new things) moves from 0 t",
+        "triggers": [["differentiated", 2], ["globalization", 2], ["becausethiel", 2], ["distribution", 2], ["competition", 2], ["competitors", 2], ["initiatives", 2], ["completely", 2], ["conviction", 2], ["everything", 2]],
+        "lens": ("Thiel argues from first principles: technology (doing new things) moves from 0 to 1; globalization (doing existing things everywhere) moves 1 to n. Founders should pursue the monopoly route: start sma - WHEN a founder pitches a huge TAM → APPLY monopoly-first: 'smallest market you can dominate completely?' — define the entry niche. - WHEN a founder has too many initiatives → APPLY power law forcing: identify the one bet that dominates, push to kill or defer everything else. - WHEN a founder's story is generic → APPLY the secret question: what do you believe that few others agree with? No convi"),
+    },
+    {
+        "id": "measure_what_matters", "book": "Doerr brought OKRs from Grove's Intel to Google and beyond: OKRs are not a perfo",
+        "triggers": [["communication", 2], ["inspirational", 2], ["recalibration", 2], ["construction", 2], ["quantitative", 2], ["transparency", 2], ["measurement", 2], ["outcomdoerr", 2], ["performance", 2], ["qualitative", 2]],
+        "lens": ("Doerr brought OKRs from Grove's Intel to Google and beyond: OKRs are not a performance measurement tool but a COMMUNICATION AND ALIGNMENT system. The magic is in the coupling: Objectives are inspirati - WHEN a founder has vague direction → APPLY OKR construction: articulate ONE objective and 2-3 verifiable key results for the quarter; test if the KRs pass the yes/no test. - WHEN a team misaligns → APPLY transparency protocol: publish everyone's OKRs; map who depends on whom; make the mismatches visible. - WHEN a founder sets easy targets → APPLY stretch recalibration: ask what the stretch targ"),
+    },
+    {
+        "id": "art_of_war", "book": "The oldest and most concise strategy manual in existence, distilled into 13 chap",
+        "triggers": [["confrontation", 2], ["intelligence", 2], ["competitive", 2], ["emotionally", 2], ["activities", 2], ["aphorisms", 2], ["consumers", 2], ["distilled", 2], ["existence", 2], ["influence", 2]],
+        "lens": ("The oldest and most concise strategy manual in existence, distilled into 13 chapters of short aphorisms. Core: strategy is KNOWLEDGE applied to conflict. Know yourself, know your enemy, and know the g - WHEN a founder faces a competitive threat → APPLY self/enemy/ground audit: what do you know about each? Fill the intelligence gap before deciding. - WHEN a founder plans a direct competitive attack → APPLY non-confrontation reframe: is there a way to win WITHOUT fighting on their terms? - WHEN a founder is spread too thin → APPLY momentum audit: which of your activities build shih and which con"),
+    },
+    {
+        "id": "business_model_generation", "book": "Osterwalder's Business Model Canvas replaced the 50-page business plan with a si",
+        "triggers": [["relationships", 2], ["construction", 2], ["organization", 2], ["partnerships", 2], ["propositions", 2], ["marketplace", 2], ["osterwalder", 2], ["proposition", 2], ["activities", 2], ["coherence", 2]],
+        "lens": ("Osterwalder's Business Model Canvas replaced the 50-page business plan with a single-page framework: 9 boxes covering Customer Segments, Value Propositions, Channels, Customer Relationships, Revenue S - WHEN a founder presents a business idea → APPLY canvas construction: map all 9 blocks; test internal coherence (do the revenue streams fund the activities? do channels reach the segments?). - WHEN the value proposition is unclear → APPLY Value Proposition Canvas: define the customer jobs/pains/gains and the product's pain relievers/gain creators — measure fit. - WHEN the founder is building a m"),
+    },
+    {
+        "id": "your_strategy_needs_strategy", "book": "There is no one best way to do strategy — the right approach depends on the PRED",
+        "triggers": [["predictability", 2], ["malleability", 2], ["reassessment", 2], ["environment", 2], ["experiments", 2], ["classical", 2], ["companies", 2], ["diagnosis", 2], ["stability", 2], ["visionary", 2]],
+        "lens": ("- WHEN a founder presents a strategy → APPLY environment diagnosis: rate the market's predictability (high/medium/low) and malleability (shapable/not); identify the implied strategy style; check for m - WHEN a Classical strategy fails → APPLY environment reassessment: did the founder assume stability that isn't there? Suggest Adaptive or Shaping instead. - WHEN a founder churns through experiments without progress → APPLY Visionary test: does anyone have a clear belief about the destination? If not, there's no vision to guide the experiments. - WHEN a platform idea is proposed → APPLY Shaping "),
+    },
+    {
+        "id": "art_of_strategy", "book": "Game theory made accessible: strategy is the art of making moves that account fo",
+        "triggers": [["interdependence", 2], ["identification", 2], ["countermoves", 2], ["simultaneous", 2], ["accordingly", 2], ["credibility", 2], ["equilibrium", 2], ["interaction", 2], ["accessible", 2], ["believable", 2]],
+        "lens": ("Game theory made accessible: strategy is the art of making moves that account for the countermoves of others. Core concepts: dominant strategies (a move that's best regardless of what others do), Nash - WHEN a founder faces a competitor move → APPLY game identification: classify the game type (simultaneous/sequential, zero-sum/non-zero, repeated/one-shot) — prescribe the move set accordingly. - WHEN a threat or promise is made → APPLY credibility test: what commitment mechanism makes this believable? If none, treat it as noise. - WHEN a price war or feature war begins → APPLY prisoner's dilemm"),
+    },
+    {
+        "id": "the_halo_effect", "book": "Rosenzweig systematically dismantles the bestselling business books (Built to La",
+        "triggers": [["greatrosenzweig", 2], ["systematically", 2], ["tautological", 2], ["bestselling", 2], ["financially", 2], ["independent", 2], ["performance", 2], ["attributes", 2], ["dismantles", 2], ["evaluating", 2]],
+        "lens": ("Rosenzweig systematically dismantles the bestselling business books (Built to Last, Good to Great, In Search of Excellence) by showing that their research methods suffer from the HALO EFFECT: when a c - WHEN a founder cites a success story as a model → APPLY halo skepticism: was the cited attribute measured before or after success? Is there a control group of failures with the same attribute? - WHEN evaluating a company's own performance → APPLY halo debias: separate the narrative of 'what we do well' from the independent performance metrics — the narrative is likely halo-inflated in good  - W"),
+    },
+    {
+        "id": "immutable_laws", "book": "Twenty-two laws, one spine: own a category or a word in the mind, first; focus w",
+        "triggers": [["alternative", 2], ["initiatives", 2], ["perceptions", 2], ["unforgiving", 2], ["broadening", 2], ["leadership", 2], ["perception", 2], ["extension", 2], ["invisible", 2], ["marketing", 2]],
+        "lens": ("Twenty-two laws, one spine: own a category or a word in the mind, first; focus wins; broadening loses. The laws founders break at their peril: Leadership (better to be first than better), Category (if - WHEN a founder plans a second product under the same brand → APPLY Line Extension law: what word does the brand own, does this dilute it, does a new name serve better? - WHEN they're #2+ in a category → APPLY Opposite law: define the leader's essence, position as its alternative — never a cheaper copy. - WHEN they claim 'better quality' → APPLY Perception law: better is invisible; first/only/op"),
+    },
+    {
+        "id": "pre_suasion", "book": "Pre-Suasion (Cialdini) — privilege attention before the message arrives",
+        "triggers": [["associations", 2], ["deliberately", 2], ["environments", 2], ["adventurous", 2], ["engineering", 2], ["sympathetic", 2], ["temporarily", 2], ["evaluation", 2], ["everything", 2], ["persuasion", 2]],
+        "lens": ("Pre-Suasion (Cialdini) — privilege attention before the message arrivesent arrives. Attention is zero-sum and channeled: openers, environments, questions, and images prime specific associatio - WHEN a pitch/campaign is being designed → APPLY opener engineering: choose the single concept that must be in-mind first; build the question/image/line that summons it. - WHEN pages convert poorly despite good offers → APPLY focal audit: what do the first seconds make focal — price, risk, or the desired identity/benefit? - WHEN a founder needs a customer/partner meeting to go well → APPLY privi"),
+    },
+    {
+        "id": "made_to_stick", "book": "Made to Stick (Heath) — SUCCESs: Simple, Unexpected, Concrete, Credible, Emotional, Stories",
+        "triggers": [["credibility", 2], ["stickiness", 2], ["unexpected", 2], ["challenge", 2], ["commander", 2], ["compactly", 2], ["emotional", 2], ["humanized", 2], ["important", 2], ["knowledge", 2]],
+        "lens": ("Made to Stick (Heath) — SUCCESs: Simple, Unexpected, Concrete, Credible, Emotional, Storieslisteners to name it (predicted 50%, actual 2.5%) — every founder pitching is a tapper. SUCCESs is the antidote: SIMPLE  - WHEN founder messaging is abstract/jargon-heavy → APPLY curse-of-knowledge repair: run the tapper test, rewrite in concrete scenes and schemas. - WHEN messages get ignored → APPLY gap opening: lead with the unexpected anomaly, pose the question, then answer. - WHEN claims aren't believed → APPLY credibility sourcing: vivid detail, humanized statistic, Sinatra flagship, or a testable challenge. "),
+    },
+    {
+        "id": "purple_cow", "book": "Purple Cow (Godin) — remarkable vs invisible, sneezers, polarization",
+        "triggers": [["polarization", 2], ["advertising", 2], ["consumption", 2], ["organically", 2], ["industrial", 2], ["invisgodin", 2], ["production", 2], ["remarkable", 2], ["splintered", 2], ["unprompted", 2]],
+        "lens": ("Purple Cow (Godin) — remarkable vs invisible, sneezers, polarizationee a PURPLE cow and you tell everyone. Marketing has moved from the TV-industrial era (mass production, mass advertising - WHEN a founder describes their product's 'better' features → APPLY Purple Cow test: 'would a stranger tell a friend about this unprompted? If not, redesign the message or the product.' - WHEN a founder targets 'everyone' → APPLY sneezer search: 'which 100 people, if they loved it, would spread it organically? Design for them first.' - WHEN the founder is afraid of criticism → APPLY polarization"),
+    },
+    {
+        "id": "this_is_marketing", "book": "Godin reframes marketing from manipulation to service",
+        "triggers": [["manipulation", 2], ["convincing", 2], ["discipline", 2], ["frustrated", 2], ["generosity", 2], ["touchpoint", 2], ["understand", 2], ["belonging", 2], ["describes", 2], ["marketing", 2]],
+        "lens": ("Godin reframes marketing from manipulation to service. The five steps: (1) Choose a SMALLEST VIABLE MARKET — the smallest group that can sustain your business, people whose problem you perfectly solve - WHEN the founder's marketing plan targets 'everyone' → APPLY SVM discipline: 'who is the smallest group that can sustain this business? Serve them perfectly; everyone else is bonus.' - WHEN the founder describes features → APPLY status/feeling reframe: 'what does this feel like for the customer? What status does it give them?' - WHEN the founder's first touchpoint asks for money → APPLY generos"),
+    },
+    {
+        "id": "tipping_point", "book": "Gladwell identifies three rules of epidemics: THE LAW OF THE FEW (a tiny number ",
+        "triggers": [["exceptiogladwell", 2], ["influencers", 2], ["acceptance", 2], ["compelling", 2], ["connectors", 2], ["contagious", 2], ["identifies", 2], ["influencer", 2], ["remembered", 2], ["stickiness", 2]],
+        "lens": ("Gladwell identifies three rules of epidemics: THE LAW OF THE FEW (a tiny number of people — Connectors, Mavens, and Salesmen — drive the spread; the rest just follow), THE STICKINESS FACTOR (the messa - WHEN the founder wonders why growth is slow despite effort → APPLY Three Rules diagnosis: 'do you have Connectors, Mavens, and Salesmen spreading your message? Is the message sticky? Is the context  - WHEN the founder wants to spend on influencer marketing → APPLY Law of the Few: 'are these influencers Connectors, Mavens, or Salesmen in YOUR category? Never hire an influencer who isn't a genuin"),
+    },
+    {
+        "id": "team_of_teams", "book": "McChrystal took over Joint Special Operations Command (JSOC) fighting Al Qaeda i",
+        "triggers": [["intelligencmcchrystal", 2], ["collaboration", 2], ["consciousness", 2], ["decentralized", 2], ["intelligence", 2], ["centralized", 2], ["environment", 2], ["predictable", 2], ["bottleneck", 2], ["mechanisms", 2]],
+        "lens": ("McChrystal took over Joint Special Operations Command (JSOC) fighting Al Qaeda in Iraq and found a paradox: his task force had the best soldiers, best tech, best intelligence — and was losing. The ene - WHEN the founder feels like the bottleneck on every decision → APPLY gardening: shift from chess master to gardener; build shared consciousness first, then push decisions down. - WHEN cross-team collaboration fails or blame cycles emerge → APPLY silo diagnosis: are liaison/rotation mechanisms in place? If not, trust edges are missing — install them. - WHEN growth exceeds the founder's personal "),
+    },
+    {
+        "id": "reinventing_organizations", "book": "Laloux analyzed dozens of organizations across industries (Buurtzorg — Dutch hom",
+        "triggers": [["micromanagement", 2], ["organizational", 2], ["breakthroughs", 2], ["consciousness", 2], ["developmental", 2], ["organizations", 2], ["maximization", 2], ["healthcare", 2], ["identified", 2], ["industries", 2]],
+        "lens": ("Laloux analyzed dozens of organizations across industries (Buurtzorg — Dutch home healthcare with 15,000 nurses and no managers, Patagonia, Morning Star, AES) and identified a developmental pattern: h - WHEN a founder feels the org has outgrown command-and-control → APPLY Teal diagnosis: which of the three breakthroughs would unlock the most leverage first? Usually self-management (advice process)  - WHEN micromanagement is the pattern → APPLY advice process: the founder must stop giving permission; instead, ask 'who have you consulted?' — the process replaces the permission habit. - WHEN the "),
+    },
+    {
+        "id": "turn_the_ship_around", "book": "Marquet took command of the USS Santa Fe, a nuclear submarine that was the worst",
+        "triggers": [["intelligence", 2], ["overwhelmed", 2], ["traditional", 2], ["boundaries", 2], ["initiative", 2], ["leadership", 2], ["performing", 2], ["ambiguity", 2], ["answering", 2], ["authority", 2]],
+        "lens": ("Marquet took command of the USS Santa Fe, a nuclear submarine that was the worst-performing in the Pacific fleet — and turned it into the best-performing, producing more future captains than any other - WHEN a founder is overwhelmed by decision requests → APPLY 'I intend to...' mechanism: stop answering questions; require team members to state their intended action with reasoning; the founder only  - WHEN the founder says 'no one takes initiative' → APPLY clarity audit: people don't take initiative when they don't know their decision authority — map the ambiguity and clarify boundaries. - WHEN"),
+    },
+    {
+        "id": "seven_habits", "book": "Covey's seven habits form a maturity progression",
+        "triggers": [["interdependence", 2], ["effectiveness", 2], ["inconsistent", 2], ["independence", 2], ["overwhelmed", 2], ["progression", 2], ["dependence", 2], ["principles", 2], ["techniques", 2], ["character", 2]],
+        "lens": ("Covey's seven habits form a maturity progression. Private victory (habits 1-3): Be Proactive (focus on your Circle of Influence, not your Circle of Concern); Begin with the End in Mind (define your pe - WHEN a founder blames external factors → APPLY Circle of Influence reframe: what one thing can you do RIGHT NOW about this? Write it, do it. - WHEN a founder's decisions are inconsistent → APPLY mission statement: what are you building and why? Get it to a paragraph, test decisions against it. - WHEN a founder is overwhelmed → APPLY Quadrant II audit: find the important-but-not-urgent work that"),
+    },
+    {
+        "id": "how_to_win_friends", "book": "Carnegie's 1936 classic sells 30M+ copies because it works: business is fundamen",
+        "triggers": [["authencarnegie", 2], ["fundamentally", 2], ["relationships", 2], ["appreciative", 2], ["appreciated", 2], ["personality", 2], ["principles", 2], ["criticism", 2], ["criticize", 2], ["customers", 2]],
+        "lens": ("Carnegie's 1936 classic sells 30M+ copies because it works: business is fundamentally ABOUT PEOPLE, and getting people to like, trust, and follow you is a LEARNABLE SKILL based on principles, not pers - WHEN a founder is in conflict with a co-founder or team member → APPLY criticism audit: replace criticism with appreciative inquiry and shared goal discovery. - WHEN a founder struggles with investor relationships → APPLY talk-in-their-terms: reframe the pitch around the investor's interests (return profile, risk, timeline), not the founder's story. - WHEN a founder loses customers → APPLY list"),
+    },
+    {
+        "id": "start_with_why", "book": "Sinek's Golden Circle: WHY (purpose — the cause you believe in), HOW (process — ",
+        "triggers": [["differentiating", 2], ["strengthening", 2], ["communicates", 2], ["organization", 2], ["communicate", 2], ["engineering", 2], ["partnership", 2], ["ambivalent", 2], ["candidate", 2], ["companies", 2]],
+        "lens": ("Sinek's Golden Circle: WHY (purpose — the cause you believe in), HOW (process — your differentiating approach), WHAT (product — the tangible output). Most companies communicate from outside in: 'we ma - WHEN a founder presents a business plan → APPLY Golden Circle audit: start from WHY — if the purpose isn't clear by the third sentence, the pitch will not inspire. - WHEN a founder struggles with hiring or partnership decisions → APPLY Celery Test: does this candidate/partner align with the WHY? If ambivalent, the WHY needs strengthening before the hire. - WHEN a founder chases mass-market adop"),
+    },
+    {
+        "id": "e_myth_revisited", "book": "The E-Myth Revisited (Gerber) — the entrepreneur, manager, technician",
+        "triggers": [["entrepreneurial", 2], ["personalities", 2], ["entrepreneur", 2], ["undocumented", 2], ["operational", 2], ["overwhelmed", 2], ["personality", 2], ["replication", 2], ["businesses", 2], ["discipline", 2]],
+        "lens": ("The 'E-Myth' is the Entrepreneurial Myth: that a business is created by someone with a great idea, not by someone who builds a great SYSTEM. Gerber's diagnosis: every founder has three personalities — - WHEN a founder is overwhelmed by operational work → APPLY personality diagnosis: which of the three is running the business? Elevate Entrepreneur and Manager; systemize the Technician's work. - WHEN a founder says 'the business can't run without me' → APPLY franchise prototype mindset: design the business for replication — if it can't work without you, it has no sale value. - WHEN processes are"),
+    },
+    {
+        "id": "rework", "book": "DHH and Fried (Basecamp/37signals) wrote the anti-business-book: short chapters ",
+        "triggers": [["conventional", 2], ["sustainable", 2], ["workaholism", 2], ["businesdhh", 2], ["hypothesis", 2], ["monologues", 2], ["profitable", 2], ["unknowable", 2], ["attacking", 2], ["backwards", 2]],
+        "lens": ("DHH and Fried (Basecamp/37signals) wrote the anti-business-book: short chapters attacking sacred cows. Planning is guessing — the future is unknowable, so build for now. Growth is not the only path —  - WHEN a founder builds a long-term plan → APPLY planning-is-guessing: shorten the horizon to 4-6 weeks of certain action, with direction beyond but not detail. - WHEN a founder feels pressured to grow → APPLY optional-growth reframe: what does optimal look like? A profitable, sustainable size that serves the founder's life goals. - WHEN a founder is building a feature-rich v1 → APPLY half-produc"),
+    },
+    {
+        "id": "delivering_happiness", "book": "Hsieh sold LinkExchange for $265M and was miserable for two years — so he built ",
+        "triggers": [["linkexchange", 2], ["interaction", 2], ["prioritize", 2], ["strengthen", 2], ["complaint", 2], ["customers", 2], ["discusses", 2], ["financial", 2], ["interview", 2], ["minimizes", 2]],
+        "lens": ("Hsieh sold LinkExchange for $265M and was miserable for two years — so he built Zappos on the opposite premise: prioritize company culture and customer service (WOW) above all else, and the financial  - WHEN a founder discusses hiring → APPLY the culture-fit veto: skills are trainable, values are not; the culture-interview gets a kill vote. - WHEN a customer complaint is analyzed → APPLY the WOW rule: the interaction that creates a story beats the one that minimizes cost. - WHEN a new policy is drafted → APPLY the value-screen: does this policy strengthen or weaken a declared core value? - WHE"),
+    },
+    {
+        "id": "effective_executive", "book": "Drucker observed that the most productive executives share no common personality",
+        "triggers": [["effectiveness", 2], ["organidrucker", 2], ["consistently", 2], ["contribution", 2], ["deliberately", 2], ["intelligence", 2], ["overwhelmed", 2], ["personality", 2], ["discipline", 2], ["executives", 2]],
+        "lens": ("Drucker observed that the most productive executives share no common personality, intelligence, or style — they share five habits: (1) know where their time goes and manage it deliberately, (2) focus  - WHEN a founder feels overwhelmed → APPLY time audit: record one week, prune the bottom 30%, batch the remainder. - WHEN a role or initiative is proposed → APPLY the contribution question: 'if this succeeds, what specific outcome changes?' - WHEN a candidate is presented → APPLY strength-based match: name the needed strength first, then evaluate fit against it. - WHEN priorities multiply → APPLY"),
+    },
+    {
+        "id": "eighth_habit", "book": "Covey's 7 Habits produced personal effectiveness; the 8th addresses the leadersh",
+        "triggers": [["discretionary", 2], ["effectiveness", 2], ["intersection", 2], ["contradicts", 2], ["empowerment", 2], ["boundaries", 2], ["compliance", 2], ["conscience", 2], ["creativity", 2], ["delegation", 2]],
+        "lens": ("Covey's 7 Habits produced personal effectiveness; the 8th addresses the leadership crisis of the knowledge economy — people are not hired hands, they are whole persons (body, mind, heart, spirit), and - WHEN a founder struggles to retain talent → APPLY the whole-person audit: which dimension (body/mind/heart/spirit) is being neglected? - WHEN a mission statement feels flat → APPLY the voice test: does it sit at the intersection of talent, passion, need, and conscience? - WHEN a system contradicts a stated value → APPLY the alignment fix: change the system within 30 days or stop claiming the va"),
+    },
+    {
+        "id": "first_things_first", "book": "First Things First (Covey)",
+        "triggers": [["displacement", 2], ["commitment", 2], ["discipline", 2], ["importance", 2], ["management", 2], ["priorities", 2], ["responding", 2], ["framework", 2], ["important", 2], ["stretched", 2]],
+        "lens": ("Covey's role-based weekly system: urgency != importance. The 2x2 matrix — schedule QII (important-not-urgent) before anything else.  The core insight: urgency ≠ importance. The classic 2×2 matrix (urgent/important × not urgent/not - WHEN the founder's calendar is reactive → APPLY the role-based weekly plan: list roles, assign one Quadrant II goal per role, schedule them first. - WHEN priorities conflict → APPLY the urgency filter: is this urgent but not important? If yes, defer or delete. - WHEN a new commitment arrives → APPLY the displacement question: what Quadrant II activity does this replace? Then decide. - WHEN the "),
+    },
+    {
+        "id": "execution", "book": "Bossidy and Charan argue that the gap between a strategy and its results is alwa",
+        "triggers": [["organization", 2], ["consequence", 2], ["understands", 2], ["considered", 2], ["discipline", 2], ["execution", 2], ["operating", 2], ["presented", 2], ["processes", 2], ["realistic", 2]],
+        "lens": ("Bossidy and Charan argue that the gap between a strategy and its results is always an execution gap, and closing it requires three core processes wired together: PEOPLE (getting the right people into  - WHEN a strategy is presented → APPLY the execution test: name the owner, the date, and the consequence for each action — if absent, the strategy is not real. - WHEN a hire is considered → APPLY the three-criteria screen: results × grows people × understands business. - WHEN an operating plan is drafted → APPLY the reality check: what would have to fail for this plan to miss? Build the tripwire."),
+    },
+    {
+        "id": "outliers", "book": "Outliers (Gladwell) — 10,000 hours, accumulated advantage, cultural legacy",
+        "triggers": [["communication", 2], ["disadvantages", 2], ["legacgladwell", 2], ["shortcomings", 2], ["accumulated", 2], ["calculation", 2], ["discouraged", 2], ["advantages", 2], ["background", 2], ["commitment", 2]],
+        "lens": ("Gladwell dismantles the 'self-made' myth through a series of case studies: Bill Gates got his 10,000 hours at a computer terminal because his school had a time-sharing terminal in 1968 (rare), his par - WHEN a founder blames their own shortcomings → APPLY the accumulated-advantage audit: what advantages and disadvantages do they actually have? The map changes the story. - WHEN a founder sets an ambitious skill goal → APPLY the practice calculation: 10,000 hours = 5 years at 40 hours/week; is the commitment realistic? - WHEN the team's communication feels wrong → APPLY the cultural-legacy scan:"),
+    },
+    {
+        "id": "innovators_solution", "book": "Christensen answers the question that The Innovator's Dilemma left open: how DO ",
+        "triggers": [["innovationchristensen", 2], ["architecture", 2], ["incompetence", 2], ["established", 2], ["underserved", 2], ["competitor", 2], ["disruption", 2], ["disruptive", 2], ["entrenched", 2], ["initiative", 2]],
+        "lens": ("Christensen answers the question that The Innovator's Dilemma left open: how DO you build a company that succeeds at disruption? The answer lies in four theories: (1) the JOBS TO BE DONE framework — c - WHEN a product is being defined → APPLY the Jobs to Be Done framework: write the job statement before the feature list. - WHEN a competitor is entrenched → APPLY the disruption map: what market are they happy to lose? Enter there. - WHEN a founder debates build vs. buy → APPLY the pendulum test: is the market overserved or underserved? The answer drives the architecture. - WHEN a new initiative"),
+    },
+    {
+        "id": "hooked", "book": "Eyal's Hook Model explains why some products command daily attention while other",
+        "triggers": [["unpredictability", 2], ["internalization", 2], ["anticipation", 2], ["notification", 2], ["effectively", 2], ["variability", 2], ["loneliness", 2], ["motivation", 2], ["successful", 2], ["attention", 2]],
+        "lens": ("Eyal's Hook Model explains why some products command daily attention while others languish: they build a HABIT through a four-phase cycle — TRIGGER (external: a notification, an ad; or internal: bored - WHEN a product has low retention → APPLY the Hook audit: which phase of the loop is broken? Most often it's trigger-internalization or variable-reward. - WHEN a product is hard to use → APPLY the Fogg analysis: reduce friction in the action phase before trying to increase motivation. - WHEN a product feels boring → APPLY the variability scan: add unpredictability to the reward (content variety,"),
+    },
+    {
+        "id": "indistractable", "book": "Eyal follows Hooked with the master-of-the-hook framework: how to control attent",
+        "triggers": [["notifications", 2], ["uncomfortable", 2], ["distraction", 2], ["uncertainty", 2], ["discomfort", 2], ["distracted", 2], ["everything", 2], ["management", 2], ["technology", 2], ["attention", 2]],
+        "lens": ("Eyal follows Hooked with the master-of-the-hook framework: how to control attention when every product is competing for it. The model has four steps: (1) MASTER INTERNAL TRIGGERS — distraction always  - WHEN a founder says 'I'm too distracted' → APPLY the internal trigger diagnosis: 'what are you avoiding right now?' — address the emotion, not the device. - WHEN a founder's calendar is reactive → APPLY time-boxing: schedule traction (toward values) in the first 2 hours daily before any meeting requests. - WHEN notifications interrupt deep work → APPLY the hack-back: batch all notifications to "),
+    },
+    {
+        "id": "sprint", "book": "The Google Ventures Sprint process compresses months of product development into",
+        "triggers": [["brainstorming", 2], ["development", 2], ["committing", 2], ["compressed", 2], ["compresses", 2], ["constraint", 2], ["individual", 2], ["structured", 2], ["validation", 2], ["customthe", 2]],
+        "lens": ("The Google Ventures Sprint process compresses months of product development into five days: MONDAY — MAP: define the problem, choose the target area, and map the journey the user takes. TUESDAY — SKET - WHEN a product idea is uncertain → APPLY the Sprint framework: compress validation to one week before committing to build. - WHEN a team debates direction → APPLY the Tuesday-Wednesday pattern: individual sketches, structured critique, one decider. - WHEN a founder wants faster customer feedback → APPLY the five-customer rule: recruit five, test this week, learn the key patterns. - WHEN a produ"),
+    },
+    {
+        "id": "shoe_dog", "book": "Phil Knight's memoir of building Nike from a one-man import operation to the wor",
+        "triggers": [["overwhelmingly", 2], ["normalization", 2], ["distributor", 2], ["accountant", 2], ["bankruptcy", 2], ["redundancy", 2], ["diffident", 2], ["obsession", 2], ["operation", 2], ["something", 2]],
+        "lens": ("Phil Knight's memoir of building Nike from a one-man import operation to the world's most iconic brand. The core: Knight was a mediocre runner and a diffident accountant who, on a trip around the worl - WHEN a founder feels the cash crisis is abnormal → APPLY Shoe Dog normalization: Knight survived 10+ years on the verge of bankruptcy; cash pressure is not a sign of failure, it's the default state. - WHEN a founder relies on one supplier/distributor → APPLY Onitsuka warning: build redundancy before the partner has leverage to squeeze or compete. - WHEN a founder is uncertain about hiring → APP"),
+    },
+    {
+        "id": "the_right_it", "book": "Savoia's data: 80-90% of new products fail, and post-mortem analysis shows that ",
+        "triggers": [["fundamental", 2], ["materialize", 2], ["pretotyping", 2], ["prototyping", 2], ["assumption", 2], ["priorities", 2], ["techniques", 2], ["customers", 2], ["execution", 2], ["pinocchio", 2]],
+        "lens": ("Savoia's data: 80-90% of new products fail, and post-mortem analysis shows that the #1 cause is not poor execution — it's building something nobody actually wants (or wants enough). The cure is PRETOT - WHEN a new product is proposed → APPLY the pretotype-first rule: what is the cheapest test that can falsify the core assumption? Do that before any spec. - WHEN a founder insists they 'know the market' → APPLY the fake door test: one landing page, one week, one ad budget — the clicks don't lie. - WHEN a feature request emerges → APPLY the Pinocchio test: provide it manually first — if usage doe"),
+    },
+    {
+        "id": "steve_jobs", "book": "Jobs built Apple twice (Mac → NeXT → Pixar → iMac → iPod → iPhone → iPad) throug",
+        "triggers": [["commoditizing", 2], ["perfectionism", 2], ["integration", 2], ["consistent", 2], ["distortion", 2], ["experience", 2], ["impossible", 2], ["aesthetic", 2], ["execution", 2], ["standards", 2]],
+        "lens": ("Jobs built Apple twice (Mac → NeXT → Pixar → iMac → iPod → iPhone → iPad) through a consistent pattern: (1) INSANELY HIGH STANDARDS — he rejected anything less than the best execution, which forced th - WHEN a founder's product scope creeps → APPLY the Jobs kill: which 70% of the roadmap should be cut to focus on the few that define the company? - WHEN a feature feels commoditizing → APPLY the integration test: can we own this experience end-to-end, or are we renting someone else's moat? - WHEN a team is stuck on 'good enough' → APPLY the insanely-great question: 'is this as good as it could b"),
+    },
+    {
+        "id": "everything_store", "book": "Stone's biography of Amazon reveals the engine behind the flywheel: Bezos's phil",
+        "triggers": [["infrastructure", 2], ["architecture", 2], ["shareholders", 2], ["reinforcing", 2], ["competitor", 2], ["interfaces", 2], ["investment", 2], ["philosophy", 2], ["priorities", 2], ["biography", 2]],
+        "lens": ("Stone's biography of Amazon reveals the engine behind the flywheel: Bezos's philosophy was DAY 1 — every day is day one of the internet, so urgency, hunger, and customer obsession never relax. The ope - WHEN a founder thinks short-term → APPLY the 7-year test: 'would you explain this investment to shareholders in year 7?' - WHEN a feature request is competitor-driven → APPLY the empty chair: 'what would the customer say about this?' - WHEN the architecture is spaghetti → APPLY the API mandate: decouple teams through service interfaces — the future option value is worth the investment. - WHEN t"),
+    },
+    {
+        "id": "creativity_inc", "book": "Catmull, co-founder of Pixar and president of Disney Animation, describes the op",
+        "triggers": [["defensiveness", 2], ["consecutive", 2], ["incredibles", 2], ["braintrust", 2], ["creativity", 2], ["futcatmull", 2], ["postmortem", 2], ["successful", 2], ["animation", 2], ["arrogance", 2]],
+        "lens": ("Catmull, co-founder of Pixar and president of Disney Animation, describes the operating system behind 20+ consecutive animated hits (Toy Story, Finding Nemo, The Incredibles, etc.). The core: the SUCC - WHEN a founder avoids giving honest feedback → APPLY the Braintrust model: separate feedback from authority — make it safe to be wrong. - WHEN a project is hidden until 'ready' → APPLY the ugly-baby rule: show the earliest, worst version now — when it's cheap to fix. - WHEN a postmortem blames people → APPLY the no-names rule: focus on process, not person — the learning goes up, the defensivene"),
+    },
+    {
+        "id": "elon_musk", "book": "Isaacson's biography traces Musk through five acts: Pretoria childhood (beaten, ",
+        "triggers": [["contradictions", 2], ["engineering", 2], ["milestones", 2], ["principles", 2], ["alienated", 2], ["aloneness", 2], ["biography", 2], ["childhood", 2], ["different", 2], ["emotional", 2]],
+        "lens": ("Isaacson's biography traces Musk through five acts: Pretoria childhood (beaten, bullied, books as refuge), Zip2/PayPal (founder intensity that got the deal done but alienated co-founders), SpaceX/Tesl - WHEN a founder invokes first-principles reasoning → APPLY the boundary question: 'are you applying physics or people logic here? They use different rules.' - WHEN a founder is working alone, without a board or co-founder of equal power → APPLY the aloneness check: 'who in your circle can actually stop you?' - WHEN a founder's plan has only engineering milestones → APPLY market-viability overlay"),
+    },
+    {
+        "id": "losing_my_virginity", "book": "Branson's autobiography is less a business manual and more a travelogue of bets ",
+        "triggers": [["unconditionally", 2], ["autobiography", 2], ["embarrassment", 2], ["bransbranson", 2], ["micromanages", 2], ["experiences", 2], ["personality", 2], ["delegating", 2], ["inhibition", 2], ["outperform", 2]],
+        "lens": ("Branson's autobiography is less a business manual and more a travelogue of bets taken, people trusted, and rules broken. The through-line: Branson has zero formal business training, zero patience for  - WHEN a founder is over-planning and under-starting → APPLY 'screw it, let's do it': what's the minimal survivable launch and what's the funnest route? - WHEN a founder micromanages → APPLY trust test: can you name a decision the team made better than you would? If not, you're under-delegating. - WHEN a founder struggles with brand identity → APPLY personality question: if your brand were a pers"),
+    },
+    {
+        "id": "personal_mba", "book": "Kaufman wrote the anti-MBA: everything you need to know about business distilled",
+        "triggers": [["interdependent", 2], ["concentrate", 2], ["overwhelmed", 2], ["everything", 2], ["everywhere", 2], ["diagnosis", 2], ["distilled", 2], ["fikaufman", 2], ["marketing", 2], ["struggles", 2]],
+        "lens": ("Kaufman wrote the anti-MBA: everything you need to know about business distilled into mental models, without the $200K degree. The five-part business system: Value Creation, Marketing, Sales, Value De - WHEN a founder has a business idea → APPLY Iron Law test: is the market need real and strong enough? Test demand before building product. - WHEN a business struggles → APPLY five-part diagnosis: which of the five parts (creation, marketing, sales, delivery, finance) is weakest? Fix that first. - WHEN a founder is overwhelmed by choices → APPLY 80/20: what 20% of efforts produce 80% of results? "),
+    },
+    {
+        "id": "intelligent_investor", "book": "Graham's framework distinguishes the INVESTOR (who buys based on underlying busi",
+        "triggers": [["distinguishes", 2], ["conservative", 2], ["expectations", 2], ["fundraising", 2], ["inevitable", 2], ["predicting", 2], ["principles", 2], ["speculator", 2], ["underlying", 2], ["volatility", 2]],
+        "lens": ("Graham's framework distinguishes the INVESTOR (who buys based on underlying business value with a margin of safety) from the SPECULATOR (who buys based on price movement expectations). The core princi - WHEN a founder considers fundraising timing → APPLY Mr. Market: is capital euphoric or panicked? Raise when it's cheap. - WHEN the founder's cash runway is tight → APPLY margin-of-safety audit: if revenue drops 50%, how long can we survive? If under 12 months, fix it. - WHEN a founder chases a high valuation → APPLY voting vs. weighing: is this valuation based on substance or hype? - WHEN the f"),
+    },
+    {
+        "id": "little_book_beats_market", "book": "Greenblatt's Magic Formula: rank all companies by (1) earnings yield (how cheap ",
+        "triggers": [["alternatives", 2], ["consistently", 2], ["megreenblatt", 2], ["acquisition", 2], ["initiatives", 2], ["outperforms", 2], ["rebalancing", 2], ["temporarily", 2], ["discipline", 2], ["evaluating", 2]],
+        "lens": ("Greenblatt's Magic Formula: rank all companies by (1) earnings yield (how cheap is the business relative to its earnings?) and (2) return on capital (how good is the business at turning investment int - WHEN evaluating a potential acquisition → APPLY Magic Formula lens: what is its earnings yield and ROC? Buying without both numbers is guessing. - WHEN deciding which initiative to fund → APPLY portfolio rebalancing: rank initiatives by quality (ROC-like measure) × cheapness (cost relative to impact); fund the top, cut the bottom. - WHEN a founder falls in love with a 'great business' at any pr"),
+    },
+    {
+        "id": "rich_dad_poor_dad", "book": "Kiyosaki tells the story of two fathers: Poor Dad (his educated, hardworking, fi",
+        "triggers": [["entrepreneur", 2], ["financially", 2], ["hardworking", 2], ["investments", 2], ["liabilities", 2], ["biological", 2], ["businesses", 2], ["operations", 2], ["percentage", 2], ["struggling", 2]],
+        "lens": ("Kiyosaki tells the story of two fathers: Poor Dad (his educated, hardworking, financially struggling biological father) and Rich Dad (his friend's entrepreneur father who built wealth through assets a - WHEN a founder describes 'investments' that are actually lifestyle expenses → APPLY Kiyosaki's asset test: 'does this put money in your pocket or take it out? If the latter, it's a liability.' - WHEN a founder is trapped in daily operations → APPLY 'mind your own business': what percentage of your time is spent building something that can run without you? - WHEN a founder is choosing between a "),
+    },
+    {
+        "id": "most_important_thing", "book": "The Most Important Thing (Marks)",
+        "triggers": [["understanding", 2], ["environment", 2], ["fundraising", 2], ["positioning", 2], ["probability", 2], ["projections", 2], ["recognizing", 2], ["inevitable", 2], ["investment", 2], ["predicting", 2]],
+        "lens": ("Second-level thinking: what does everyone believe, and what if they're wrong? Risk is not volatility but the probability of permanent loss. Margin of safety: what would have to fail for the plan to miss? When fundraising, raise when capital is available, not when it's needed. - WHEN a founder makes a consensus-driven decision → APPLY second-level thinking: 'what does everyone believe, and what if they're wrong? What's the non-consensus case?' - WHEN the fundraising environment is hot → APPLY defensive posture: can you raise NOW even if you don't need it? Lock runway when it's available. - WHEN a founder's projections assume smooth sailing → APPLY margin of safety: 'wh"),
+    },
+    {
+        "id": "warren_buffett_way", "book": "Hagstrom distills Buffett's method into twelve principles organized around four ",
+        "triggers": [["understandable", 2], ["institutional", 2], ["strategically", 2], ["reinvestment", 2], ["competitive", 2], ["independent", 2], ["predictable", 2], ["competitor", 2], ["consistent", 2], ["imperative", 2]],
+        "lens": ("Hagstrom distills Buffett's method into twelve principles organized around four filters: BUSINESS (simple and understandable, consistent operating history, favorable long-term prospects), MANAGEMENT ( - WHEN the founder describes their 'advantage' → APPLY moat test: is this a durable competitive advantage (a 7 Power) or just a feature? Name the specific barrier. - WHEN the founder reinvests all profits into growth → APPLY $1 test: will this reinvestment create >$1 of value per rupee spent? Show the math. - WHEN facing a competitor's move → APPLY institutional imperative check: 'are we reacting"),
+    },
+    {
+        "id": "essentialism", "book": "McKeown's Essentialism is not about getting more done faster — it's about doing ",
+        "triggers": [["deliberately", 2], ["essentialism", 2], ["essentialist", 2], ["unproductive", 2], ["disciplined", 2], ["opportunity", 2], ["overwhelmed", 2], ["commckeown", 2], ["everything", 2], ["priorities", 2]],
+        "lens": ("McKeown's Essentialism is not about getting more done faster — it's about doing the RIGHT things, and doing them well. The core: 'less but better.' Every decision to say YES to something is a decision - WHEN a founder lists 10 priorities → APPLY the 90 percent rule: score each; only the 90+ survives. - WHEN a founder can't say no to an opportunity → APPLY the trade-off forcing: 'what essential priority will you kill to make room for this?' - WHEN a founder is overwhelmed by competing demands → APPLY the essentialist refrain: 'less but better — what's the 20 percent of your work that produces 8"),
+    },
+    {
+        "id": "deep_work", "book": "Newport defines deep work: professional activities performed in a state of distr",
+        "triggers": [["undistractenewport", 2], ["communication", 2], ["concentration", 2], ["extraordinary", 2], ["capabilities", 2], ["professional", 2], ["cognitively", 2], ["concentrate", 2], ["distraction", 2], ["exceptional", 2]],
+        "lens": ("Newport defines deep work: professional activities performed in a state of distraction-free concentration that push your cognitive capabilities to their limit. Deep work produces extraordinary results - WHEN a founder is constantly busy but not making progress → APPLY deep/shallow audit: 'what percentage of your week is deep. Be honest. Let's protect it.' - WHEN a founder can't concentrate → APPLY the attention muscle fix: schedule distraction blocks, eliminate phone from deep work zone, build the ritual. - WHEN a founder feels overwhelmed by communication → APPLY the shallow drain: batch emai"),
+    },
+    {
+        "id": "getting_things_done", "book": "Allen's GTD methodology is built on a single insight: stress and distraction com",
+        "triggers": [["procrastinates", 2], ["commitments", 2], ["distraction", 2], ["methodology", 2], ["overwhelmed", 2], ["unprocessed", 2], ["commitment", 2], ["everything", 2], ["priorities", 2], ["bandwidth", 2]],
+        "lens": ("Allen's GTD methodology is built on a single insight: stress and distraction come not from having too much to do but from trying to HOLD it all in your head. The GTD workflow has 5 stages: (1) CAPTURE - WHEN a founder is overwhelmed by competing demands → APPLY the inbox zero + two-minute rule: capture everything, clear the small stuff, expose the real priorities. - WHEN a founder drops balls with team/customers/investors → APPLY the 'waiting for' list: audit every open commitment — what's pending from whom? - WHEN a founder feels scattered and reactive → APPLY the weekly review: process, refl"),
+    },
+    {
+        "id": "pareto_principle", "book": "Koch expands Pareto's original observation (80% of Italian land owned by 20% of ",
+        "triggers": [["observation", 2], ["obsessively", 2], ["overwhelmed", 2], ["activities", 2], ["priorities", 2], ["customers", 2], ["decisions", 2], ["imbalance", 2], ["precision", 2], ["principle", 2]],
+        "lens": ("Koch expands Pareto's original observation (80% of Italian land owned by 20% of people) into a universal principle: 80% of results come from 20% of efforts; 80% of value comes from 20% of customers; 8 - WHEN a founder is overwhelmed by too many priorities → APPLY the 80/20 audit: 'which 20% of your activities produces 80% of your company's progress? Do only that.' - WHEN a founder is managing too many products/features → APPLY the product 80/20: rank by revenue/usage; kill the bottom half; reinvest in the top. - WHEN a founder has too many customers → APPLY the customer 80/20: rank by revenue;"),
+    },
+    {
+        "id": "ultralearning", "book": "Young's ultralearning framework emerged from his own experiments (learning MIT's",
+        "triggers": [["ultralearnyoung", 2], ["ultralearning", 2], ["conventional", 2], ["metalearning", 2], ["experiments", 2], ["fundraising", 2], ["bottleneck", 2], ["curriculum", 2], ["directness", 2], ["experience", 2]],
+        "lens": ("Young's ultralearning framework emerged from his own experiments (learning MIT's 4-year CS curriculum in 12 months; learning to speak Mandarin in 3 months) and from decades of learning research. The 9 - WHEN a founder needs to learn a new domain fast (fundraising, hiring in new market, new tech) → APPLY the ultralearning project: metalearning week → direct practice → retrieval feedback loop. - WHEN a founder is stuck in analysis paralysis (reading, courses, 'not ready yet') → APPLY directness: 'what's the smallest real thing you can try TODAY?' - WHEN a founder has a specific bottleneck (sales"),
+    },
+    {
+        "id": "peak", "book": "Ericsson dismantles the '10,000-hour rule' popularized by Gladwell (it was never",
+        "triggers": [["representation", 2], ["specifically", 2], ["distinction", 2], ["fundamental", 2], ["performance", 2], ["popularized", 2], ["competence", 2], ["deliberate", 2], ["dismantles", 2], ["experience", 2]],
+        "lens": ("Ericsson dismantles the '10,000-hour rule' popularized by Gladwell (it was never about 10,000 hours — different domains require different timeframes; it was always about the TYPE of hours). His lifelo - WHEN a founder says 'I've been doing this for years, I should be better' → APPLY the naive vs. deliberate distinction: 'you've been doing, not practicing. Let's design a practice session.' - WHEN a founder wants to improve a specific skill → APPLY deliberate practice design: one goal, one feedback mechanism, one edge-pushing activity. - WHEN a founder hits a plateau → APPLY the mental represent"),
+    },
+    {
+        "id": "make_it_stick", "book": "The authors synthesize cognitive science research to demolish common learning my",
+        "triggers": [["highlighting", 2], ["interleaving", 2], ["successfully", 2], ["effectively", 2], ["information", 2], ["productive", 2], ["repetition", 2], ["retrieving", 2], ["synthesize", 2], ["cognitive", 2]],
+        "lens": ("The authors synthesize cognitive science research to demolish common learning myths and replace them with evidence-based practices. The core finding: learning is not about encoding (putting informatio - WHEN a founder says 'I read the book but I can't remember the key insight' → APPLY retrieval practice: 'close the book — what do you remember? That gap is what you need to practice retrieving.' - WHEN a founder is learning a new domain → APPLY spaced repetition: schedule reviews at day 1, 2, 7, 30 — don't trust yourself to remember, build the system. - WHEN a founder feels they've plateaued in "),
+    },
+    {
+        "id": "the_art_of_learning", "book": "Waitzkin — chess prodigy turned Tai Chi world champion — distills a lifetime of ",
+        "triggers": [["systematicwaitzkin", 2], ["interruptions", 2], ["accumulating", 2], ["performance", 2], ["conditions", 2], ["devastated", 2], ["disruption", 2], ["investment", 2], ["philosophy", 2], ["principles", 2]],
+        "lens": ("Waitzkin — chess prodigy turned Tai Chi world champion — distills a lifetime of elite performance into a philosophy of learning. The core: learning is not about accumulating techniques but about achie - WHEN a founder is fragile about work conditions (noise, interruptions, chaos) → APPLY the soft zone: 'build your practice to work THROUGH disruption, not despite it.' - WHEN a founder tries to learn too much at once → APPLY smaller circles: 'what's the tiniest version of this skill that matters? Master that first.' - WHEN a founder is devastated by failure → APPLY investment in loss: 'this loss"),
+    },
+    {
+        "id": "power_of_habit", "book": "Duhigg synthesizes neuroscience and case studies: habits work through a three-st",
+        "triggers": [["neurological", 2], ["neuroscience", 2], ["exclusively", 2], ["overwhelmed", 2], ["synthesizes", 2], ["substitute", 2], ["decisions", 2], ["important", 2], ["selection", 2], ["willpower", 2]],
+        "lens": ("Duhigg synthesizes neuroscience and case studies: habits work through a three-step loop — CUE (trigger), ROUTINE (the behavior), REWARD (the payoff). The craving for the reward is what drives the loop - WHEN a founder wants to change a behavior → APPLY habit loop mapping: identify cue, routine, reward; replace only the routine; keep cue and reward. - WHEN a founder is overwhelmed by change goals → APPLY keystone habit selection: identify the one habit with the most ripple effect; start there exclusively. - WHEN a founder reports decision fatigue → APPLY willpower audit: automate small decision"),
+    },
+    {
+        "id": "atomic_habits", "book": "Clear synthesizes habit science into a practical system: the FOUR LAWS OF BEHAVI",
+        "triggers": [["accumulatclear", 2], ["extraordinary", 2], ["deliberately", 2], ["improvements", 2], ["unattractive", 2], ["unsatisfying", 2], ["environment", 2], ["synthesizes", 2], ["attractive", 2], ["satisfying", 2]],
+        "lens": ("Clear synthesizes habit science into a practical system: the FOUR LAWS OF BEHAVIOR CHANGE. To build a good habit, make it (1) OBVIOUS (cue visible, environment designed), (2) ATTRACTIVE (temptation bu - WHEN a founder can't stick to a routine → APPLY the four laws audit: is the habit obvious, attractive, easy, and satisfying? Identify the missing law and design for it. - WHEN a founder struggles with a big change → APPLY two-minute rule: what's the two-minute version of this habit? Start there, build momentum. - WHEN a founder needs to stop a bad habit → APPLY inversion: make it invisible, una"),
+    },
+    {
+        "id": "think_and_grow_rich", "book": "Hill spent 20 years interviewing the wealthiest men of his era (Carnegie, Ford, ",
+        "triggers": [["accountability", 2], ["autosuggestion", 2], ["interviewing", 2], ["subconscious", 2], ["controlling", 2], ["persistence", 2], ["rockefeller", 2], ["foundation", 2], ["inadequacy", 2], ["mastermind", 2]],
+        "lens": ("Hill spent 20 years interviewing the wealthiest men of his era (Carnegie, Ford, Rockefeller, Edison, Morgan) and distilled their success into 13 PRINCIPLES. The foundation: BURNING DESIRE — not a wish - WHEN a founder lacks persistence → APPLY desire intensity check: is this a burning desire or a mild wish? Strengthen the desire before expecting persistence. - WHEN a founder is isolated → APPLY mastermind formation: identify 2-4 peers/founders for a regular accountability and support group. - WHEN a founder vacillates on decisions → APPLY fast-slow rule: decide now, commit for 90 days, revisit"),
+    },
+    {
+        "id": "four_hour_workweek", "book": "Ferriss's framework is the DEAL: DEFINITION (challenge the assumptions about wha",
+        "triggers": [["productivity", 2], ["assumptions", 2], ["calculation", 2], ["elimination", 2], ["productized", 2], ["activities", 2], ["assistants", 2], ["automation", 2], ["definition", 2], ["delegation", 2]],
+        "lens": ("Ferriss's framework is the DEAL: DEFINITION (challenge the assumptions about what's necessary — the default timer is not the only timer), ELIMINATION (80/20 your time and practice the art of ignoring  - WHEN a founder equates busyness with productivity → APPLY the 80/20 audit: what 20% of activities produce 80% of results? Protect them; eliminate the rest. - WHEN a founder resists delegation → APPLY the VAs-cost-less-than-anxiety calculation and identify one process to hand off in 30 days. - WHEN a founder is stuck in analysis paralysis → APPLY fear-setting: worst case, prevention, repair, the"),
+    },
+    {
+        "id": "the_one_thing", "book": "The ONE Thing (Keller) — focusing question, time-blocking, priority discipline",
+        "triggers": [["counterbalance", 2], ["everythkeller", 2], ["extraordinary", 2], ["unimportant", 2], ["unnecessary", 2], ["determined", 2], ["discipline", 2], ["everything", 2], ["fragmented", 2], ["priorities", 2]],
+        "lens": ("Keller's central question: 'What's the ONE Thing I can do such that by doing it everything else will be easier or unimportant?' The framework: identify your priority, time-block it daily (the first 4  - WHEN a founder has too many priorities → APPLY the focusing question: reduce to ONE Thing for the quarter; the rest are either support or noise. - WHEN a founder's calendar is fragmented → APPLY time-blocking: protect the first 4 hours daily; reschedule everything that conflicts. - WHEN a founder complains of overwhelm → APPLY the four thieves audit: which one is most active today? - WHEN a fou"),
+    },
+    {
+        "id": "compound_effect", "book": "Hardy's framework is brutally simple: your daily choices (the ones you barely no",
+        "triggers": [["insignificant", 2], ["consistently", 2], ["compounding", 2], ["consistency", 2], ["exponential", 2], ["accumulate", 2], ["concession", 2], ["frustrated", 2], ["behaviors", 2], ["framework", 2]],
+        "lens": ("Hardy's framework is brutally simple: your daily choices (the ones you barely notice, like what you eat at 10pm or whether you make that one extra call) accumulate into your destiny. The Compound Effe - WHEN a founder is frustrated by slow results → APPLY the compound curve: show the flat part, reframe patience as a strategy. - WHEN a founder makes a 'small' concession on standards → APPLY the compound test: 'what does this look like at 365 days?' - WHEN a founder lacks focus on daily behaviors → APPLY the tracking system: one leading indicator, measured daily for 30 days. - WHEN a founder has"),
+    },
+    {
+        "id": "four_disciplines_execution", "book": "The 4 Disciplines bridge the gap between strategy formulation and execution: Dis",
+        "triggers": [["identification", 2], ["organizations", 2], ["commitments", 2], ["disciplines", 2], ["formulation", 2], ["operational", 2], ["progressing", 2], ["commitment", 2], ["definition", 2], ["discipline", 2]],
+        "lens": ("The 4 Disciplines bridge the gap between strategy formulation and execution: Discipline 1 — FOCUS on the Wildly Important Goal (WIG): one or two goals, not 20, because focus is a scarce resource. Disc - WHEN a founder's team is busy but not progressing → APPLY WIG identification: reduce to exactly one wildly important goal with a clear 'from X to Y by when.' - WHEN a founder tracks only outcomes → APPLY lead measure definition: what one input drives the outcome and the team can control today? - WHEN team meetings are operational status updates → APPLY the WIG meeting format: commitments → scor"),
+    },
+    {
+        "id": "infinite_game", "book": "The Infinite Game (Sinek) — finite vs infinite mindsets",
+        "triggers": [["distinguishes", 2], ["intervention", 2], ["competitor", 2], ["condition", 2], ["diagnosis", 2], ["optimizes", 2], ["baseball", 3], ["business", 3], ["changing", 3], ["evolving", 3]],
+        "lens": ("Sinek distinguishes finite games (baseball, chess — known players, fixed rules, defined win condition) from infinite games (business, politics, life — changing players, evolving rules, no finish line) - WHEN a founder optimizes for a short-term metric → APPLY the infinite test: 'does this make the company stronger 5 years from now?' - WHEN a founder defines their mission → APPLY the Just Cause audit: does it pass the 5-part cause test? - WHEN a team lacks trust → APPLY the Circle of Safety diagnosis: where do people feel unsafe? The answer IS the intervention. - WHEN a competitor is seen as an"),
+    },
+    {
+        "id": "mindset", "book": "Dweck's decades of research show: people with a fixed mindset believe intelligen",
+        "triggers": [["intelligence", 2], ["uncomfortabl", 2], ["fundamental", 2], ["persistence", 2], ["challenges", 2], ["controlled", 2], ["everything", 2], ["threatened", 2], ["describes", 2], ["necessary", 2]],
+        "lens": ("Dweck's decades of research show: people with a fixed mindset believe intelligence/talent is innate — so they avoid challenges (risk of exposure), give up easily when things get hard, ignore useful ne - WHEN a founder says 'I'm not good at X' → APPLY growth reframe: 'what's the fastest learning path to become good enough at X to survive this phase?' - WHEN a founder praises a team member for innate talent → APPLY praise shift: redirect to effort, strategy, persistence — the things the person controlled. - WHEN a founder describes failure as identity → APPLY data reframe: 'that's not who you ar"),
+    },
+    {
+        "id": "grit", "book": "Duckworth's research across West Point cadets, National Spelling Bee finalists, ",
+        "triggers": [["extraordinary", 2], ["perseverance", 2], ["wheduckworth", 2], ["combination", 2], ["consistency", 2], ["adjustment", 2], ["frequently", 2], ["persistent", 2], ["structural", 2], ["achievers", 2]],
+        "lens": ("Duckworth's research across West Point cadets, National Spelling Bee finalists, and novice teachers showed: the highest achievers share not superior talent but extraordinary GRIT — the combination of  - WHEN a founder is in a persistent struggle → APPLY grit assets audit: 'which of the four (interest, practice, purpose, hope) is depleted? Restore that one.' - WHEN a founder pivots frequently → APPLY consistency of interest check: 'is this a tactical adjustment or a top-level goal change? If the latter, you might lack grit.' - WHEN a founder feels like quitting → APPLY dip vs dead-end diagnosis"),
+    },
+    {
+        "id": "flow", "book": "Csikszentmihalyi spent decades studying what makes life worth living, finding th",
+        "triggers": [["andcsikszentmihalyi", 2], ["concentration", 2], ["consciousness", 2], ["notifications", 2], ["overwhelmed", 2], ["absorption", 2], ["challenges", 2], ["components", 2], ["disappears", 2], ["distracted", 2]],
+        "lens": ("Csikszentmihalyi spent decades studying what makes life worth living, finding that happiness is not a condition that happens TO us but a state we ENTER through the quality of our attention. Flow has e - WHEN a founder is burned out and overwhelmed → APPLY anxiety diagnosis: 'are your challenges exceeding your skills? What's the ONE thing you can drop or delay to restore balance?' - WHEN a founder is bored and distracted → APPLY boredom diagnosis: 'are your skills under-utilized? What stretch goal would re-engage you?' - WHEN a founder complains about too many meetings/notifications → APPLY att"),
+    },
+    {
+        "id": "mans_search_for_meaning", "book": "Frankl, a psychiatrist who survived Auschwitz, wrote the book in 9 days after li",
+        "triggers": [["logotherapeutic", 2], ["circumstances", 2], ["concentration", 2], ["experiencing", 2], ["psychiatrist", 2], ["existential", 2], ["observation", 2], ["everything", 2], ["liberation", 2], ["meanfrankl", 2]],
+        "lens": ("Frankl, a psychiatrist who survived Auschwitz, wrote the book in 9 days after liberation. His observation: prisoners who survived were not the fittest or the strongest — they were those who could find - WHEN a founder faces an unwinnable situation → APPLY attitude reframe: 'you cannot change this outcome, but you can choose how you face it — what meaning are you making of this?' - WHEN a founder has achieved external success but feels empty → APPLY existential vacuum diagnosis: 'is your meaning path only through creating? What about experiencing and attitude?' - WHEN a founder is stuck in the "),
+    },
+    {
+        "id": "war_of_art", "book": "Pressfield personifies Resistance as the enemy of all creative and entrepreneuri",
+        "triggers": [["entrepreneurial", 2], ["procrastinating", 2], ["productivity", 2], ["professional", 2], ["personifies", 2], ["pressfield", 2], ["resistance", 2], ["departure", 2], ["diagnosis", 2], ["disguised", 2]],
+        "lens": ("Pressfield personifies Resistance as the enemy of all creative and entrepreneurial acts — it is not laziness or lack of talent, it is a positive force that actively opposes any act that involves risk, - WHEN a founder is procrastinating on the most important task → APPLY Resistance diagnosis: 'that feeling is not laziness — it's Resistance. Name it. Now do 5 minutes of the work.' - WHEN a founder is 'too busy' with low-impact activity → APPLY busy-work audit: 'is this activity actually progress or is it Resistance disguised as productivity?' - WHEN a founder waits for the 'right time' → APPLY "),
+    },
+    {
+        "id": "the_dip", "book": "Godin argues that in almost every domain, the distribution of rewards is extreme",
+        "triggers": [["simultaneously", 2], ["distribution", 2], ["considering", 2], ["initiatives", 2], ["willingness", 2], ["determines", 2], ["difference", 2], ["discipline", 2], ["everything", 2], ["structural", 2]],
+        "lens": ("Godin argues that in almost every domain, the distribution of rewards is extreme — the best in the world gets most of the value — and the only path to being the best is to QUIT everything that doesn't - WHEN a founder is struggling and considering quitting → APPLY Dip vs Dead-End diagnosis: 'is this a temporary plateau (Dip) or a structural dead-end? The answer determines what to do.' - WHEN a founder is pursuing too many initiatives simultaneously → APPLY quit-list discipline: 'name three things you will stop doing this month to focus on the one Dip worth pushing through.' - WHEN a founder in"),
+    },
+    # === NEW: 10 gap books added for deeper taxonomy coverage ===
+    {
+        "id": "smart_who", "book": "Who (Smart & Street)",
+        "triggers": [("hire", 3), ("hiring", 3), ("recruit", 3), ("candidate", 2), ("interview", 2),
+                     ("scorecard", 3), ("a-player", 3), ("wrong hire", 4), ("job description", 3),
+                     ("reference check", 4), ("reference checks", 4), ("talent", 2)],
+        "lens": ("Force the scorecard: 3-5 measurable outcomes this role must achieve, not responsibilities. Source "
+                 "systematically — the best people aren't looking, you must find them. Chronological deep-dive: walk "
+                 "through every prior job, what they were hired to do, what they accomplished, what mistakes they made. "
+                 "Reference-check the references: ask peers, bosses, subordinates. The single biggest predictor of hire "
+                 "success is whether you defined outcomes before sourcing. If someone's been in the role 3 months and "
+                 "hasn't hit any scorecard outcome, the trajectory rarely reverses."),
+    },
+    {
+        "id": "feld_venture", "book": "Venture Deals (Feld & Mendelson)",
+        "triggers": [("fundraise", 3), ("term sheet", 4), ("term sheets", 4), ("venture capital", 3), ("vc", 2),
+                     ("series a", 3), ("series b", 3), ("raise money", 3), ("investor", 2), ("dilution", 4),
+                     ("liquidation preference", 4), ("board seat", 3), ("option pool", 3), ("down round", 4)],
+        "lens": ("1x non-participating liquidation preference is standard — anything beyond is investor overreach. "
+                 "Negotiate the option pool BEFORE valuation (unallocated pool in pre-money lowers your price). "
+                 "Weighted average anti-dilution is fair; full ratchet can wipe out founders in a down round. Model "
+                 "ownership through 3 rounds before taking any money. Never give investors a board majority at Series A. "
+                 "The best time to raise is when you don't need to. Pick the partner, not the fund — you'll work "
+                 "with this board member for a decade."),
+    },
+    {
+        "id": "ross_pipeline", "book": "Predictable Revenue (Ross)",
+        "triggers": [("pipeline", 3), ("outbound", 3), ("sdr", 3), ("prospecting", 3), ("cold email", 3),
+                     ("cold call", 3), ("lead generation", 3), ("sales team", 2), ("specialization", 2),
+                     ("quota", 2), ("predictable", 2)],
+        "lens": ("Separate prospecting from closing — one person doing both does neither well (SDR → AE → CSM). "
+                 "Seeds-Nets-Spears: you control only Spears (targeted outbound). Cold Email 2.0: <100 words, "
+                 "personalized, value-first, ONE ask. 80% of replies come after the 3rd follow-up — never stop at 1. "
+                 "Daily activity: 40-60 emails, 10-20 calls. Pipeline coverage under 3x is always a top-of-funnel "
+                 "problem, not a closing problem. Founder sells first, documents the process, THEN hires the first AE."),
+    },
+    {
+        "id": "mehta_cs", "book": "Customer Success (Mehta)",
+        "triggers": [("churn", 3), ("retention", 3), ("onboarding", 3), ("customer success", 3),
+                     ("health score", 4), ("health scoring", 4), ("expansion revenue", 3), ("nrr", 4),
+                     ("renewal", 3), ("at-risk", 3), ("time to value", 3), ("aha moment", 3)],
+        "lens": ("The sale is the starting gun, not the finish line. Track NRR — below 100% means existing customers "
+                 "shrink faster than they grow; fix churn before scaling acquisition. Time-to-first-value is the most "
+                 "critical metric: every customer who hasn't hit their 'aha moment' by day 30 is at high risk. Health "
+                 "scoring must flag red accounts on one screen — decaying usage, rising support tickets, key user "
+                 "departure precede churn by 30-60 days. Save playbook: root cause, exec sponsor, recovery milestones, "
+                 "weekly check. The most expensive thing in CS is saving a customer who was never a fit."),
+    },
+    {
+        "id": "croll_analytics", "book": "Lean Analytics (Croll & Yoskovitz)",
+        "triggers": [("metric", 2), ("metrics", 2), ("kpi", 3), ("dashboard", 2), ("data-driven", 2),
+                     ("unit economics", 4), ("cac", 4), ("ltv", 4), ("ltv/cac", 4), ("cohort", 3),
+                     ("retention rate", 3), ("vanity metric", 4), ("omtm", 4), ("analytics", 2)],
+        "lens": ("Find the ONE METRIC THAT MATTERS (OMTM) for your current stage — empathy (problem frequency), "
+                 "stickiness (cohort retention), virality (viral coefficient), revenue (CAC payback), scale (LTV/CAC). "
+                 "Tracking everything = understanding nothing. LTV calculated with a guessed churn rate is a spreadsheet "
+                 "lie. LTV/CAC below 3:1 means unit economics don't work. CAC payback under 12 months is good, under 6 "
+                 "is excellent. A metric you can't act on is noise dressed as information. The test: if this number "
+                 "changed tomorrow, would you do something different?"),
+    },
+    {
+        "id": "forsgren_accelerate", "book": "Accelerate (Forsgren)",
+        "triggers": [("deploy", 3), ("deployment", 3), ("devops", 3), ("tech debt", 4), ("technical debt", 4),
+                     ("ci/cd", 4), ("lead time", 4), ("mttr", 4), ("change failure", 4), ("engineering velocity", 3),
+                     ("release", 2), ("incident", 2), ("delivery", 2)],
+        "lens": ("Four key metrics define delivery performance: deployment frequency, lead time from commit to deploy, "
+                 "MTTR (incident recovery), and change failure rate. Elite teams deploy on-demand with <1h lead time, "
+                 "<1h recovery, and <15% failure rate — speed and stability are NOT trade-offs. Trunk-based development: "
+                 "merge to main daily; branches longer than a day compound integration risk. If it hurts, do it more "
+                 "often — the pain of infrequent deploys is the cost of the practices that make them infrequent. "
+                 "Generative culture (high trust, messengers rewarded) + lean practices = highest performance."),
+    },
+    {
+        "id": "goldratt_toc", "book": "The Goal (Goldratt)",
+        "triggers": [("bottleneck", 4), ("constraint", 3), ("throughput", 4), ("efficiency", 2),
+                     ("busy but nothing ships", 4), ("always behind", 3), ("capacity", 2), ("backlog", 2),
+                     ("utilization", 3), ("work in progress", 3), ("wip", 3), ("optimizing the wrong thing", 4)],
+        "lens": ("Every system has exactly ONE constraint that determines throughput. Identify it (biggest queue, "
+                 "100% utilization while others idle), exploit it (never let it be idle, feed it only quality inputs), "
+                 "subordinate everything to it (non-constraints run at the constraint's pace — faster is waste). Only "
+                 "then elevate (invest). Making every local step efficient makes the WHOLE system less efficient. "
+                 "An hour lost at the constraint is an hour lost for the entire system. A cost reduction that reduces "
+                 "throughput is worse than no action. Ask: what's the ONE thing that, if improved, would increase "
+                 "throughput the most?"),
+    },
+    {
+        "id": "scott_candor", "book": "Radical Candor (Scott)",
+        "triggers": [("feedback", 3), ("performance review", 3), ("hard conversation", 3), ("difficult conversation", 3),
+                     ("underperforming", 3), ("managing someone", 3), ("1:1", 2), ("1-on-1", 2),
+                     ("praise", 2), ("criticism", 2), ("fire", 2), ("firing", 2), ("career growth", 3)],
+        "lens": ("Care personally AND challenge directly — Ruinous Empathy (caring without challenging) hurts more than "
+                 "honesty. Solicit guidance before giving it: 'what could I do differently to support you better?' "
+                 "Praise in public must be specific (the behavior, impact, result). Criticism: immediate, private, about "
+                 "the work not the person. Never save feedback for performance reviews — if someone is surprised, you "
+                 "failed for the previous 11 months. 1:1s are for coaching and career talk, not status updates. "
+                 "Distinguish superstars (steep growth) from rock stars (gradual growth) — both are equally valuable."),
+    },
+    {
+        "id": "dunford_positioning", "book": "Obviously Awesome (Dunford)",
+        "triggers": [("positioning", 4), ("position", 3), ("differentiation", 3), ("messaging", 2),
+                     ("value prop", 3), ("value proposition", 3), ("people don't get it", 4),
+                     ("hard to explain", 4), ("category", 2), ("competitive alternative", 3), ("rebrand", 2)],
+        "lens": ("Positioning is NOT messaging — it's the foundation messaging is built on. 5 components: (1) competitive "
+                 "alternatives (include 'do nothing' and 'manual process'), (2) unique attributes (what you have that "
+                 "they don't), (3) value (link each attribute to specific customer value), (4) target market (who cares "
+                 "MOST — narrow until you're 10x better, not 10% better), (5) market category (adopt an existing category "
+                 "unless you have $50M+ to educate the market on a new one). Bad positioning makes great products look "
+                 "mediocre. Signs you need repositioning: long sales cycles, high churn, discount pressure."),
+    },
+    {
+        "id": "wasserman_dilemmas", "book": "The Founder's Dilemmas (Wasserman)",
+        "triggers": [("co-founder", 4), ("cofounder", 4), ("co-founding", 4), ("equity split", 4), ("equity", 3),
+                     ("vesting", 3), ("founder conflict", 4), ("ceo replacement", 4), ("replace ceo", 4),
+                     ("rich vs king", 4), ("board dynamics", 3), ("succession", 3), ("founder agreement", 4)],
+        "lens": ("Equal equity splits are the #1 founder regret — contributions ALWAYS diverge. Use dynamic vesting tied "
+                 "to future contributions. Before taking VC money, answer honestly: do you want to be rich (smaller "
+                 "slice of a bigger pie) or king (control at all costs)? They require different paths. The co-founder "
+                 "relationship needs a pre-nup: what happens if someone leaves, gets sick, stops contributing? 50%+ of "
+                 "founders are replaced as CEO by Series C — often the right call. Never surprise the board, especially "
+                 "with bad news. The best time to build a board relationship is before you need money."),
+    },
+    # === Generated: 40 additional lens modules from gap analysis ===
+    {
+        "id": "collins_built", "book": "BUILT TO LAST",
+        "triggers": [["became", 3], ["beyond", 3], ["build", 3], ["change", 3], ["company", 3], ["competitive", 3], ["continuity", 3], ["disadvantage", 3], ["even", 3], ["genius", 3], ["hold", 3], ["leader", 3]],
+        "lens": "Visionary companies — those that have been industry leaders for 50+ years — share specific habits: they preserve a core ideology (purpose + values) while stimulating progress in everything else. They have Big Hairy Audacious Goals (BHAGs), cult-like cultures, and a relentless focus on building the company, not just the product. Great companies are built to last because they're more than any single",
+    },
+    {
+        "id": "aulet_disciplined", "book": "DISCIPLINED ENTREPRENEURSHIP",
+        "triggers": [["beachhead", 3], ["choose", 3], ["discipline", 3], ["dominate", 3], ["entrepreneurship", 3], ["everyone", 3], ["expand", 3], ["follow", 3], ["market", 3], ["mistake", 3], ["mystery", 3], ["segment", 3]],
+        "lens": "Entrepreneurship is not a mysterious art — it's a discipline that can be learned. Aulet's 24-step framework (from MIT's entrepreneurship program) provides a step-by-step process for building an innovation-driven enterprise. The core sequence: market segmentation → beachhead market selection → end-user profile → TAM calculation → persona definition → full life cycle use case → high-level product sp",
+    },
+    {
+        "id": "ramadan_bigger", "book": "PLAY BIGGER",
+        "triggers": [["bake", 3], ["capture", 3], ["category", 3], ["compete", 3], ["design", 3], ["else", 3], ["everyone", 3], ["existing", 3], ["function", 3], ["kings", 3], ["marketing", 3], ["slice", 3]],
+        "lens": "The greatest value creation comes not from building a better product within an existing category — but from designing and dominating a new category. Play Bigger's research: category kings (companies that define, develop, and dominate a new category) capture 76% of the category's total market cap. The rest split 24%. Category design is the ultimate strategic move.",
+    },
+    {
+        "id": "bock_workrules", "book": "WORK RULES!",
+        "triggers": [["across", 3], ["annual", 3], ["beats", 3], ["behaviors", 3], ["best", 3], ["better", 3], ["building", 3], ["builds", 3], ["chats", 3], ["coaches", 3], ["coaching", 3], ["default", 3]],
+        "lens": "Google's former SVP of People Operations shares the data-driven, scientific approach that made Google one of the most desired workplaces. The core insight: most HR practices are based on tradition and intuition, not evidence — and the evidence often points in the opposite direction. From hiring (structured interviews beat unstructured by massive margins) to compensation (pay unfairly — reward your",
+    },
+    {
+        "id": "lencioni_dysfunctions", "book": "THE FIVE DYSFUNCTIONS OF A TEAM",
+        "triggers": [["accountability", 3], ["agreement", 3], ["avoiding", 3], ["boring", 3], ["commitment", 3], ["conflict", 3], ["disagreement", 3], ["failure", 3], ["first", 3], ["followed", 3], ["foundation", 3], ["hallway", 3]],
+        "lens": "The single biggest driver of organizational performance is the health of the leadership team — and dysfunction follows a predictable, layered pattern. Lencioni's pyramid has 5 levels, each building on the one below: (1) Absence of Trust → (2) Fear of Conflict → (3) Lack of Commitment → (4) Avoidance of Accountability → (5) Inattention to Results. Fix the bottom layer first; you cannot fix accounta",
+    },
+    {
+        "id": "feld_boards", "book": "STARTUP BOARDS",
+        "triggers": [["adds", 3], ["advance", 3], ["around", 3], ["been", 3], ["board", 3], ["build", 3], ["could", 3], ["deliberately", 3], ["director", 3], ["independent", 3], ["manages", 3], ["meetings", 3]],
+        "lens": "Most founders build their first board by accident — whoever led the last round gets a seat. This is a catastrophic mistake. The board is one of the most powerful forces in a company's trajectory; a bad board can destroy a good company. Feld's framework: build the board deliberately, manage it proactively, and understand that board dynamics are not governance theater — they are the actual decision-",
+    },
+    {
+        "id": "covey_trust", "book": "THE SPEED OF TRUST",
+        "triggers": [["account", 3], ["behavior", 3], ["biggest", 3], ["broken", 3], ["business", 3], ["cost", 3], ["creates", 3], ["down", 3], ["driver", 3], ["even", 3], ["every", 3], ["extend", 3]],
+        "lens": "Trust is not a soft, social virtue — it is a hard, measurable economic driver. Covey's thesis: trust always affects two measurable outcomes — speed and cost. When trust goes down, speed goes down and cost goes up (trust tax). When trust goes up, speed goes up and cost goes down (trust dividend). In business, trust is THE most significant predictor of long-term success across every relationship: cu",
+    },
+    {
+        "id": "watkins_90days", "book": "THE FIRST 90 DAYS",
+        "triggers": [["also", 3], ["approach", 3], ["career", 3], ["days", 3], ["everything", 3], ["first", 3], ["kills", 3], ["learnable", 3], ["match", 3], ["measurable", 3], ["momentum", 3], ["period", 3]],
+        "lens": "Transitions are periods of acute vulnerability — for the individual and the organization. Watkins' research on senior executive transitions shows that failures in the first 90 days almost never result from lack of competence but from failure to diagnose the situation, secure early wins, and build the right coalitions. The first 90 days is a predictable, learnable process.",
+    },
+    {
+        "id": "goldsmith_whatgotyou", "book": "WHAT GOT YOU HERE WON'T GET YOU THERE",
+        "triggers": [["back", 3], ["behaviors", 3], ["built", 3], ["doing", 3], ["every", 3], ["follow", 3], ["here", 3], ["holding", 3], ["improving", 3], ["magic", 3], ["month", 3], ["should", 3]],
+        "lens": "Successful people succeed because of their strengths — but the very behaviors that drove early success often become career-limiting at higher levels. Goldsmith identifies 20 specific interpersonal habits that hold successful people back: winning too much, adding too much value, passing judgment, making destructive comments, starting with 'no/but/however,' telling the world how smart we are, speaki",
+    },
+    {
+        "id": "sutton_noasshole", "book": "The No Asshole Rule (Sutton)",
+        "triggers": [["always", 3], ["asshole", 3], ["behavioral", 3], ["benefit", 3], ["brilliant", 3], ["cost", 3], ["costs", 3], ["define", 3], ["enforce", 3], ["even", 3], ["higher", 3], ["lost", 3]],
+        "lens": "One toxic person — a 'certified asshole' — can destroy team performance, drive out top performers, and create costs that far exceed their individual contribution. Sutton's research (from Stanford) shows that toxic employees create 2-3x their salary in costs: turnover of good people, lost productivity from people avoiding them, management time spent managing around them. The rule is simple: no matt",
+    },
+    {
+        "id": "moyer_slicingpie", "book": "SLICING PIE",
+        "triggers": [["based", 3], ["contributes", 3], ["dynamic", 3], ["equity", 3], ["facts", 3], ["fair", 3], ["fixed", 3], ["gamble", 3], ["guessed", 3], ["guesses", 3], ["money", 3], ["person", 3]],
+        "lens": "The single biggest early-stage mistake: splitting equity at the founding with fixed percentages before anyone knows who will contribute what. Moyer's solution: dynamic equity (the 'Grunt Fund') — equity is allocated based on each person's actual contributions (time, money, ideas, relationships, equipment) relative to the total contributions, adjusted continuously over time. Fixed equity splits are",
+    },
+    {
+        "id": "berman_finance", "book": "FINANCIAL INTELLIGENCE",
+        "triggers": [["accounting", 3], ["before", 3], ["blind", 3], ["budget", 3], ["built", 3], ["cash", 3], ["consumes", 3], ["dead", 3], ["driving", 3], ["else", 3], ["everything", 3], ["fact", 3]],
+        "lens": "Most founders and managers lack financial literacy — they can't read an income statement, can't distinguish profit from cash, and make decisions based on bank balances rather than financial reality. Financial Intelligence provides the framework for understanding the numbers that drive business performance: income statement (profitability), balance sheet (financial position), cash flow statement (l",
+    },
+    {
+        "id": "croll_saas", "book": "SAAS METRICS 2.0",
+        "triggers": [["above", 3], ["acquiring", 3], ["customers", 3], ["efficiency", 3], ["even", 3], ["excellent", 3], ["existing", 3], ["first", 3], ["grow", 3], ["healthy", 3], ["invest", 3], ["magic", 3]],
+        "lens": "Skok's SaaS metrics framework is the industry standard for measuring subscription business health. The key insight: SaaS is a 'leaky bucket' where every month some customers churn. Growth only happens when new customers > lost customers. Core metrics: MRR/ARR, churn rate, LTV, CAC, CAC payback, renewal rate, expansion rate, ARPU. The 'golden metrics' of SaaS: (1) Negative churn — expansion revenue",
+    },
+    {
+        "id": "ramaswamy_pricing", "book": "MONETIZING INNOVATION",
+        "triggers": [["based", 3], ["beats", 3], ["before", 3], ["best", 3], ["better", 3], ["bolted", 3], ["broken", 3], ["build", 3], ["comes", 3], ["commodities", 3], ["cost", 3], ["designed", 3]],
+        "lens": "The #1 cause of new product failure is not bad engineering or poor marketing — it's pricing. Most companies build the product first, then figure out pricing right before launch. Ramanujam (Simon-Kucher partner, advised on 10,000+ pricing projects) argues pricing must be designed INTO the product from the start — what customers are willing to pay determines what to build and for whom. Products desi",
+    },
+    {
+        "id": "kohavi_experiments", "book": "TRUSTWORTHY ONLINE CONTROLLED EXPERIMENTS",
+        "triggers": [["align", 3], ["before", 3], ["building", 3], ["clicks", 3], ["criterion", 3], ["evaluation", 3], ["experiment", 3], ["fail", 3], ["false", 3], ["good", 3], ["highest", 3], ["hippo", 3]],
+        "lens": "A/B testing is the dominant method for data-driven decision making in tech companies, but most organizations run A/B tests wrong: they peek at results, stop early, misinterpret p-values, or run underpowered tests. Kohavi (former head of experimentation at Amazon, Microsoft, Airbnb) provides the definitive guide to running trustworthy experiments at scale. The core insight: most ideas that 'should ",
+    },
+    {
+        "id": "poundstone_priceless", "book": "PRICELESS",
+        "triggers": [["anchor", 3], ["becomes", 3], ["calculations", 3], ["customer", 3], ["deliberately", 3], ["erases", 3], ["first", 3], ["free", 3], ["high", 3], ["option", 3], ["powerful", 3], ["preference", 3]],
+        "lens": "Price is never objective. Poundstone reveals the psychology behind pricing: anchoring (the first number you see becomes the reference), the decoy effect (adding a bad option makes the target look better), charm pricing ($9.99 vs $10 — the left digit effect), and the power of context (the same coffee costs $2 at a diner and $5 at a cafe because of the frame). Pricing is 90% psychology and 10% econo",
+    },
+    {
+        "id": "nagle_pricing", "book": "THE STRATEGY AND TACTICS OF PRICING",
+        "triggers": [["across", 3], ["alienating", 3], ["anyone", 3], ["between", 3], ["capture", 3], ["captures", 3], ["create", 3], ["customer", 3], ["economic", 3], ["leaves", 3], ["must", 3], ["price", 3]],
+        "lens": "The definitive pricing textbook — used in MBA programs worldwide. Nagle's framework: pricing strategy must be integrated with business strategy, not an afterthought. The core framework: (1) Value Creation — what is the product's differentiated value? (2) Price Structure — how do you charge (per unit, subscription, usage-based, bundled)? (3) Price Level — at what price point? (4) Price Communicatio",
+    },
+    {
+        "id": "cagan_inspired", "book": "INSPIRED",
+        "triggers": [["anyone", 3], ["before", 3], ["biggest", 3], ["build", 3], ["commit", 3], ["describe", 3], ["empowered", 3], ["feature", 3], ["features", 3], ["outcomes", 3], ["problems", 3], ["product", 3]],
+        "lens": "Most product teams are not empowered to solve problems — they're feature factories implementing stakeholder requests. Cagan (former SVP of Product at eBay, Netscape, AOL) defines what GREAT product teams do differently: they are given problems to solve, not features to build. They have the skills and authority to discover solutions. They are measured on outcomes, not output. The distinction betwee",
+    },
+    {
+        "id": "chen_coldstart", "book": "THE COLD START PROBLEM",
+        "triggers": [["action", 3], ["beats", 3], ["compound", 3], ["creates", 3], ["dense", 3], ["density", 3], ["design", 3], ["find", 3], ["funnels", 3], ["growth", 3], ["harder", 3], ["loops", 3]],
+        "lens": "Networked products (marketplaces, social networks, SaaS with collaboration) face a unique challenge: they're useless until enough people use them. This is the cold start problem. Chen (former Uber growth lead, a16z partner) decomposes how successful network-effect companies solved this: starting with a tiny, atomic network where the product delivers value at small scale, then systematically expand",
+    },
+    {
+        "id": "google_sre", "book": "SITE RELIABILITY ENGINEERING",
+        "triggers": [["affected", 3], ["alert", 3], ["blameless", 3], ["budget", 3], ["causes", 3], ["difference", 3], ["eliminate", 3], ["error", 3], ["every", 3], ["failure", 3], ["goal", 3], ["human", 3]],
+        "lens": "SRE is what happens when you ask a software engineer to design an operations function. Instead of manually managing servers, SREs write software to manage systems. The core principles: (1) reliability is a feature, (2) 100% reliability is neither possible nor desirable — users don't notice the difference between 99.9% and 99.99%, (3) an error budget defines how much unreliability is acceptable, (4",
+    },
+    {
+        "id": "kleppmann_data", "book": "DESIGNING DATA-INTENSIVE APPLICATIONS",
+        "triggers": [["already", 3], ["architectures", 3], ["availability", 3], ["batch", 3], ["best", 3], ["both", 3], ["change", 3], ["choose", 3], ["complexity", 3], ["consistency", 3], ["correctness", 3], ["cost", 3]],
+        "lens": "Every application built today is data-intensive — storage, retrieval, processing, and serving. Kleppmann provides the definitive guide to the foundational technologies: databases (relational, document, graph), storage engines, encoding formats, replication, partitioning, transactions, distributed consensus, batch and stream processing. The guiding principle: choose the right tool for the right job",
+    },
+    {
+        "id": "bush_plg", "book": "PRODUCT-LED GROWTH",
+        "triggers": [["behavior", 3], ["best", 3], ["call", 3], ["convert", 3], ["enough", 3], ["experienced", 3], ["first", 3], ["free", 3], ["freemium", 3], ["hasn", 3], ["lead", 3], ["little", 3]],
+        "lens": "The traditional SaaS growth model — sales-led (SDR → AE → CSM) — is being displaced by product-led growth (PLG), where the product itself is the primary driver of acquisition, activation, retention, and expansion. Bush's framework: the product must deliver value BEFORE the purchase (free tier, free trial, freemium), and the user's experience of that value must naturally lead to upgrade. The result",
+    },
+    {
+        "id": "newman_microservices", "book": "BUILDING MICROSERVICES",
+        "triggers": [["actions", 3], ["around", 3], ["business", 3], ["classes", 3], ["cohesive", 3], ["compensating", 3], ["coupled", 3], ["data", 3], ["databases", 3], ["default", 3], ["designed", 3], ["distributed", 3]],
+        "lens": "Microservices are an architectural style where applications are decomposed into small, independent services that communicate over the network. The benefits (independent deployability, technology heterogeneity, scaling by service, organizational alignment) are real — but so are the costs (network latency, distributed data, eventual consistency, operational complexity). Newman's core argument: micro",
+    },
+    {
+        "id": "perri_buildtrap", "book": "ESCAPING THE BUILD TRAP",
+        "triggers": [["adoption", 3], ["build", 3], ["dead", 3], ["debt", 3], ["describe", 3], ["discover", 3], ["feature", 3], ["features", 3], ["managers", 3], ["measuring", 3], ["objective", 3], ["organizational", 3]],
+        "lens": "Most companies are stuck in the 'build trap' — prioritizing output (features shipped) over outcomes (problems solved, value created). Perri diagnoses how organizations fall into this trap: when strategy is absent or unclear, when product managers act as project managers, when roadmaps are feature lists rather than problem statements, and when success is measured in story points. Escaping requires:",
+    },
+    {
+        "id": "humble_cd", "book": "CONTINUOUS DELIVERY",
+        "triggers": [["accumulating", 3], ["always", 3], ["broken", 3], ["bugs", 3], ["changes", 3], ["deployable", 3], ["deployment", 3], ["easier", 3], ["find", 3], ["pipeline", 3], ["risk", 3], ["should", 3]],
+        "lens": "Continuous delivery is the ability to get changes — features, configuration changes, bug fixes, experiments — into production safely, quickly, and sustainably. The key test: is your software always in a deployable state? If not, you're accumulating risk. CD transforms the release process from a multi-week stressful event to a boring push-button operation.",
+    },
+    {
+        "id": "feathers_legacy", "book": "WORKING EFFECTIVELY WITH LEGACY CODE",
+        "triggers": [["before", 3], ["behavior", 3], ["bugs", 3], ["change", 3], ["changing", 3], ["characterize", 3], ["code", 3], ["current", 3], ["editing", 3], ["existing", 3], ["find", 3], ["legacy", 3]],
+        "lens": "Legacy code is code without tests. Feathers' definition is precise and practical: if you can't change it safely and quickly, it's legacy — regardless of when it was written. The book provides a toolkit for transforming untested, tangled code into testable, maintainable code without rewriting everything. The core technique: characterization tests (tests that capture the code's CURRENT behavior befo",
+    },
+    {
+        "id": "kimball_warehouse", "book": "THE DATA WAREHOUSE TOOLKIT",
+        "triggers": [["anything", 3], ["around", 3], ["before", 3], ["center", 3], ["conformed", 3], ["customer", 3], ["declare", 3], ["definition", 3], ["dimensions", 3], ["does", 3], ["edge", 3], ["else", 3]],
+        "lens": "The definitive guide to dimensional modeling — the standard technique for designing data warehouses that business users can actually query. Kimball's approach (dimensional modeling with fact and dimension tables) is used in virtually every modern data warehouse (Snowflake, BigQuery, Redshift). The core concept: fact tables (measurements — sales transactions, page views, support tickets) surrounded",
+    },
+    {
+        "id": "hoffman_security", "book": "WEB APPLICATION SECURITY",
+        "triggers": [["client", 3], ["concatenate", 3], ["continuously", 3], ["every", 3], ["feature", 3], ["injection", 3], ["input", 3], ["into", 3], ["manipulated", 3], ["model", 3], ["never", 3], ["parameterized", 3]],
+        "lens": "The OWASP Top 10 is the minimum; real security requires understanding the full attack surface of web applications. Hoffman provides the comprehensive guide: reconnaissance (how attackers map your system), offense (the actual attacks — XSS, CSRF, SQL injection, SSRF, auth bypass, session hijacking), and defense (secure coding, Content Security Policy, Subresource Integrity, secure headers, input va",
+    },
+    {
+        "id": "choudary_platform", "book": "PLATFORM SCALE",
+        "triggers": [["chicken", 3], ["choice", 3], ["core", 3], ["curated", 3], ["enable", 3], ["first", 3], ["happen", 3], ["important", 3], ["interaction", 3], ["open", 3], ["platform", 3], ["platforms", 3]],
+        "lens": "Platform businesses (marketplaces, app stores, social networks) operate under fundamentally different rules than traditional pipeline businesses. Choudary's framework: platforms create value by enabling interactions between producers and consumers — they don't produce anything themselves. The platform's core job: (1) Enable the core interaction (the value exchange between producer and consumer). (",
+    },
+    {
+        "id": "penenberg_viral", "book": "VIRAL LOOP",
+        "triggers": [["adding", 3], ["beats", 3], ["below", 3], ["benefit", 3], ["coefficient", 3], ["design", 3], ["exponential", 3], ["expose", 3], ["funnel", 3], ["growth", 3], ["improving", 3], ["linear", 3]],
+        "lens": "The most powerful growth engine is a viral loop — a mechanism where existing users bring new users, who bring more users, in a self-reinforcing cycle. Penenberg traces the history of viral businesses from Tupperware parties to Facebook, showing that viral growth is not luck — it's designed. The viral loop has three stages: (1) a user uses the product, (2) the product inherently exposes the product",
+    },
+    {
+        "id": "roberge_sales", "book": "THE SALES ACCELERATION FORMULA",
+        "triggers": [["build", 3], ["caps", 3], ["coach", 3], ["commission", 3], ["customers", 3], ["data", 3], ["deal", 3], ["feature", 3], ["feel", 3], ["generation", 3], ["growth", 3], ["ideal", 3]],
+        "lens": "The single biggest scaling bottleneck in SaaS is the sales team. Roberge (HubSpot CRO, grew revenue from $0 to $100M) codifies a data-driven, process-oriented approach to building a sales team. The formula: hire the same successful profile every time, provide the same training, provide the same quantity/quality of leads, and hold to the same compensation plan — then use data to identify the bottle",
+    },
+    {
+        "id": "dixon_challenger", "book": "THE CHALLENGER SALE",
+        "triggers": [["another", 3], ["best", 3], ["builders", 3], ["buying", 3], ["challenge", 3], ["collateral", 3], ["comfort", 3], ["complex", 3], ["conversation", 3], ["costs", 3], ["customer", 3], ["doesn", 3]],
+        "lens": "The old sales wisdom that 'relationship builders' win is wrong — at least in complex B2B sales. Dixon & Adamson's CEB research on 6,000+ salespeople across 100+ companies found that sales reps fall into 5 profiles: Hard Workers, Relationship Builders, Lone Wolves, Problem Solvers, and Challengers. Challengers — who teach customers something new, tailor the message to their specific context, and ta",
+    },
+    {
+        "id": "sheridan_ask", "book": "THEY ASK, YOU ANSWER",
+        "triggers": [["about", 3], ["answer", 3], ["asking", 3], ["best", 3], ["builds", 3], ["buyers", 3], ["claims", 3], ["class", 3], ["comparisons", 3], ["content", 3], ["customers", 3], ["educates", 3]],
+        "lens": "Sheridan saved his swimming pool company during the 2008 financial crisis by answering every customer question honestly and publicly — including the ones competitors hide (pricing, problems, comparisons). The result: a content machine that generated $4M+ annually from organic search alone. The thesis: your customers are asking the same questions every day. If you answer them publicly and honestly,",
+    },
+    {
+        "id": "holiday_perennial", "book": "PERENNIAL SELLER",
+        "triggers": [["asset", 3], ["compounds", 3], ["content", 3], ["control", 3], ["cost", 3], ["else", 3], ["email", 3], ["everything", 3], ["expires", 3], ["finish", 3], ["hero", 3], ["hours", 3]],
+        "lens": "Most marketing content is disposable — written for the moment, forgotten in days. Holiday's thesis: the best marketing creates assets that compound over years. A perennial seller is a book, article, talk, or body of work that continues to find an audience year after year without ongoing promotion. The principles: (1) create timeless work that doesn't expire, (2) build a platform, not a campaign, (",
+    },
+    {
+        "id": "fisher_gettingyes", "book": "GETTING TO YES",
+        "triggers": [["ability", 3], ["against", 3], ["away", 3], ["batna", 3], ["beats", 3], ["criteria", 3], ["fair", 3], ["insist", 3], ["interests", 3], ["know", 3], ["negotiate", 3], ["negotiation", 3]],
+        "lens": "The single most influential negotiation book ever written. Fisher & Ury's Harvard Negotiation Project framework: (1) Separate the people from the problem. (2) Focus on interests, not positions. (3) Invent options for mutual gain. (4) Insist on objective criteria. The cornerstone concept: BATNA (Best Alternative To a Negotiated Agreement) — your power in any negotiation is your ability to walk away",
+    },
+    {
+        "id": "reichheld_nps", "book": "The Ultimate Question (Reichheld)",
+        "triggers": [["absolute", 3], ["behavior", 3], ["call", 3], ["close", 3], ["customer", 3], ["detractor", 3], ["every", 3], ["follow", 3], ["give", 3], ["hours", 3], ["loop", 3], ["matters", 3]],
+        "lens": "The single best predictor of customer behavior — will they stay, spend more, or refer others? — is the answer to one question: 'How likely are you to recommend us to a friend or colleague?' (0-10). The Net Promoter Score (NPS) = % Promoters (9-10) minus % Detractors (0-6). NPS > 50 is world-class. But Reichheld's deeper point: NPS is useless if you don't act on it. The metric is a prompt for actio",
+    },
+    {
+        "id": "crestodina_content", "book": "CONTENT CHEMISTRY",
+        "triggers": [["awareness", 3], ["blog", 3], ["companies", 3], ["consideration", 3], ["content", 3], ["creation", 3], ["decision", 3], ["educate", 3], ["funnel", 3], ["great", 3], ["ignore", 3], ["nobody", 3]],
+        "lens": "Most content marketing fails because it's created without understanding content's place in the marketing funnel. Crestodina's framework: content must be designed for specific stages of the buyer journey (awareness → consideration → decision) AND for specific channels (search, social, email). The core insight: content strategy has two sides — content creation (what you make) and content promotion (",
+    },
+    {
+        "id": "dixon_jolt", "book": "THE JOLT EFFECT",
+        "triggers": [["another", 3], ["biggest", 3], ["competitor", 3], ["create", 3], ["decision", 3], ["fewer", 3], ["many", 3], ["options", 3], ["paralysis", 3], ["present", 3], ["sales", 3], ["tell", 3]],
+        "lens": "The biggest competitor in B2B sales is not another company — it's 'no decision.' 40-60% of qualified B2B deals are lost not to a competitor, but to the status quo. Dixon & McKenna's research on 2.5M+ sales conversations reveals why: high-performing reps (top 20%) lose fewer deals to indecision, not because they're better closers, but because they address the customer's fear of failure (FOF). Custo",
+    },
+    {
+        "id": "smith_farm", "book": "FARM DON'T HUNT",
+        "triggers": [["above", 3], ["below", 3], ["best", 3], ["class", 3], ["costs", 3], ["customers", 3], ["existing", 3], ["expansion", 3], ["farming", 3], ["highest", 3], ["hunting", 3], ["less", 3]],
+        "lens": "The most efficient growth lever in B2B SaaS is not new logo acquisition — it's farming existing customer relationships for expansion revenue. Most companies treat sales as 'hunting' (acquiring new logos) while neglecting 'farming' (growing existing accounts through upsell, cross-sell, and retention). Smith's framework: the farm is where 70-80% of lifetime value resides. Nurturing existing accounts",
+    },
+    {
+        "id": "vaynerchuk_crushing", "book": "CRUSHING IT!",
+        "triggers": [["algorithm", 3], ["asking", 3], ["before", 3], ["camera", 3], ["consistency", 3], ["create", 3], ["document", 3], ["every", 3], ["give", 3], ["hook", 3], ["once", 3], ["point", 3]],
+        "lens": "Your personal brand is the most valuable business asset you control. Vaynerchuk's thesis: every entrepreneur should build a personal brand through content on social media — not polished corporate content, but authentic, daily documentation of the journey. The platforms change (Instagram, TikTok, LinkedIn, podcast, YouTube), but the principle is constant: give value first, sell second. Jab, jab, ja",
+    },
+    {
+        "id": "torres_discovery", "book": "Continuous Discovery Habits (Torres)",
+        "triggers": [["assumption", 3], ["continuous", 3], ["discovery", 3], ["experiment", 3], ["habit", 3], ["opportunity", 3], ["problem", 2], ["product", 2], ["riskiest", 4], ["trio", 4], ["weekly", 3]],
+        "lens": "Product discovery should not be a phase before delivery — it should be continuous. Torres provides the framework for product trios to talk to customers every week and test assumptions. Opportunity Solution Tree: start with desired outcome, map opportunities (customer needs), generate solutions, run experiments. Continuous interviewing: talk to customers weekly. Assumption testing: every idea rests on assumptions; test the riskiest first with the cheapest experiment. The Product Trio (PM + designer + engineer) collaborate on discovery.",
+    },
+
 ]
 
 # Books whose lessons apply so broadly they get a small tie-break boost
-_TIER1_BOOST = {"kahneman_bias", "heath_wrap", "taleb_swan", "munger_incentives", "rumelt_kernel"}
+_TIER1_BOOST = {"kahneman_bias", "heath_wrap", "taleb_swan", "munger_incentives", "rumelt_kernel", "good_to_great", "seven_habits", "essentialism", "mindset", "grit", "atomic_habits", "power_of_habit"}
+
+# Maps lens id → knowledge file path (relative to this file).
+# The FRUIT section of each file is injected alongside the lens instruction text.
+KNOWLEDGE_MAP = {
+    "kahneman_bias": "knowledge/01-decision-making/01_thinking_fast_and_slow.md",
+    "tetlock_forecast": "knowledge/01-decision-making/02_superforecasting.md",
+    "heath_wrap": "knowledge/01-decision-making/03_decisive.md",
+    "klein_rpd": "knowledge/01-decision-making/04_sources_of_power.md",
+    "taleb_swan": "knowledge/01-decision-making/05_black_swan.md",
+    "taleb_antifragile": "knowledge/01-decision-making/06_antifragile.md",
+    "munger_incentives": "knowledge/01-decision-making/07_poor_charlies_almanack.md",
+    "bevelin_wisdom": "knowledge/01-decision-making/08_seeking_wisdom.md",
+    "parrish_models": "knowledge/01-decision-making/09_great_mental_models.md",
+    "rumelt_kernel": "knowledge/02-strategy/10_good_strategy_bad_strategy.md",
+    "helmer_power": "knowledge/02-strategy/11_seven_powers.md",
+    "lafley_wwhtt": "knowledge/02-strategy/12_playing_to_win.md",
+    "bungay_action": "knowledge/02-strategy/13_art_of_action.md",
+    "horowitz_struggle": "knowledge/04-leadership-management/14_hard_thing_about_hard_things.md",
+    "grove_leverage": "knowledge/04-leadership-management/15_high_output_management.md",
+    "thorndike_capital": "knowledge/02-strategy/16_the_outsiders.md",
+    "dalio_principles": "knowledge/04-leadership-management/17_principles.md",
+    "meadows_systems": "knowledge/01-decision-making/18_thinking_in_systems.md",
+    "senge_learning": "knowledge/04-leadership-management/19_fifth_discipline.md",
+    "flyvbjerg_bigthings": "knowledge/01-decision-making/20_how_big_things_get_done.md",
+    "ries_positioning": "knowledge/03-marketing-sales/21_positioning.md",
+    "miller_storybrand": "knowledge/03-marketing-sales/23_building_a_storybrand.md",
+    "sharp_growth": "knowledge/03-marketing-sales/24_how_brands_grow.md",
+    "ogilvy_ads": "knowledge/03-marketing-sales/25_ogilvy_on_advertising.md",
+    "cialdini_influence": "knowledge/03-marketing-sales/26_influence.md",
+    "berger_contagious": "knowledge/03-marketing-sales/29_contagious.md",
+    "sutherland_alchemy": "knowledge/03-marketing-sales/30_alchemy.md",
+    "rackham_spin": "knowledge/03-marketing-sales/31_spin_selling.md",
+    "voss_negotiation": "knowledge/03-marketing-sales/32_never_split_the_difference.md",
+    "pink_selling": "knowledge/03-marketing-sales/33_to_sell_is_human.md",
+    "weinberg_traction": "knowledge/03-marketing-sales/34_traction.md",
+    "moore_chasm": "knowledge/05-product-innovation/35_crossing_the_chasm.md",
+    "kim_blueocean": "knowledge/02-strategy/36_blue_ocean_strategy.md",
+    "fitzpatrick_momtest": "knowledge/05-product-innovation/37_the_mom_test.md",
+    "christensen_jtbd": "knowledge/05-product-innovation/38_competing_against_luck.md",
+    "ries_leanstartup": "knowledge/05-product-innovation/39_the_lean_startup.md",
+    "coyle_culture": "knowledge/04-leadership-management/40_the_culture_code.md",
+
+    "bed_of_procrustes": "knowledge/01-decision-making/100_bed_of_procrustes.md",
+    "signal_and_noise": "knowledge/01-decision-making/96_signal_and_noise.md",
+    "super_thinking": "knowledge/01-decision-making/97_super_thinking.md",
+    "range": "knowledge/01-decision-making/98_range.md",
+    "skin_in_the_game": "knowledge/01-decision-making/99_skin_in_the_game.md",
+    "competitive_strategy": "knowledge/02-strategy/41_competitive_strategy.md",
+    "good_to_great": "knowledge/02-strategy/42_good_to_great.md",
+    "innovators_dilemma": "knowledge/02-strategy/43_innovators_dilemma.md",
+    "zero_to_one": "knowledge/02-strategy/44_zero_to_one.md",
+    "measure_what_matters": "knowledge/02-strategy/45_measure_what_matters.md",
+    "art_of_war": "knowledge/02-strategy/46_art_of_war.md",
+    "business_model_generation": "knowledge/02-strategy/47_business_model_generation.md",
+    "your_strategy_needs_strategy": "knowledge/02-strategy/48_your_strategy_needs_strategy.md",
+    "art_of_strategy": "knowledge/02-strategy/49_art_of_strategy.md",
+    "the_halo_effect": "knowledge/02-strategy/50_the_halo_effect.md",
+    "immutable_laws": "knowledge/03-marketing-sales/22_22_immutable_laws.md",
+    "pre_suasion": "knowledge/03-marketing-sales/27_pre_suasion.md",
+    "made_to_stick": "knowledge/03-marketing-sales/28_made_to_stick.md",
+    "purple_cow": "knowledge/03-marketing-sales/86_purple_cow.md",
+    "this_is_marketing": "knowledge/03-marketing-sales/87_this_is_marketing.md",
+    "tipping_point": "knowledge/03-marketing-sales/88_tipping_point.md",
+    "team_of_teams": "knowledge/04-leadership-management/105_team_of_teams.md",
+    "reinventing_organizations": "knowledge/04-leadership-management/106_reinventing_organizations.md",
+    "turn_the_ship_around": "knowledge/04-leadership-management/107_turn_the_ship_around.md",
+    "seven_habits": "knowledge/04-leadership-management/51_seven_habits.md",
+    "how_to_win_friends": "knowledge/04-leadership-management/52_how_to_win_friends.md",
+    "start_with_why": "knowledge/04-leadership-management/53_start_with_why.md",
+    "e_myth_revisited": "knowledge/04-leadership-management/54_e_myth_revisited.md",
+    "rework": "knowledge/04-leadership-management/55_rework.md",
+    "delivering_happiness": "knowledge/04-leadership-management/61_delivering_happiness.md",
+    "effective_executive": "knowledge/04-leadership-management/67_effective_executive.md",
+    "eighth_habit": "knowledge/04-leadership-management/68_eighth_habit.md",
+    "first_things_first": "knowledge/04-leadership-management/69_first_things_first.md",
+    "execution": "knowledge/04-leadership-management/70_execution.md",
+    "outliers": "knowledge/04-leadership-management/89_outliers.md",
+    "innovators_solution": "knowledge/05-product-innovation/71_innovators_solution.md",
+    "hooked": "knowledge/05-product-innovation/72_hooked.md",
+    "indistractable": "knowledge/05-product-innovation/73_indistractable.md",
+    "sprint": "knowledge/05-product-innovation/74_sprint.md",
+    "shoe_dog": "knowledge/06-biography/57_shoe_dog.md",
+    "the_right_it": "knowledge/06-biography/75_the_right_it.md",
+    "steve_jobs": "knowledge/06-biography/76_steve_jobs.md",
+    "everything_store": "knowledge/06-biography/77_everything_store.md",
+    "creativity_inc": "knowledge/06-biography/78_creativity_inc.md",
+    "elon_musk": "knowledge/06-biography/79_elon_musk.md",
+    "losing_my_virginity": "knowledge/06-biography/80_losing_my_virginity.md",
+    "personal_mba": "knowledge/07-finance/58_personal_mba.md",
+    "intelligent_investor": "knowledge/07-finance/81_intelligent_investor.md",
+    "little_book_beats_market": "knowledge/07-finance/82_little_book_beats_market.md",
+    "rich_dad_poor_dad": "knowledge/07-finance/83_rich_dad_poor_dad.md",
+    "most_important_thing": "knowledge/07-finance/84_most_important_thing.md",
+    "warren_buffett_way": "knowledge/07-finance/85_warren_buffett_way.md",
+    "essentialism": "knowledge/08-mindset-performance/101_essentialism.md",
+    "deep_work": "knowledge/08-mindset-performance/102_deep_work.md",
+    "getting_things_done": "knowledge/08-mindset-performance/103_getting_things_done.md",
+    "pareto_principle": "knowledge/08-mindset-performance/104_80_20_principle.md",
+    "ultralearning": "knowledge/08-mindset-performance/108_ultralearning.md",
+    "peak": "knowledge/08-mindset-performance/109_peak.md",
+    "make_it_stick": "knowledge/08-mindset-performance/110_make_it_stick.md",
+    "the_art_of_learning": "knowledge/08-mindset-performance/111_the_art_of_learning.md",
+    "power_of_habit": "knowledge/08-mindset-performance/56_power_of_habit.md",
+    "atomic_habits": "knowledge/08-mindset-performance/59_atomic_habits.md",
+    "think_and_grow_rich": "knowledge/08-mindset-performance/60_think_and_grow_rich.md",
+    "four_hour_workweek": "knowledge/08-mindset-performance/62_four_hour_workweek.md",
+    "the_one_thing": "knowledge/08-mindset-performance/63_the_one_thing.md",
+    "compound_effect": "knowledge/08-mindset-performance/64_compound_effect.md",
+    "four_disciplines_execution": "knowledge/08-mindset-performance/65_four_disciplines_execution.md",
+    "infinite_game": "knowledge/08-mindset-performance/66_infinite_game.md",
+    "mindset": "knowledge/08-mindset-performance/90_mindset.md",
+    "grit": "knowledge/08-mindset-performance/91_grit.md",
+    "flow": "knowledge/08-mindset-performance/92_flow.md",
+    "mans_search_for_meaning": "knowledge/08-mindset-performance/93_mans_search_for_meaning.md",
+    "war_of_art": "knowledge/08-mindset-performance/94_war_of_art.md",
+    "the_dip": "knowledge/08-mindset-performance/95_the_dip.md",
+    # === Generated: 40 additional knowledge map entries ===
+    "collins_built": "knowledge/02-strategy/141_built_to_last.md",
+    "aulet_disciplined": "knowledge/02-strategy/151_disciplined_entrepreneurship.md",
+    "ramadan_bigger": "knowledge/02-strategy/152_play_bigger.md",
+    "bock_workrules": "knowledge/04-leadership-management/125_work_rules.md",
+    "lencioni_dysfunctions": "knowledge/04-leadership-management/127_five_dysfunctions.md",
+    "feld_boards": "knowledge/04-leadership-management/137_startup_boards.md",
+    "covey_trust": "knowledge/04-leadership-management/139_speed_of_trust.md",
+    "watkins_90days": "knowledge/04-leadership-management/140_first_90_days.md",
+    "goldsmith_whatgotyou": "knowledge/04-leadership-management/142_what_got_you_here.md",
+    "sutton_noasshole": "knowledge/04-leadership-management/143_no_asshole_rule.md",
+    "moyer_slicingpie": "knowledge/04-leadership-management/154_slicing_pie.md",
+    "berman_finance": "knowledge/07-finance/123_financial_intelligence.md",
+    "croll_saas": "knowledge/07-finance/150_saas_metrics.md",
+    "ramaswamy_pricing": "knowledge/01-decision-making/133_monetizing_innovation.md",
+    "kohavi_experiments": "knowledge/01-decision-making/138_trustworthy_experiments.md",
+    "poundstone_priceless": "knowledge/01-decision-making/149_priceless.md",
+    "nagle_pricing": "knowledge/01-decision-making/153_strategy_tactics_pricing.md",
+    "cagan_inspired": "knowledge/05-product-innovation/126_inspired.md",
+    "chen_coldstart": "knowledge/11-growth-platform/128_cold_start_problem.md",
+    "google_sre": "knowledge/09-technology-engineering/129_site_reliability_engineering.md",
+    "kleppmann_data": "knowledge/09-technology-engineering/130_designing_data_intensive.md",
+    "bush_plg": "knowledge/11-growth-platform/131_product_led_growth.md",
+    "newman_microservices": "knowledge/09-technology-engineering/132_building_microservices.md",
+    "perri_buildtrap": "knowledge/05-product-innovation/135_escaping_build_trap.md",
+    "humble_cd": "knowledge/09-technology-engineering/148_continuous_delivery.md",
+    "feathers_legacy": "knowledge/09-technology-engineering/158_legacy_code.md",
+    "kimball_warehouse": "knowledge/09-technology-engineering/159_data_warehouse.md",
+    "hoffman_security": "knowledge/09-technology-engineering/160_web_app_security.md",
+    "choudary_platform": "knowledge/11-growth-platform/162_platform_scale.md",
+    "penenberg_viral": "knowledge/11-growth-platform/163_viral_loop.md",
+    "roberge_sales": "knowledge/03-marketing-sales/122_sales_acceleration_formula.md",
+    "dixon_challenger": "knowledge/03-marketing-sales/124_challenger_sale.md",
+    "sheridan_ask": "knowledge/03-marketing-sales/134_they_ask_you_answer.md",
+    "holiday_perennial": "knowledge/03-marketing-sales/136_perennial_seller.md",
+    "fisher_gettingyes": "knowledge/03-marketing-sales/144_getting_to_yes.md",
+    "reichheld_nps": "knowledge/10-customer-success/145_ultimate_question.md",
+    "crestodina_content": "knowledge/03-marketing-sales/155_content_chemistry.md",
+    "dixon_jolt": "knowledge/03-marketing-sales/156_jolt_effect.md",
+    "smith_farm": "knowledge/10-customer-success/157_farm_dont_hunt.md",
+    "vaynerchuk_crushing": "knowledge/03-marketing-sales/161_crushing_it.md",
+    # === First 10 gap books (manual, before auto-generation) ===
+    "smart_who": "knowledge/04-leadership-management/112_who.md",
+    "feld_venture": "knowledge/07-finance/113_venture_deals.md",
+    "ross_pipeline": "knowledge/03-marketing-sales/114_predictable_revenue.md",
+    "mehta_cs": "knowledge/10-customer-success/115_customer_success.md",
+    "croll_analytics": "knowledge/01-decision-making/116_lean_analytics.md",
+    "forsgren_accelerate": "knowledge/09-technology-engineering/117_accelerate.md",
+    "goldratt_toc": "knowledge/01-decision-making/118_the_goal.md",
+    "scott_candor": "knowledge/04-leadership-management/119_radical_candor.md",
+    "dunford_positioning": "knowledge/03-marketing-sales/120_obviously_awesome.md",
+    "wasserman_dilemmas": "knowledge/04-leadership-management/121_founders_dilemmas.md",
+    "torres_discovery": "knowledge/05-product-innovation/147_continuous_discovery.md",
+
+}
+
+_BASE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_knowledge_fruit(filepath: str) -> str:
+    """Read the FRUIT (actionable WHEN→APPLY rules) section from a knowledge file."""
+    try:
+        with open(os.path.join(_BASE, filepath)) as f:
+            text = f.read()
+    except Exception:
+        return ""
+    m = re.search(r"## FRUIT[^\n]*\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
+    if not m:
+        return ""
+    return m.group(1).strip()
 
 
 def select_lenses(latest_msg: str, model: Optional[dict] = None, max_lenses: int = 3, min_score: int = 2,
-                  boost_ids: Optional[list] = None):
+                  boost_ids: Optional[list] = None, function_health: Optional[dict] = None):
     """Pure function: pick the most relevant reasoning modules for this turn.
     boost_ids: module ids preferred by the detected decision category (get +3).
+    function_health: dict of function_name -> health_score (0-100). Unhealthy functions (<50)
+                     boost their related lenses. Wire 1: taxonomy-aware lens selection.
     Returns a prompt block string, or "" when nothing scores (keeps prompts lean)."""
     hay = (latest_msg or "").lower()
     if model:
@@ -455,6 +1343,16 @@ def select_lenses(latest_msg: str, model: Optional[dict] = None, max_lenses: int
         except Exception:
             pass
     boosts = set(boost_ids or [])
+    # Wire 1: function health boosting — unhealthy functions weight their related lenses up
+    if function_health:
+        try:
+            from business_taxonomy import function_lens_map
+            flm = function_lens_map()
+            for func, health in function_health.items():
+                if health < 50 and func in flm:
+                    boosts.update(flm[func])
+        except Exception:
+            pass
     scored = []
     for m in MODULES:
         s = sum(w for kw, w in m["triggers"] if kw in hay)
@@ -467,6 +1365,16 @@ def select_lenses(latest_msg: str, model: Optional[dict] = None, max_lenses: int
     scored.sort(key=lambda t: -t[0])
     chosen = [m for _, m in scored[:max_lenses]]
     lines = "\n".join(f"- [{m['book']}] {m['lens']}" for m in chosen)
+    # Load actionable rules from matching knowledge files
+    fruit_parts = []
+    for m in chosen:
+        fp = KNOWLEDGE_MAP.get(m["id"])
+        if fp:
+            fruit = _load_knowledge_fruit(fp)
+            if fruit:
+                fruit_parts.append(f"  (rules from \"{m['book']}\"):\n{fruit}")
+    if fruit_parts:
+        lines += "\n\n" + "\n\n".join(fruit_parts)
     return (
         "REASONING LENSES (from the decision-science knowledge base; the frameworks most relevant to this "
         "turn). Apply them SILENTLY inside your reasoning sweep and weave the conclusions naturally into your "

@@ -2,7 +2,6 @@
 Each handler file registers a `handle(tool_name, args) -> dict` function.
 """
 
-import os
 import logging
 import importlib
 from pathlib import Path

@@ -341,6 +341,15 @@ def set_strategy(body: StrategyIn, user: dict = Depends(current_user)):
         "strategy_version": new_ver,
         "strategy_updated_at": now_utc(),
     }})
+    # Wire: auto-initialize system model when strategy is first set or updated
+    try:
+        from business_system import init_system_model, persist_system_model
+        fresh_org = orgs_col.find_one({"id": m["org_id"]})
+        if fresh_org:
+            model = init_system_model(fresh_org)
+            persist_system_model(m["org_id"], model)
+    except Exception as e:
+        log.warning(f"system model init failed on strategy save: {e}")
     org = orgs_col.find_one({"id": m["org_id"]})
     if body.current_arr is not None:
         _append_arr_snapshot(m["org_id"], body.current_arr)
@@ -737,7 +746,7 @@ PLAN_SYSTEM = (
     "numeric where possible. This is a DRAFT for a human to ratify, never a final plan. "
     'Return ONLY JSON, no fences: {"company_objective": "...", "departments": [{"function": '
     '"sales|marketing|product|engineering|operations|finance|leadership", "objective": "...", '
-    '"key_results": ["...", "..."]}]}'
+    '"key_results": [{"description": "...", "target": 100, "metric_type": "percentage|number|boolean"}]}]}'
 )
 
 
@@ -818,7 +827,25 @@ def draft_plan(body: PlanDraftIn, user: dict = Depends(current_user)):
     for d in (data.get("departments") or [])[:8]:
         if not isinstance(d, dict):
             continue
-        krs = [str(k) for k in (d.get("key_results") or []) if str(k).strip()][:4]
+        # Normalize KRs: support both old flat strings and new rich objects
+        krs = []
+        for k in (d.get("key_results") or [])[:5]:
+            if isinstance(k, dict) and k.get("description"):
+                krs.append({
+                    "description": str(k.get("description", ""))[:200],
+                    "target": float(k.get("target", 100)),
+                    "current": float(k.get("current", 0)),
+                    "metric_type": str(k.get("metric_type", "percentage"))[:20],
+                    "confidence": 70,
+                    "progress_pct": 0,
+                })
+            elif str(k).strip():
+                krs.append({
+                    "description": str(k).strip()[:200],
+                    "target": 100, "current": 0,
+                    "metric_type": "percentage",
+                    "confidence": 70, "progress_pct": 0,
+                })
         depts.append({"function": norm_dep_function(d.get("function")),
                       "objective": str(d.get("objective", ""))[:600], "key_results": krs})
     plan = {"id": str(uuid.uuid4()), "org_id": org["id"], "target": body.target.strip(),

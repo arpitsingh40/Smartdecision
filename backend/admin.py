@@ -9,7 +9,7 @@ from db import (
     users_col, threads_col, telemetry_col, ledger_col, traffic_col, orders_col,
     conversation_memory_col, user_patterns_col, decisions_col,
 )
-from security import require_admin, now_utc, as_aware
+from security import require_admin, now_utc
 from ledger import get_stats
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])

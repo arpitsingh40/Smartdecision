@@ -3,6 +3,9 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from './components/ui/sonner';
 import ErrorBoundary from './components/ErrorBoundary';
+
+const withErrorBoundary = (Component: React.LazyExoticComponent<React.ComponentType<any>>) =>
+  (props: any) => <ErrorBoundary><Component {...props} /></ErrorBoundary>;
 import { Button } from './components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -28,6 +31,9 @@ const GoalSetupPage = lazy(() => import('./pages/GoalSetupPage'));
 const MissionControlPage = lazy(() => import('./pages/MissionControlPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const DecisionCardPage = lazy(() => import('./pages/DecisionCardPage'));
+const HabitsPage = lazy(() => import('./pages/HabitsPage'));
+const PlaybooksPage = lazy(() => import('./pages/PlaybooksPage'));
+const WeeklyReviewPage = lazy(() => import('./pages/WeeklyReviewPage'));
 
 interface AppUser {
   id: string;
@@ -133,10 +139,20 @@ const App: FC = () => {
 
   useEffect(() => {
     if (!token) return;
-    api.get<AppUser>('/auth/me').then((r) => {
-      setUser(r.data);
-      localStorage.setItem('sdg_user', JSON.stringify(r.data));
-    }).catch(() => logout());
+    let cancelled = false;
+    const verify = (attempt: number) => {
+      api.get<AppUser>('/auth/me').then((r) => {
+        if (cancelled) return;
+        setUser(r.data);
+        localStorage.setItem('sdg_user', JSON.stringify(r.data));
+      }).catch((err) => {
+        if (cancelled) return;
+        if (err?.response?.status === 401) { logout(); return; }
+        if (attempt < 3) setTimeout(() => verify(attempt + 1), 1000 * Math.pow(2, attempt));
+      });
+    };
+    verify(0);
+    return () => { cancelled = true; };
   }, [token, logout]);
 
   useEffect(() => {
@@ -167,33 +183,34 @@ const App: FC = () => {
       <div className="paper min-h-screen">
         <BrowserRouter>
           <InsufficientCreditsModal />
-          <ErrorBoundary>
           <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-background"><div className="space-y-4 w-full max-w-md mx-auto px-6"><div className="h-8 w-3/5 animate-pulse rounded-lg bg-primary/10" /><div className="h-4 w-2/5 animate-pulse rounded-lg bg-primary/10" /><div className="mt-8 space-y-3"><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-4/5 animate-pulse rounded-lg bg-primary/10" /></div></div></div>}>
           <Routes>
-            <Route path="/" element={token ? <Navigate to="/app" replace /> : <LandingPage />} />
-            <Route path="/auth" element={token ? <Navigate to="/app" replace /> : <AuthPage />} />
-            <Route path="/app" element={token ? <JourneyPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/decisions" element={token ? <DecisionsPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/brain" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/brain/:decisionId" element={token ? <BrainPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/thread/:threadId" element={token ? <ThreadPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/team" element={token ? <TeamPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/my-tasks" element={token ? <MyTasksPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/cockpit" element={token ? <CockpitPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/mission-control" element={token ? <MissionControlPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/goal-setup" element={token ? <GoalSetupPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/founder-profile" element={token ? <ProfilePage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/questionnaire" element={token ? <ProfilePage /> : <Navigate to="/auth" replace />} />
-            <Route path="/app/profile" element={token ? <ProfilePage /> : <Navigate to="/auth" replace />} />
-            <Route path="/join/:code" element={<JoinPage />} />
-            <Route path="/d/:shareId" element={<DecisionCardPage />} />
-            <Route path="/app/billing" element={token ? <BillingPage /> : <Navigate to="/auth" replace />} />
-            <Route path="/pay/result" element={<PaymentResultPage />} />
-            <Route path="/app/admin" element={token ? <AdminPage /> : <Navigate to="/auth" replace />} />
+            <Route path="/" element={token ? <Navigate to="/app" replace /> : withErrorBoundary(LandingPage)({})} />
+            <Route path="/auth" element={token ? <Navigate to="/app" replace /> : withErrorBoundary(AuthPage)({})} />
+            <Route path="/app" element={token ? withErrorBoundary(JourneyPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/decisions" element={token ? withErrorBoundary(DecisionsPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/brain" element={token ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/brain/:decisionId" element={token ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/thread/:threadId" element={token ? withErrorBoundary(ThreadPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/team" element={token ? withErrorBoundary(TeamPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/my-tasks" element={token ? withErrorBoundary(MyTasksPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/cockpit" element={token ? withErrorBoundary(CockpitPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/mission-control" element={token ? withErrorBoundary(MissionControlPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/goal-setup" element={token ? withErrorBoundary(GoalSetupPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/founder-profile" element={token ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/questionnaire" element={token ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/profile" element={token ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/join/:code" element={withErrorBoundary(JoinPage)({})} />
+            <Route path="/d/:shareId" element={withErrorBoundary(DecisionCardPage)({})} />
+            <Route path="/app/billing" element={token ? withErrorBoundary(BillingPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/pay/result" element={withErrorBoundary(PaymentResultPage)({})} />
+            <Route path="/app/admin" element={token ? withErrorBoundary(AdminPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/habits" element={token ? withErrorBoundary(HabitsPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/playbooks" element={token ? withErrorBoundary(PlaybooksPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/weekly-review" element={token ? withErrorBoundary(WeeklyReviewPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </Suspense>
-          </ErrorBoundary>
         </BrowserRouter>
         <Toaster position="bottom-right" />
       </div>

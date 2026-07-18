@@ -1,7 +1,7 @@
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { toast } from 'sonner';
 
-const BACKEND_URL: string = process.env.REACT_APP_BACKEND_URL || '';
+const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL || '';
 
 export const api = axios.create({ baseURL: `${BACKEND_URL}/api` });
 
@@ -52,3 +52,28 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export const habitsApi = {
+  list: () => api.get('/v1/habits'),
+  create: (body: Record<string, unknown>) => api.post('/v1/habits', body),
+  get: (id: string) => api.get(`/v1/habits/${id}`),
+  update: (id: string, body: Record<string, unknown>) => api.patch(`/v1/habits/${id}`, body),
+  log: (id: string, note?: string) => api.post(`/v1/habits/${id}/log`, { note: note || '' }),
+  delete: (id: string) => api.delete(`/v1/habits/${id}`),
+};
+
+export const playbooksApi = {
+  list: () => api.get('/v1/playbooks'),
+  available: () => api.get('/v1/playbooks/available'),
+  create: (key: string) => api.post('/v1/playbooks', { playbook_key: key }),
+  get: (id: string) => api.get(`/v1/playbooks/${id}`),
+  update: (id: string, body: Record<string, unknown>) => api.patch(`/v1/playbooks/${id}`, body),
+  advance: (id: string) => api.post(`/v1/playbooks/${id}/advance`),
+};
+
+export const weeklyReviewApi = {
+  get: () => api.get('/v1/weekly-review'),
+  update: (body: Record<string, unknown>) => api.patch('/v1/weekly-review', body),
+  reset: () => api.post('/v1/weekly-review/reset'),
+  history: () => api.get('/v1/weekly-review/history'),
+};

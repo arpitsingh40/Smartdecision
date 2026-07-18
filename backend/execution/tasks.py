@@ -11,13 +11,7 @@ and are org-scoped so one founder never sees another org's queue.
 
 import json
 import logging
-from typing import Optional
-
-from ontology import (
-    Task, ExecutionAction, ExecutionPlan, Evidence, LearningEvent,
-    AuthorityLevel, Reversibility, OutcomeStatus, new_id, utcnow, Trace,
-)
-from llm_client import client, _extract_json
+from llm_client import client, _extract_json, PRIMARY_MODEL
 from db import exec_tasks_col
 
 log = logging.getLogger("tasks")
@@ -58,7 +52,7 @@ Generate 3-4 FIRST-WEEK TASKS for this executive. Each task JSON:
 Return: {{"tasks": [task1, task2, task3]}}"""
 
     try:
-        r = client().messages.create(model="deepseek-v4-flash", max_tokens=800, system=TASK_SYSTEM,
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=800, system=TASK_SYSTEM,
                                       messages=[{"role": "user", "content": prompt}])
         txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
         data = json.loads(_extract_json(txt))

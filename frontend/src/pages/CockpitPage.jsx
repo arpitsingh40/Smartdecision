@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
   Target, Loader2, TrendingUp, CheckCircle2, Users, Activity, AlertTriangle, Lock, Gauge, Clock, Award, Flag, Pencil, ListChecks, RefreshCw, IndianRupee,
+  Wifi, WifiOff, Sparkles, Play, StopCircle, ChevronRight, Shield,
 } from 'lucide-react';
 
 const fmtNum = (n) => {
@@ -47,6 +48,11 @@ export default function CockpitPage() {
   const [digestLoading, setDigestLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [trend, setTrend] = useState(null);
+  const [activeTab, setActiveTab] = useState('cockpit'); // cockpit | system | execution | connections
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [executionStatus, setExecutionStatus] = useState(null);
+  const [connections, setConnections] = useState(null);
+  const [connectingTool, setConnectingTool] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,6 +76,45 @@ export default function CockpitPage() {
   }, []);
 
   useEffect(() => { loadDigest(); }, [loadDigest]);
+
+  // Load system health data when that tab is active
+  useEffect(() => {
+    if (activeTab !== 'system' || systemHealth) return;
+    (async () => {
+      try {
+        const [modelR, signalsR] = await Promise.all([
+          api.get('/system/model'),
+          api.get('/system/signals'),
+        ]);
+        setSystemHealth({ model: modelR.data?.model, signals: signalsR.data });
+      } catch (_) {}
+    })();
+  }, [activeTab, systemHealth]);
+
+  // Load execution data when that tab is active
+  useEffect(() => {
+    if (activeTab !== 'execution' || executionStatus) return;
+    (async () => {
+      try {
+        const [statusR, tasksR] = await Promise.all([
+          api.get('/execution/connections/status'),
+          api.get('/execution/tasks/summary'),
+        ]);
+        setExecutionStatus({ ...statusR.data, ...tasksR.data });
+      } catch (_) {}
+    })();
+  }, [activeTab, executionStatus]);
+
+  // Load connections when that tab is active
+  useEffect(() => {
+    if (activeTab !== 'connections' || connections) return;
+    (async () => {
+      try {
+        const r = await api.get('/execution/connections');
+        setConnections(r.data);
+      } catch (_) {}
+    })();
+  }, [activeTab, connections]);
 
   useEffect(() => {
     const loadTrend = async () => {
@@ -153,6 +198,28 @@ export default function CockpitPage() {
   return (
     <div className="min-h-screen">
       <TopBar title="Founder Cockpit" backTo="/team" />
+      {/* Tab Navigation */}
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-2">
+        <div className="flex gap-1 border-b">
+          {[
+            { id: 'cockpit', label: 'Cockpit', icon: Target },
+            { id: 'system', label: 'System Health', icon: Activity },
+            { id: 'execution', label: 'Execution', icon: Play },
+            { id: 'connections', label: 'Connections', icon: Wifi },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-[1px] transition-colors ${
+                activeTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}>
+              <tab.icon size={13} strokeWidth={1.75} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {activeTab === 'cockpit' && (
       <main data-testid="cockpit-page" className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 pt-4 space-y-6">
 
         {/* North Star */}
@@ -540,6 +607,216 @@ export default function CockpitPage() {
             )}
           </section>
         </main>
+      )}
+      {/* System Health Tab */}
+      {activeTab === 'system' && (
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 pt-4 space-y-6">
+          {systemHealth ? (
+            <>
+              <SystemHealthTab health={systemHealth} />
+            </>
+          ) : (
+            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted-foreground" /></div>
+          )}
+        </main>
+      )}
+      {/* Execution Tab */}
+      {activeTab === 'execution' && (
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 pt-4 space-y-6">
+          {executionStatus ? (
+            <ExecutionTab status={executionStatus} setConnectingTool={setConnectingTool} connectingTool={connectingTool} />
+          ) : (
+            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted-foreground" /></div>
+          )}
+        </main>
+      )}
+      {/* Connections Tab */}
+      {activeTab === 'connections' && (
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 pt-4 space-y-6">
+          {connections ? (
+            <ConnectionsTab connections={connections} setConnectingTool={setConnectingTool} connectingTool={connectingTool} setConnections={setConnections} />
+          ) : (
+            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted-foreground" /></div>
+          )}
+        </main>
+      )}
     </div>
+  );
+}
+
+// ── System Health Tab Content ──
+function SystemHealthTab({ health }) {
+  const model = health?.model;
+  const signals = health?.signals;
+  const functions = model?.functions || {};
+  const atRisk = Object.entries(functions).filter(([, s]) => s.status === 'at_risk');
+  const warnings = Object.entries(functions).filter(([, s]) => s.status === 'warning');
+
+  return (
+    <>
+      <section className="rounded-2xl border bg-card p-6">
+        <div className="flex items-center gap-2 mb-4"><Activity size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">System Health</h3></div>
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <Stat icon={AlertTriangle} label="At Risk" value={signals?.at_risk_count || atRisk.length} />
+          <Stat icon={Activity} label="Warnings" value={signals?.warning_count || warnings.length} />
+          <Stat icon={CheckCircle2} label="Healthy" value={signals?.healthy_count || Object.keys(functions).length - atRisk.length - warnings.length} />
+        </div>
+        {signals?.brief && (
+          <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono leading-relaxed bg-muted/50 rounded-lg p-3 max-h-64 overflow-auto">
+            {signals.brief}
+          </pre>
+        )}
+      </section>
+
+      <section className="rounded-2xl border bg-card p-6">
+        <div className="flex items-center gap-2 mb-3"><Target size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">16 Functions</h3></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {Object.entries(functions).map(([func, state]) => {
+            const color = state.status === 'at_risk' ? 'bg-red-50 border-red-200' : state.status === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200';
+            const textColor = state.status === 'at_risk' ? 'text-red-700' : state.status === 'warning' ? 'text-amber-700' : 'text-emerald-700';
+            return (
+              <div key={func} className={`rounded-lg border px-3 py-2 ${color}`}>
+                <div className="text-[11px] capitalize text-muted-foreground">{func.replace(/_/g, ' ')}</div>
+                <div className={`font-mono text-sm font-medium ${textColor}`}>{state.health}/100</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </>
+  );
+}
+
+// ── Execution Tab Content ──
+function ExecutionTab({ status, setConnectingTool, connectingTool }) {
+  const connect = async (toolkit) => {
+    setConnectingTool(toolkit);
+    try {
+      const r = await api.post('/execution/connections/connect', { toolkit });
+      if (r.data.auth_url) window.open(r.data.auth_url, '_blank');
+      setTimeout(async () => {
+        try { await api.post('/execution/connections/complete', { toolkit }); } catch (_) {}
+        setConnectingTool(null);
+      }, 5000);
+    } catch (_) { setConnectingTool(null); }
+  };
+
+  const atRiskSuggestions = status?.at_risk_suggestions || {};
+  const totalTasks = (status?.total || 0);
+
+  return (
+    <>
+      <section className="rounded-2xl border bg-card p-6">
+        <div className="flex items-center gap-2 mb-4"><Play size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Execution Status</h3></div>
+        <div className="grid grid-cols-5 gap-4 mb-4">
+          <Stat icon={ListChecks} label="Proposed" value={status?.proposed || 0} />
+          <Stat icon={CheckCircle2} label="Approved" value={status?.approved || 0} />
+          <Stat icon={Play} label="Executed" value={status?.executed || 0} />
+          <Stat icon={Shield} label="Verified" value={status?.verified || 0} />
+          <Stat icon={StopCircle} label="Failed" value={status?.failed || 0} />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <Stat icon={Wifi} label="Connected Tools" value={status?.active_connections || 0} />
+          <Stat icon={IndianRupee} label="Total" value={totalTasks} />
+          {status?.connected_tools?.length > 0 && (
+            <div className="rounded-2xl border bg-card p-4">
+              <div className="text-xs text-muted-foreground mb-1">Tools</div>
+              <div className="flex flex-wrap gap-1">
+                {status.connected_tools.slice(0, 6).map(t => (
+                  <span key={t} className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {Object.keys(atRiskSuggestions).length > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/50 p-6">
+          <div className="flex items-center gap-2 mb-3"><AlertTriangle size={16} className="text-amber-600" /><h3 className="font-medium text-sm text-amber-900">Tool Suggestions for At-Risk Functions</h3></div>
+          <div className="space-y-3">
+            {Object.entries(atRiskSuggestions).map(([func, info]) => (
+              <div key={func} className="rounded-xl bg-white border p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">{func}</span>
+                  <span className="font-mono text-xs text-red-600">{info.health}/100</span>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {info.suggested_tools?.map(t => (
+                    <button key={t.toolkit} onClick={() => connect(t.toolkit)} disabled={!!connectingTool}
+                      className="rounded-lg bg-blue-50 border border-blue-200 px-2 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-100 flex items-center gap-1">
+                      {connectingTool === t.toolkit ? <Sparkles size={11} className="animate-spin" /> : <Wifi size={11} />}
+                      {t.toolkit}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+// ── Connections Tab Content ──
+function ConnectionsTab({ connections, setConnectingTool, connectingTool, setConnections }) {
+  const connected = connections?.connected_list || [];
+  const available = connections?.top_available || [];
+
+  const connect = async (toolkit) => {
+    setConnectingTool(toolkit);
+    try {
+      const r = await api.post('/execution/connections/connect', { toolkit });
+      if (r.data.auth_url) window.open(r.data.auth_url, '_blank');
+      setTimeout(async () => {
+        try { await api.post('/execution/connections/complete', { toolkit }); } catch (_) {}
+        try { const r2 = await api.get('/execution/connections'); setConnections(r2.data); } catch (_) {}
+        setConnectingTool(null);
+      }, 5000);
+    } catch (_) { setConnectingTool(null); }
+  };
+
+  const disconnect = async (toolkit) => {
+    try {
+      await api.post('/execution/connections/disconnect', { toolkit });
+      const r = await api.get('/execution/connections');
+      setConnections(r.data);
+    } catch (_) {}
+  };
+
+  return (
+    <>
+      <section className="rounded-2xl border bg-card p-6">
+        <div className="flex items-center gap-2 mb-1"><Wifi size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Connected Tools</h3></div>
+        <p className="text-xs text-muted-foreground mb-4">{connections?.connected || 0} connected · {connections?.available || 0} available · {connections?.total || 0} total</p>
+        {connected.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No tools connected yet. Connect your first tool below.</p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {connected.map(t => (
+              <div key={t.toolkit} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 flex items-center justify-between">
+                <span className="text-sm font-medium capitalize">{t.toolkit}</span>
+                <button onClick={() => disconnect(t.toolkit)} className="text-[10px] text-red-500 hover:text-red-700">Disconnect</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border bg-card p-6">
+        <div className="flex items-center gap-2 mb-3"><WifiOff size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Available Tools</h3></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {available.slice(0, 24).map(t => (
+            <button key={t.toolkit} onClick={() => connect(t.toolkit)} disabled={!!connectingTool}
+              className="rounded-lg border bg-white px-3 py-2 text-left hover:bg-muted/50">
+              <div className="text-sm font-medium capitalize">{t.toolkit}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{t.tool_count} tools</div>
+              {connectingTool === t.toolkit && <Sparkles size={12} className="animate-spin text-primary mt-1" />}
+            </button>
+          ))}
+        </div>
+      </section>
+    </>
   );
 }

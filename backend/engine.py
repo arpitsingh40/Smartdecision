@@ -2,22 +2,19 @@
 Pure functions: intent classification, rolling fields, re-engagement.
 Single LLM call per turn — provider-agnostic via llm_client.
 Multi-modal: attach image / PDF / Excel / CSV / text — engine reads and reasons on the file."""
-import os
 import io
 import json
 import re
-import time
 import base64
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-import requests
-from db import users_col, journeys_col
+from db import users_col
 
 log = logging.getLogger(__name__)
 
 from llm_client import (
-    client, _extract_json, ContentBlock, Usage, Response,
+    client, _extract_json,
     PRIMARY_MODEL, ANALYTICAL_MODEL, ULTRA_MODEL, FALLBACK_MODEL,
 )
 
@@ -51,6 +48,14 @@ def _get_state_block(user_id: str) -> str:
     lines.append(f"- Stage: {'diagnosis complete' if s.get('diagnosis_done') else 'diagnosis in progress'}")
     return "COMPANY STATE (from the ongoing diagnosis — treat as known, do NOT re-ask, check every recommendation against these constraints):\n" + "\n".join(lines)
 
+
+# ---------------------------------------------------------------- Biography Bank
+def _bio_block(context: str) -> str:
+    try:
+        from playbooks import biography_block
+        return biography_block(context=context) + "\n" if biography_block(context=context) else ""
+    except Exception:
+        return ""
 
 # ---------------------------------------------------------------- Ch.X: MCP tool injection
 def _mcp_tools_block(department_function: str = "general") -> str:
@@ -478,6 +483,25 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         geo_line = f"USER_LOCATION: {city}, {country} (anchor tool/platform/payment/regulation suggestions to here)\n"
     recall_section = (recall_block.strip() + "\n") if recall_block and recall_block.strip() else ""
     mcp_tools_section = _mcp_tools_block()  # Ch.X: inject available MCP tools into prompt
+    # Wire 3: root cause context when user mentions business symptoms
+    root_cause_section = ""
+    workflow_section = ""
+    org_id = user_doc.get("org_id") if user_doc else None
+    if org_id:
+        try:
+            from business_system import root_cause_context_block
+            root_cause_section = root_cause_context_block(org_id, user_msg)
+            if root_cause_section:
+                root_cause_section = root_cause_section + "\n\n"
+        except Exception:
+            pass
+        try:
+            from execution.workflows import suggest_workflow_block
+            workflow_section = suggest_workflow_block(user_msg, org_id)
+            if workflow_section:
+                workflow_section = workflow_section + "\n\n"
+        except Exception:
+            pass
     prompt = (
         f"{user_ctx_block}"
         f"{understanding_block}"
@@ -496,6 +520,9 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         f"{recall_section}"
         f"{mcp_tools_section}"
         f"{company_state_block}"
+        f"{root_cause_section}"
+        f"{workflow_section}"
+        f"{_bio_block(user_msg)}"
         f"Their message: {user_msg}"
         f"{file_text}"
     )
@@ -584,7 +611,7 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                             for tc in tool_calls[:5] if isinstance(tc, dict) and tc.get("tool")
                         ]}
                         if plan["actions"]:
-                            exec_result = _exec_plan(plan, "general")
+                            exec_result = _exec_plan(plan, "general", org_id=org_id)
                             execution_results = exec_result.get("actions", [])
                             # Inject results into acknowledgment
                             done_actions = [a for a in execution_results if a.get("status") == "done"]
@@ -598,6 +625,21 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                                 summary_lines.append(f"✗ {a.get('description', a.get('tool', ''))}: {a.get('error', 'failed')}")
                             if summary_lines:
                                 out["acknowledgment"] += "\n\n" + "\n".join(summary_lines)
+                            # Wire 2: enqueue executed actions as tasks for tracking + learning
+                            if org_id:
+                                try:
+                                    from execution.bridge import enqueue_engine_action
+                                    for tc in tool_calls[:3]:
+                                        enqueue_engine_action(org_id, {
+                                            "description": tc.get("reason", tc.get("tool", "AI action")),
+                                            "capability": tc.get("capability", "general"),
+                                            "tool": tc.get("tool", ""),
+                                            "args": tc.get("args", {}),
+                                            "expected_outcome": tc.get("reason", "Action completed"),
+                                            "reversibility": "REVERSIBLE",
+                                        }, user_id=user_doc.get("id") if user_doc else None)
+                                except Exception:
+                                    pass
                 except Exception as exec_err:
                     log.warning(f"MCP tool execution failed (non-fatal): {exec_err}")
             out["_execution"] = execution_results

@@ -2,6 +2,8 @@
 Verification + Learning Runtime.
 
 Verification: Did the executed action achieve the intended capability outcome?
+LLM-powered deep verification with keyword fallback for reliability.
+
 Learning: Update tool scores, detect patterns, apply only verified evidence.
 
 Evidence-first learning. No permanent organizational learning without verification.
@@ -11,17 +13,71 @@ Evidence and learning events persist in MongoDB (evidence / learning_events coll
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
 from collections import defaultdict
 
 from ontology import (
     Evidence, LearningEvent, LearningImpact,
-    OutcomeStatus, Volatility, Trace, new_id, utcnow,
+    OutcomeStatus, Volatility, new_id, utcnow,
 )
 from db import evidence_col, learning_col
 
 log = logging.getLogger("execution.verification")
+
+# Lightweight LLM call for deep verification — uses DeepSeek v4 Flash for speed/cost
+VERIFY_SYSTEM = """You assess whether a tool execution achieved its goal. Compare expected outcome to actual result.
+
+Output ONLY valid JSON:
+{"outcome": "SUCCESS"|"FAILURE"|"PARTIAL"|"UNKNOWN",
+ "confidence": 0.0 to 1.0,
+ "reasoning": "one line explaining why",
+ "systemic_flag": true if this looks like a systemic issue (bad config, expired auth, broken integration) not a one-off}"""
+
+VERIFY_MODEL = "deepseek-v4-flash"
+
+
+def _llm_verify(tool_slug: str, expected: str, actual: str) -> dict:
+    """Deep verification: one LLM call with DeepSeek v4 Flash.
+    Falls back to keyword heuristic on any failure."""
+    try:
+        from llm_client import client as llm_client, _extract_json
+        prompt = (
+            f"TOOL: {tool_slug}\n"
+            f"EXPECTED: {expected}\n"
+            f"ACTUAL RESULT:\n{actual[:2000]}"
+        )
+        r = llm_client().messages.create(
+            model=VERIFY_MODEL, max_tokens=200,
+            system=[{"type": "text", "text": VERIFY_SYSTEM}],
+            messages=[{"role": "user", "content": prompt}],
+        )
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        result = json.loads(_extract_json(txt))
+        result["source"] = "llm"
+        return result
+    except Exception as e:
+        log.warning(f"LLM verification failed, falling back to keyword: {e}")
+        return None
+
+
+def _keyword_verify(actual: str) -> dict:
+    """Keyword heuristic fallback — fast, cheap, zero-LLM."""
+    result_lower = (actual or "").lower().strip()
+    failure_signals = ["error", "failed", "denied", "unauthorized", "timeout", "not found",
+                       "could not", "unable", "refused", "blocked", "exception", "traceback"]
+    success_signals = ["sent", "created", "delivered", "scheduled", "completed", "ok",
+                       "success", "done", "received", "resolved", "processed", "confirmed"]
+
+    is_failure = any(s in result_lower for s in failure_signals)
+    is_success = any(s in result_lower for s in success_signals) and not is_failure
+
+    if is_failure:
+        return {"outcome": "FAILURE", "confidence": 0.3, "reasoning": "Keyword failure signal detected", "source": "keyword"}
+    elif is_success:
+        return {"outcome": "SUCCESS", "confidence": 0.7, "reasoning": "Keyword success signal detected", "source": "keyword"}
+    elif len(actual) > 5:
+        return {"outcome": "PARTIAL", "confidence": 0.4, "reasoning": "Result present but unclear outcome", "source": "keyword"}
+    else:
+        return {"outcome": "UNKNOWN", "confidence": 0.1, "reasoning": "Empty or garbled result", "source": "keyword"}
 
 
 def verify_action(
@@ -32,36 +88,38 @@ def verify_action(
     trace_id: str = None,
     executive_id: str = None,
     org_id: str = None,
+    deep_verify: bool = True,
 ) -> Evidence:
-    """Compare expected vs actual outcome and produce verified evidence."""
-    outcome = OutcomeStatus.UNKNOWN
-    confidence = 0.0
+    """Compare expected vs actual outcome and produce verified evidence.
+    deep_verify=True: uses LLM for deep assessment, falls back to keyword heuristic.
+    deep_verify=False: keyword heuristic only (cheaper, used for batch verification)."""
+    actual = actual_result or ""
 
-    result_lower = actual_result.lower().strip() if actual_result else ""
-    expected_lower = expected_outcome.lower().strip() if expected_outcome else ""
+    verdict = None
+    if deep_verify:
+        verdict = _llm_verify(tool_slug, expected_outcome, actual)
 
-    # Simple outcome detection
-    # ponytail: keyword heuristic, upgrade to LLM/structured verification when tools return schemas
-    failure_signals = ["error", "failed", "denied", "unauthorized", "timeout", "not found",
-                       "could not", "unable", "refused", "blocked"]
-    success_signals = ["sent", "created", "delivered", "scheduled", "completed", "ok",
-                       "success", "done", "received"]
+    if verdict is None:
+        verdict = _keyword_verify(actual)
 
-    is_failure = any(s in result_lower for s in failure_signals)
-    is_success = any(s in result_lower for s in success_signals) and not is_failure
+    outcome_str = verdict.get("outcome", "UNKNOWN")
+    confidence = float(verdict.get("confidence", 0.1))
+    reasoning = verdict.get("reasoning", "")
 
-    if is_failure:
-        outcome = OutcomeStatus.FAILURE
-        confidence = 0.3
-    elif is_success:
-        outcome = OutcomeStatus.SUCCESS
-        confidence = 0.85
-    elif len(actual_result) > 5:
-        outcome = OutcomeStatus.PARTIAL
-        confidence = 0.5
-    else:
-        outcome = OutcomeStatus.UNKNOWN
-        confidence = 0.1
+    # Map to OutcomeStatus enum
+    outcome_map = {
+        "SUCCESS": OutcomeStatus.SUCCESS,
+        "FAILURE": OutcomeStatus.FAILURE,
+        "PARTIAL": OutcomeStatus.PARTIAL,
+        "UNKNOWN": OutcomeStatus.UNKNOWN,
+    }
+    outcome = outcome_map.get(outcome_str, OutcomeStatus.UNKNOWN)
+
+    # Adjust confidence: keyword gets a penalty
+    if verdict.get("source") == "keyword":
+        confidence = min(confidence, 0.75)
+    elif verdict.get("source") == "llm":
+        confidence = max(confidence, 0.5)  # LLM assessments floor at 0.5
 
     ev = Evidence(
         trace_id=trace_id,
@@ -75,17 +133,22 @@ def verify_action(
     )
 
     doc = ev.model_dump()
-    # Context the Evidence model doesn't carry but the ledger needs:
     doc["tool_slug"] = tool_slug
     doc["capability"] = capability
     doc["executive_id"] = executive_id
     doc["org_id"] = org_id
+    doc["verification_method"] = verdict.get("source", "keyword")
+    doc["verification_reasoning"] = reasoning
+    doc["systemic_flag"] = bool(verdict.get("systemic_flag", False))
+
     if evidence_col is not None:
         try:
             evidence_col.insert_one(dict(doc))
         except Exception as e:
             log.error(f"Evidence persist failed: {e}")
-    log.info(f"Verification: {tool_slug} → {outcome.value} (confidence={confidence})")
+
+    verif_label = f"deep-LLM" if verdict.get("source") == "llm" else "keyword"
+    log.info(f"Verification [{verif_label}]: {tool_slug} → {outcome_str} (confidence={confidence:.2f})")
 
     # Update tool scores
     try:
@@ -98,18 +161,19 @@ def verify_action(
 
 
 def learn_from_evidence(evidence: Evidence, capability: str = "", org_id: str = None) -> Optional[LearningEvent]:
-    """Detect patterns from verified evidence and produce learning."""
+    """Detect patterns from verified evidence and produce learning.
+    Now detects: 1) consecutive tool failures, 2) systemic integration issues flagged by LLM verification."""
     if evidence_col is None:
         return None
-    q = {"outcome": {"$in": ["SUCCESS", "FAILURE"]}}
+    q = {"outcome": {"$in": ["SUCCESS", "FAILURE", "PARTIAL"]}}
     if org_id:
         q["org_id"] = org_id
     recent = list(evidence_col.find(q, {"_id": 0}).sort("timestamp", -1).limit(50))
 
     if len(recent) < 3:
-        return None  # Not enough data to learn from
+        return None
 
-    # Pattern: consecutive failures of same tool
+    # Pattern 1: consecutive failures of same tool
     tool_failures = defaultdict(list)
     for e in recent:
         slug = e.get("tool_slug", "unknown")
@@ -122,9 +186,14 @@ def learn_from_evidence(evidence: Evidence, capability: str = "", org_id: str = 
             already = learning_col is not None and learning_col.find_one(
                 {"pattern_key": f"fail_{slug}", "org_id": org_id})
             if not already:
+                # Enhanced: if LLM flagged any as systemic, note it
+                systemic = any(f.get("systemic_flag") for f in failures)
+                pattern = f"Tool {slug} failed {len(failures)} times in recent executions"
+                if systemic:
+                    pattern += " [SYSTEMIC: likely integration/auth/config issue, not a one-off]"
                 learn = LearningEvent(
                     derived_from=[f.get("id", "") for f in failures],
-                    pattern=f"Tool {slug} failed {len(failures)} times in recent executions",
+                    pattern=pattern,
                     impact=LearningImpact.TOOL_SCORE,
                     applied=True,
                     applied_at=utcnow(),
@@ -133,9 +202,32 @@ def learn_from_evidence(evidence: Evidence, capability: str = "", org_id: str = 
                     row = learn.model_dump()
                     row["pattern_key"] = f"fail_{slug}"
                     row["org_id"] = org_id
+                    row["systemic"] = systemic
                     learning_col.insert_one(row)
                 log.warning(f"Learning: {learn.pattern}")
                 break
+
+    # Pattern 2: systemic flags across different tools — suggests broader infra issue
+    systemic_flags = [e for e in recent if e.get("systemic_flag")]
+    if len(systemic_flags) >= 2:
+        tools = list(set(e.get("tool_slug", "") for e in systemic_flags))
+        already = learning_col is not None and learning_col.find_one(
+            {"pattern_key": "systemic_cross_tool", "org_id": org_id})
+        if not already:
+            learn2 = LearningEvent(
+                derived_from=[e.get("id", "") for e in systemic_flags],
+                pattern=f"Cross-tool systemic issue detected: {', '.join(tools[:3])} — possible infra/auth/config root cause",
+                impact=LearningImpact.TOOL_SCORE,
+                applied=True,
+                applied_at=utcnow(),
+            )
+            if learning_col is not None:
+                row2 = learn2.model_dump()
+                row2["pattern_key"] = "systemic_cross_tool"
+                row2["org_id"] = org_id
+                row2["systemic"] = True
+                learning_col.insert_one(row2)
+            log.warning(f"Learning: {learn2.pattern}")
 
     return learn
 

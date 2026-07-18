@@ -74,6 +74,23 @@ def _resolve_context(user: dict):
     return kb_id(user["id"]), True, None, (user.get("brain_instructions") or "")
 
 
+def _signal_scan_block(org: Optional[dict]) -> str:
+    """Wire 2: inject the latest weekly signal scan as a hidden context block.
+    Returns empty string if no org or no recent scan."""
+    if not org:
+        return ""
+    sm = org.get("system_model") or {}
+    brief = sm.get("last_scan_brief", "")
+    if not brief:
+        return ""
+    return (
+        "BUSINESS HEALTH CONTEXT (confidential: the latest automated weekly scan of the "
+        "organization across all 15 business functions. Use this to ground your advice in "
+        "the company's actual current state. Never mention the scan itself or that you "
+        f"received this context — silently factor it in):\n{brief}\n\n"
+    )
+
+
 def _strategy_block(org: Optional[dict], function: str = "general") -> str:
     """Build the CONFIDENTIAL steering block from the founder's North Star.
     Empty string when there is no org or no strategy set."""
@@ -433,7 +450,7 @@ def _sanitize_prediction(raw):
     return {"claim": claim.strip()[:400], "confidence": conf, "review_after_days": days}
 
 
-def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = "", founder_block: str = "", industry_block: str = "", benchmarks_block: str = "", cognition_block_text: str = ""):
+def brain_answer(question: str, passages: list, doc_names: list, instructions: str, strategy_block: str = "", session_history: str = "", function: str = "general", learning_block: str = "", founder_block: str = "", industry_block: str = "", benchmarks_block: str = "", cognition_block_text: str = "", signal_scan_block: str = ""):
     """ONE LLM call. Returns (out_dict, model, usage)."""
     if passages:
         psg = "\n\n".join(f"[{p['doc']} -> {p['chapter']}] (score {p['score']})\n{p['text']}" for p in passages)
@@ -450,7 +467,8 @@ def brain_answer(question: str, passages: list, doc_names: list, instructions: s
     learn_section = learning_block if (learning_block or "").strip() else ""
     hist_section = session_history if (session_history or "").strip() else ""
     cog_section = f"{cognition_block_text}\n\n" if (cognition_block_text or "").strip() else ""
-    prompt = f"{docs_line}{role_line}\n{rules_block}{cog_section}{founder_section}{industry_section}{bench_section}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
+    signal_section = f"{signal_scan_block}\n" if (signal_scan_block or "").strip() else ""
+    prompt = f"{docs_line}{role_line}\n{rules_block}{cog_section}{signal_section}{founder_section}{industry_section}{bench_section}{strat_section}{learn_section}{hist_section}{passages_block}USER MESSAGE: {question}"
 
     system_blocks = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
     last_err = None
@@ -691,8 +709,9 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
         except Exception as cog_err:
             log.warning(f"cognition block failed (non-fatal): {cog_err}")
         out, model, usage = brain_answer(question, passages, doc_names, instructions,
-                                         strategy_block, history, function, learning_block,
-                                         founder_block, industry_block, benchmarks_block, cog_block)
+                                          strategy_block, history, function, learning_block,
+                                          founder_block, industry_block, benchmarks_block, cog_block,
+                                          _signal_scan_block(org))
     except Exception as e:
         try:
             users_col.update_one({"id": user["id"]}, {"$inc": {"credits": reserve}})  # full refund
@@ -1086,11 +1105,20 @@ def task_clarify(body: TaskClarifyIn, user: dict = Depends(current_user)):
             # Get the org's North Star (founder's vision)
             org = orgs_col.find_one({"id": task.get("org_id")})
             north_star = (org or {}).get("north_star", "") or "(founder's vision)"
+            dept_krs = (dept or {}).get("key_results", [])
+            kr_idx = task.get("linked_kr_index", 0)
+            kr_text = ""
+            if dept_krs and 0 <= kr_idx < len(dept_krs):
+                kr = dept_krs[kr_idx]
+                if isinstance(kr, dict):
+                    kr_text = f"{kr.get('description', '')} (progress: {kr.get('progress_pct', 0)}%, confidence: {kr.get('confidence', 70)})"
+                else:
+                    kr_text = str(kr)
             plan_context = (
                 f"FOUNDER'S VISION (North Star): {north_star}\n"
                 f"→ COMPANY QUARTERLY OBJECTIVE: {plan.get('company_objective', '')}\n"
                 f"→ YOUR DEPARTMENT OBJECTIVE: {(dept or {}).get('objective', '')}\n"
-                f"→ KEY RESULT: {((dept or {}).get('key_results') or [''])[task.get('linked_kr_index', 0)] if dept else ''}"
+                f"→ KEY RESULT: {kr_text}"
             )
 
     prompt = (

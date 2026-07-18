@@ -809,6 +809,334 @@ MODULES = [
         "triggers": [["simultaneously", 2], ["distribution", 2], ["considering", 2], ["initiatives", 2], ["willingness", 2], ["determines", 2], ["difference", 2], ["discipline", 2], ["everything", 2], ["structural", 2]],
         "lens": ("Godin argues that in almost every domain, the distribution of rewards is extreme — the best in the world gets most of the value — and the only path to being the best is to QUIT everything that doesn't - WHEN a founder is struggling and considering quitting → APPLY Dip vs Dead-End diagnosis: 'is this a temporary plateau (Dip) or a structural dead-end? The answer determines what to do.' - WHEN a founder is pursuing too many initiatives simultaneously → APPLY quit-list discipline: 'name three things you will stop doing this month to focus on the one Dip worth pushing through.' - WHEN a founder in"),
     },
+    # === NEW: 10 gap books added for deeper taxonomy coverage ===
+    {
+        "id": "smart_who", "book": "Who (Smart & Street)",
+        "triggers": [("hire", 3), ("hiring", 3), ("recruit", 3), ("candidate", 2), ("interview", 2),
+                     ("scorecard", 3), ("a-player", 3), ("wrong hire", 4), ("job description", 3),
+                     ("reference check", 4), ("reference checks", 4), ("talent", 2)],
+        "lens": ("Force the scorecard: 3-5 measurable outcomes this role must achieve, not responsibilities. Source "
+                 "systematically — the best people aren't looking, you must find them. Chronological deep-dive: walk "
+                 "through every prior job, what they were hired to do, what they accomplished, what mistakes they made. "
+                 "Reference-check the references: ask peers, bosses, subordinates. The single biggest predictor of hire "
+                 "success is whether you defined outcomes before sourcing. If someone's been in the role 3 months and "
+                 "hasn't hit any scorecard outcome, the trajectory rarely reverses."),
+    },
+    {
+        "id": "feld_venture", "book": "Venture Deals (Feld & Mendelson)",
+        "triggers": [("fundraise", 3), ("term sheet", 4), ("term sheets", 4), ("venture capital", 3), ("vc", 2),
+                     ("series a", 3), ("series b", 3), ("raise money", 3), ("investor", 2), ("dilution", 4),
+                     ("liquidation preference", 4), ("board seat", 3), ("option pool", 3), ("down round", 4)],
+        "lens": ("1x non-participating liquidation preference is standard — anything beyond is investor overreach. "
+                 "Negotiate the option pool BEFORE valuation (unallocated pool in pre-money lowers your price). "
+                 "Weighted average anti-dilution is fair; full ratchet can wipe out founders in a down round. Model "
+                 "ownership through 3 rounds before taking any money. Never give investors a board majority at Series A. "
+                 "The best time to raise is when you don't need to. Pick the partner, not the fund — you'll work "
+                 "with this board member for a decade."),
+    },
+    {
+        "id": "ross_pipeline", "book": "Predictable Revenue (Ross)",
+        "triggers": [("pipeline", 3), ("outbound", 3), ("sdr", 3), ("prospecting", 3), ("cold email", 3),
+                     ("cold call", 3), ("lead generation", 3), ("sales team", 2), ("specialization", 2),
+                     ("quota", 2), ("predictable", 2)],
+        "lens": ("Separate prospecting from closing — one person doing both does neither well (SDR → AE → CSM). "
+                 "Seeds-Nets-Spears: you control only Spears (targeted outbound). Cold Email 2.0: <100 words, "
+                 "personalized, value-first, ONE ask. 80% of replies come after the 3rd follow-up — never stop at 1. "
+                 "Daily activity: 40-60 emails, 10-20 calls. Pipeline coverage under 3x is always a top-of-funnel "
+                 "problem, not a closing problem. Founder sells first, documents the process, THEN hires the first AE."),
+    },
+    {
+        "id": "mehta_cs", "book": "Customer Success (Mehta)",
+        "triggers": [("churn", 3), ("retention", 3), ("onboarding", 3), ("customer success", 3),
+                     ("health score", 4), ("health scoring", 4), ("expansion revenue", 3), ("nrr", 4),
+                     ("renewal", 3), ("at-risk", 3), ("time to value", 3), ("aha moment", 3)],
+        "lens": ("The sale is the starting gun, not the finish line. Track NRR — below 100% means existing customers "
+                 "shrink faster than they grow; fix churn before scaling acquisition. Time-to-first-value is the most "
+                 "critical metric: every customer who hasn't hit their 'aha moment' by day 30 is at high risk. Health "
+                 "scoring must flag red accounts on one screen — decaying usage, rising support tickets, key user "
+                 "departure precede churn by 30-60 days. Save playbook: root cause, exec sponsor, recovery milestones, "
+                 "weekly check. The most expensive thing in CS is saving a customer who was never a fit."),
+    },
+    {
+        "id": "croll_analytics", "book": "Lean Analytics (Croll & Yoskovitz)",
+        "triggers": [("metric", 2), ("metrics", 2), ("kpi", 3), ("dashboard", 2), ("data-driven", 2),
+                     ("unit economics", 4), ("cac", 4), ("ltv", 4), ("ltv/cac", 4), ("cohort", 3),
+                     ("retention rate", 3), ("vanity metric", 4), ("omtm", 4), ("analytics", 2)],
+        "lens": ("Find the ONE METRIC THAT MATTERS (OMTM) for your current stage — empathy (problem frequency), "
+                 "stickiness (cohort retention), virality (viral coefficient), revenue (CAC payback), scale (LTV/CAC). "
+                 "Tracking everything = understanding nothing. LTV calculated with a guessed churn rate is a spreadsheet "
+                 "lie. LTV/CAC below 3:1 means unit economics don't work. CAC payback under 12 months is good, under 6 "
+                 "is excellent. A metric you can't act on is noise dressed as information. The test: if this number "
+                 "changed tomorrow, would you do something different?"),
+    },
+    {
+        "id": "forsgren_accelerate", "book": "Accelerate (Forsgren)",
+        "triggers": [("deploy", 3), ("deployment", 3), ("devops", 3), ("tech debt", 4), ("technical debt", 4),
+                     ("ci/cd", 4), ("lead time", 4), ("mttr", 4), ("change failure", 4), ("engineering velocity", 3),
+                     ("release", 2), ("incident", 2), ("delivery", 2)],
+        "lens": ("Four key metrics define delivery performance: deployment frequency, lead time from commit to deploy, "
+                 "MTTR (incident recovery), and change failure rate. Elite teams deploy on-demand with <1h lead time, "
+                 "<1h recovery, and <15% failure rate — speed and stability are NOT trade-offs. Trunk-based development: "
+                 "merge to main daily; branches longer than a day compound integration risk. If it hurts, do it more "
+                 "often — the pain of infrequent deploys is the cost of the practices that make them infrequent. "
+                 "Generative culture (high trust, messengers rewarded) + lean practices = highest performance."),
+    },
+    {
+        "id": "goldratt_toc", "book": "The Goal (Goldratt)",
+        "triggers": [("bottleneck", 4), ("constraint", 3), ("throughput", 4), ("efficiency", 2),
+                     ("busy but nothing ships", 4), ("always behind", 3), ("capacity", 2), ("backlog", 2),
+                     ("utilization", 3), ("work in progress", 3), ("wip", 3), ("optimizing the wrong thing", 4)],
+        "lens": ("Every system has exactly ONE constraint that determines throughput. Identify it (biggest queue, "
+                 "100% utilization while others idle), exploit it (never let it be idle, feed it only quality inputs), "
+                 "subordinate everything to it (non-constraints run at the constraint's pace — faster is waste). Only "
+                 "then elevate (invest). Making every local step efficient makes the WHOLE system less efficient. "
+                 "An hour lost at the constraint is an hour lost for the entire system. A cost reduction that reduces "
+                 "throughput is worse than no action. Ask: what's the ONE thing that, if improved, would increase "
+                 "throughput the most?"),
+    },
+    {
+        "id": "scott_candor", "book": "Radical Candor (Scott)",
+        "triggers": [("feedback", 3), ("performance review", 3), ("hard conversation", 3), ("difficult conversation", 3),
+                     ("underperforming", 3), ("managing someone", 3), ("1:1", 2), ("1-on-1", 2),
+                     ("praise", 2), ("criticism", 2), ("fire", 2), ("firing", 2), ("career growth", 3)],
+        "lens": ("Care personally AND challenge directly — Ruinous Empathy (caring without challenging) hurts more than "
+                 "honesty. Solicit guidance before giving it: 'what could I do differently to support you better?' "
+                 "Praise in public must be specific (the behavior, impact, result). Criticism: immediate, private, about "
+                 "the work not the person. Never save feedback for performance reviews — if someone is surprised, you "
+                 "failed for the previous 11 months. 1:1s are for coaching and career talk, not status updates. "
+                 "Distinguish superstars (steep growth) from rock stars (gradual growth) — both are equally valuable."),
+    },
+    {
+        "id": "dunford_positioning", "book": "Obviously Awesome (Dunford)",
+        "triggers": [("positioning", 4), ("position", 3), ("differentiation", 3), ("messaging", 2),
+                     ("value prop", 3), ("value proposition", 3), ("people don't get it", 4),
+                     ("hard to explain", 4), ("category", 2), ("competitive alternative", 3), ("rebrand", 2)],
+        "lens": ("Positioning is NOT messaging — it's the foundation messaging is built on. 5 components: (1) competitive "
+                 "alternatives (include 'do nothing' and 'manual process'), (2) unique attributes (what you have that "
+                 "they don't), (3) value (link each attribute to specific customer value), (4) target market (who cares "
+                 "MOST — narrow until you're 10x better, not 10% better), (5) market category (adopt an existing category "
+                 "unless you have $50M+ to educate the market on a new one). Bad positioning makes great products look "
+                 "mediocre. Signs you need repositioning: long sales cycles, high churn, discount pressure."),
+    },
+    {
+        "id": "wasserman_dilemmas", "book": "The Founder's Dilemmas (Wasserman)",
+        "triggers": [("co-founder", 4), ("cofounder", 4), ("co-founding", 4), ("equity split", 4), ("equity", 3),
+                     ("vesting", 3), ("founder conflict", 4), ("ceo replacement", 4), ("replace ceo", 4),
+                     ("rich vs king", 4), ("board dynamics", 3), ("succession", 3), ("founder agreement", 4)],
+        "lens": ("Equal equity splits are the #1 founder regret — contributions ALWAYS diverge. Use dynamic vesting tied "
+                 "to future contributions. Before taking VC money, answer honestly: do you want to be rich (smaller "
+                 "slice of a bigger pie) or king (control at all costs)? They require different paths. The co-founder "
+                 "relationship needs a pre-nup: what happens if someone leaves, gets sick, stops contributing? 50%+ of "
+                 "founders are replaced as CEO by Series C — often the right call. Never surprise the board, especially "
+                 "with bad news. The best time to build a board relationship is before you need money."),
+    },
+    # === Generated: 40 additional lens modules from gap analysis ===
+    {
+        "id": "collins_built", "book": "BUILT TO LAST",
+        "triggers": [["became", 3], ["beyond", 3], ["build", 3], ["change", 3], ["company", 3], ["competitive", 3], ["continuity", 3], ["disadvantage", 3], ["even", 3], ["genius", 3], ["hold", 3], ["leader", 3]],
+        "lens": "Visionary companies — those that have been industry leaders for 50+ years — share specific habits: they preserve a core ideology (purpose + values) while stimulating progress in everything else. They have Big Hairy Audacious Goals (BHAGs), cult-like cultures, and a relentless focus on building the company, not just the product. Great companies are built to last because they're more than any single",
+    },
+    {
+        "id": "aulet_disciplined", "book": "DISCIPLINED ENTREPRENEURSHIP",
+        "triggers": [["beachhead", 3], ["choose", 3], ["discipline", 3], ["dominate", 3], ["entrepreneurship", 3], ["everyone", 3], ["expand", 3], ["follow", 3], ["market", 3], ["mistake", 3], ["mystery", 3], ["segment", 3]],
+        "lens": "Entrepreneurship is not a mysterious art — it's a discipline that can be learned. Aulet's 24-step framework (from MIT's entrepreneurship program) provides a step-by-step process for building an innovation-driven enterprise. The core sequence: market segmentation → beachhead market selection → end-user profile → TAM calculation → persona definition → full life cycle use case → high-level product sp",
+    },
+    {
+        "id": "ramadan_bigger", "book": "PLAY BIGGER",
+        "triggers": [["bake", 3], ["capture", 3], ["category", 3], ["compete", 3], ["design", 3], ["else", 3], ["everyone", 3], ["existing", 3], ["function", 3], ["kings", 3], ["marketing", 3], ["slice", 3]],
+        "lens": "The greatest value creation comes not from building a better product within an existing category — but from designing and dominating a new category. Play Bigger's research: category kings (companies that define, develop, and dominate a new category) capture 76% of the category's total market cap. The rest split 24%. Category design is the ultimate strategic move.",
+    },
+    {
+        "id": "bock_workrules", "book": "WORK RULES!",
+        "triggers": [["across", 3], ["annual", 3], ["beats", 3], ["behaviors", 3], ["best", 3], ["better", 3], ["building", 3], ["builds", 3], ["chats", 3], ["coaches", 3], ["coaching", 3], ["default", 3]],
+        "lens": "Google's former SVP of People Operations shares the data-driven, scientific approach that made Google one of the most desired workplaces. The core insight: most HR practices are based on tradition and intuition, not evidence — and the evidence often points in the opposite direction. From hiring (structured interviews beat unstructured by massive margins) to compensation (pay unfairly — reward your",
+    },
+    {
+        "id": "lencioni_dysfunctions", "book": "THE FIVE DYSFUNCTIONS OF A TEAM",
+        "triggers": [["accountability", 3], ["agreement", 3], ["avoiding", 3], ["boring", 3], ["commitment", 3], ["conflict", 3], ["disagreement", 3], ["failure", 3], ["first", 3], ["followed", 3], ["foundation", 3], ["hallway", 3]],
+        "lens": "The single biggest driver of organizational performance is the health of the leadership team — and dysfunction follows a predictable, layered pattern. Lencioni's pyramid has 5 levels, each building on the one below: (1) Absence of Trust → (2) Fear of Conflict → (3) Lack of Commitment → (4) Avoidance of Accountability → (5) Inattention to Results. Fix the bottom layer first; you cannot fix accounta",
+    },
+    {
+        "id": "feld_boards", "book": "STARTUP BOARDS",
+        "triggers": [["adds", 3], ["advance", 3], ["around", 3], ["been", 3], ["board", 3], ["build", 3], ["could", 3], ["deliberately", 3], ["director", 3], ["independent", 3], ["manages", 3], ["meetings", 3]],
+        "lens": "Most founders build their first board by accident — whoever led the last round gets a seat. This is a catastrophic mistake. The board is one of the most powerful forces in a company's trajectory; a bad board can destroy a good company. Feld's framework: build the board deliberately, manage it proactively, and understand that board dynamics are not governance theater — they are the actual decision-",
+    },
+    {
+        "id": "covey_trust", "book": "THE SPEED OF TRUST",
+        "triggers": [["account", 3], ["behavior", 3], ["biggest", 3], ["broken", 3], ["business", 3], ["cost", 3], ["creates", 3], ["down", 3], ["driver", 3], ["even", 3], ["every", 3], ["extend", 3]],
+        "lens": "Trust is not a soft, social virtue — it is a hard, measurable economic driver. Covey's thesis: trust always affects two measurable outcomes — speed and cost. When trust goes down, speed goes down and cost goes up (trust tax). When trust goes up, speed goes up and cost goes down (trust dividend). In business, trust is THE most significant predictor of long-term success across every relationship: cu",
+    },
+    {
+        "id": "watkins_90days", "book": "THE FIRST 90 DAYS",
+        "triggers": [["also", 3], ["approach", 3], ["career", 3], ["days", 3], ["everything", 3], ["first", 3], ["kills", 3], ["learnable", 3], ["match", 3], ["measurable", 3], ["momentum", 3], ["period", 3]],
+        "lens": "Transitions are periods of acute vulnerability — for the individual and the organization. Watkins' research on senior executive transitions shows that failures in the first 90 days almost never result from lack of competence but from failure to diagnose the situation, secure early wins, and build the right coalitions. The first 90 days is a predictable, learnable process.",
+    },
+    {
+        "id": "goldsmith_whatgotyou", "book": "WHAT GOT YOU HERE WON'T GET YOU THERE",
+        "triggers": [["back", 3], ["behaviors", 3], ["built", 3], ["doing", 3], ["every", 3], ["follow", 3], ["here", 3], ["holding", 3], ["improving", 3], ["magic", 3], ["month", 3], ["should", 3]],
+        "lens": "Successful people succeed because of their strengths — but the very behaviors that drove early success often become career-limiting at higher levels. Goldsmith identifies 20 specific interpersonal habits that hold successful people back: winning too much, adding too much value, passing judgment, making destructive comments, starting with 'no/but/however,' telling the world how smart we are, speaki",
+    },
+    {
+        "id": "sutton_noasshole", "book": "The No Asshole Rule (Sutton)",
+        "triggers": [["always", 3], ["asshole", 3], ["behavioral", 3], ["benefit", 3], ["brilliant", 3], ["cost", 3], ["costs", 3], ["define", 3], ["enforce", 3], ["even", 3], ["higher", 3], ["lost", 3]],
+        "lens": "One toxic person — a 'certified asshole' — can destroy team performance, drive out top performers, and create costs that far exceed their individual contribution. Sutton's research (from Stanford) shows that toxic employees create 2-3x their salary in costs: turnover of good people, lost productivity from people avoiding them, management time spent managing around them. The rule is simple: no matt",
+    },
+    {
+        "id": "moyer_slicingpie", "book": "SLICING PIE",
+        "triggers": [["based", 3], ["contributes", 3], ["dynamic", 3], ["equity", 3], ["facts", 3], ["fair", 3], ["fixed", 3], ["gamble", 3], ["guessed", 3], ["guesses", 3], ["money", 3], ["person", 3]],
+        "lens": "The single biggest early-stage mistake: splitting equity at the founding with fixed percentages before anyone knows who will contribute what. Moyer's solution: dynamic equity (the 'Grunt Fund') — equity is allocated based on each person's actual contributions (time, money, ideas, relationships, equipment) relative to the total contributions, adjusted continuously over time. Fixed equity splits are",
+    },
+    {
+        "id": "berman_finance", "book": "FINANCIAL INTELLIGENCE",
+        "triggers": [["accounting", 3], ["before", 3], ["blind", 3], ["budget", 3], ["built", 3], ["cash", 3], ["consumes", 3], ["dead", 3], ["driving", 3], ["else", 3], ["everything", 3], ["fact", 3]],
+        "lens": "Most founders and managers lack financial literacy — they can't read an income statement, can't distinguish profit from cash, and make decisions based on bank balances rather than financial reality. Financial Intelligence provides the framework for understanding the numbers that drive business performance: income statement (profitability), balance sheet (financial position), cash flow statement (l",
+    },
+    {
+        "id": "croll_saas", "book": "SAAS METRICS 2.0",
+        "triggers": [["above", 3], ["acquiring", 3], ["customers", 3], ["efficiency", 3], ["even", 3], ["excellent", 3], ["existing", 3], ["first", 3], ["grow", 3], ["healthy", 3], ["invest", 3], ["magic", 3]],
+        "lens": "Skok's SaaS metrics framework is the industry standard for measuring subscription business health. The key insight: SaaS is a 'leaky bucket' where every month some customers churn. Growth only happens when new customers > lost customers. Core metrics: MRR/ARR, churn rate, LTV, CAC, CAC payback, renewal rate, expansion rate, ARPU. The 'golden metrics' of SaaS: (1) Negative churn — expansion revenue",
+    },
+    {
+        "id": "ramaswamy_pricing", "book": "MONETIZING INNOVATION",
+        "triggers": [["based", 3], ["beats", 3], ["before", 3], ["best", 3], ["better", 3], ["bolted", 3], ["broken", 3], ["build", 3], ["comes", 3], ["commodities", 3], ["cost", 3], ["designed", 3]],
+        "lens": "The #1 cause of new product failure is not bad engineering or poor marketing — it's pricing. Most companies build the product first, then figure out pricing right before launch. Ramanujam (Simon-Kucher partner, advised on 10,000+ pricing projects) argues pricing must be designed INTO the product from the start — what customers are willing to pay determines what to build and for whom. Products desi",
+    },
+    {
+        "id": "kohavi_experiments", "book": "TRUSTWORTHY ONLINE CONTROLLED EXPERIMENTS",
+        "triggers": [["align", 3], ["before", 3], ["building", 3], ["clicks", 3], ["criterion", 3], ["evaluation", 3], ["experiment", 3], ["fail", 3], ["false", 3], ["good", 3], ["highest", 3], ["hippo", 3]],
+        "lens": "A/B testing is the dominant method for data-driven decision making in tech companies, but most organizations run A/B tests wrong: they peek at results, stop early, misinterpret p-values, or run underpowered tests. Kohavi (former head of experimentation at Amazon, Microsoft, Airbnb) provides the definitive guide to running trustworthy experiments at scale. The core insight: most ideas that 'should ",
+    },
+    {
+        "id": "poundstone_priceless", "book": "PRICELESS",
+        "triggers": [["anchor", 3], ["becomes", 3], ["calculations", 3], ["customer", 3], ["deliberately", 3], ["erases", 3], ["first", 3], ["free", 3], ["high", 3], ["option", 3], ["powerful", 3], ["preference", 3]],
+        "lens": "Price is never objective. Poundstone reveals the psychology behind pricing: anchoring (the first number you see becomes the reference), the decoy effect (adding a bad option makes the target look better), charm pricing ($9.99 vs $10 — the left digit effect), and the power of context (the same coffee costs $2 at a diner and $5 at a cafe because of the frame). Pricing is 90% psychology and 10% econo",
+    },
+    {
+        "id": "nagle_pricing", "book": "THE STRATEGY AND TACTICS OF PRICING",
+        "triggers": [["across", 3], ["alienating", 3], ["anyone", 3], ["between", 3], ["capture", 3], ["captures", 3], ["create", 3], ["customer", 3], ["economic", 3], ["leaves", 3], ["must", 3], ["price", 3]],
+        "lens": "The definitive pricing textbook — used in MBA programs worldwide. Nagle's framework: pricing strategy must be integrated with business strategy, not an afterthought. The core framework: (1) Value Creation — what is the product's differentiated value? (2) Price Structure — how do you charge (per unit, subscription, usage-based, bundled)? (3) Price Level — at what price point? (4) Price Communicatio",
+    },
+    {
+        "id": "cagan_inspired", "book": "INSPIRED",
+        "triggers": [["anyone", 3], ["before", 3], ["biggest", 3], ["build", 3], ["commit", 3], ["describe", 3], ["empowered", 3], ["feature", 3], ["features", 3], ["outcomes", 3], ["problems", 3], ["product", 3]],
+        "lens": "Most product teams are not empowered to solve problems — they're feature factories implementing stakeholder requests. Cagan (former SVP of Product at eBay, Netscape, AOL) defines what GREAT product teams do differently: they are given problems to solve, not features to build. They have the skills and authority to discover solutions. They are measured on outcomes, not output. The distinction betwee",
+    },
+    {
+        "id": "chen_coldstart", "book": "THE COLD START PROBLEM",
+        "triggers": [["action", 3], ["beats", 3], ["compound", 3], ["creates", 3], ["dense", 3], ["density", 3], ["design", 3], ["find", 3], ["funnels", 3], ["growth", 3], ["harder", 3], ["loops", 3]],
+        "lens": "Networked products (marketplaces, social networks, SaaS with collaboration) face a unique challenge: they're useless until enough people use them. This is the cold start problem. Chen (former Uber growth lead, a16z partner) decomposes how successful network-effect companies solved this: starting with a tiny, atomic network where the product delivers value at small scale, then systematically expand",
+    },
+    {
+        "id": "google_sre", "book": "SITE RELIABILITY ENGINEERING",
+        "triggers": [["affected", 3], ["alert", 3], ["blameless", 3], ["budget", 3], ["causes", 3], ["difference", 3], ["eliminate", 3], ["error", 3], ["every", 3], ["failure", 3], ["goal", 3], ["human", 3]],
+        "lens": "SRE is what happens when you ask a software engineer to design an operations function. Instead of manually managing servers, SREs write software to manage systems. The core principles: (1) reliability is a feature, (2) 100% reliability is neither possible nor desirable — users don't notice the difference between 99.9% and 99.99%, (3) an error budget defines how much unreliability is acceptable, (4",
+    },
+    {
+        "id": "kleppmann_data", "book": "DESIGNING DATA-INTENSIVE APPLICATIONS",
+        "triggers": [["already", 3], ["architectures", 3], ["availability", 3], ["batch", 3], ["best", 3], ["both", 3], ["change", 3], ["choose", 3], ["complexity", 3], ["consistency", 3], ["correctness", 3], ["cost", 3]],
+        "lens": "Every application built today is data-intensive — storage, retrieval, processing, and serving. Kleppmann provides the definitive guide to the foundational technologies: databases (relational, document, graph), storage engines, encoding formats, replication, partitioning, transactions, distributed consensus, batch and stream processing. The guiding principle: choose the right tool for the right job",
+    },
+    {
+        "id": "bush_plg", "book": "PRODUCT-LED GROWTH",
+        "triggers": [["behavior", 3], ["best", 3], ["call", 3], ["convert", 3], ["enough", 3], ["experienced", 3], ["first", 3], ["free", 3], ["freemium", 3], ["hasn", 3], ["lead", 3], ["little", 3]],
+        "lens": "The traditional SaaS growth model — sales-led (SDR → AE → CSM) — is being displaced by product-led growth (PLG), where the product itself is the primary driver of acquisition, activation, retention, and expansion. Bush's framework: the product must deliver value BEFORE the purchase (free tier, free trial, freemium), and the user's experience of that value must naturally lead to upgrade. The result",
+    },
+    {
+        "id": "newman_microservices", "book": "BUILDING MICROSERVICES",
+        "triggers": [["actions", 3], ["around", 3], ["business", 3], ["classes", 3], ["cohesive", 3], ["compensating", 3], ["coupled", 3], ["data", 3], ["databases", 3], ["default", 3], ["designed", 3], ["distributed", 3]],
+        "lens": "Microservices are an architectural style where applications are decomposed into small, independent services that communicate over the network. The benefits (independent deployability, technology heterogeneity, scaling by service, organizational alignment) are real — but so are the costs (network latency, distributed data, eventual consistency, operational complexity). Newman's core argument: micro",
+    },
+    {
+        "id": "perri_buildtrap", "book": "ESCAPING THE BUILD TRAP",
+        "triggers": [["adoption", 3], ["build", 3], ["dead", 3], ["debt", 3], ["describe", 3], ["discover", 3], ["feature", 3], ["features", 3], ["managers", 3], ["measuring", 3], ["objective", 3], ["organizational", 3]],
+        "lens": "Most companies are stuck in the 'build trap' — prioritizing output (features shipped) over outcomes (problems solved, value created). Perri diagnoses how organizations fall into this trap: when strategy is absent or unclear, when product managers act as project managers, when roadmaps are feature lists rather than problem statements, and when success is measured in story points. Escaping requires:",
+    },
+    {
+        "id": "humble_cd", "book": "CONTINUOUS DELIVERY",
+        "triggers": [["accumulating", 3], ["always", 3], ["broken", 3], ["bugs", 3], ["changes", 3], ["deployable", 3], ["deployment", 3], ["easier", 3], ["find", 3], ["pipeline", 3], ["risk", 3], ["should", 3]],
+        "lens": "Continuous delivery is the ability to get changes — features, configuration changes, bug fixes, experiments — into production safely, quickly, and sustainably. The key test: is your software always in a deployable state? If not, you're accumulating risk. CD transforms the release process from a multi-week stressful event to a boring push-button operation.",
+    },
+    {
+        "id": "feathers_legacy", "book": "WORKING EFFECTIVELY WITH LEGACY CODE",
+        "triggers": [["before", 3], ["behavior", 3], ["bugs", 3], ["change", 3], ["changing", 3], ["characterize", 3], ["code", 3], ["current", 3], ["editing", 3], ["existing", 3], ["find", 3], ["legacy", 3]],
+        "lens": "Legacy code is code without tests. Feathers' definition is precise and practical: if you can't change it safely and quickly, it's legacy — regardless of when it was written. The book provides a toolkit for transforming untested, tangled code into testable, maintainable code without rewriting everything. The core technique: characterization tests (tests that capture the code's CURRENT behavior befo",
+    },
+    {
+        "id": "kimball_warehouse", "book": "THE DATA WAREHOUSE TOOLKIT",
+        "triggers": [["anything", 3], ["around", 3], ["before", 3], ["center", 3], ["conformed", 3], ["customer", 3], ["declare", 3], ["definition", 3], ["dimensions", 3], ["does", 3], ["edge", 3], ["else", 3]],
+        "lens": "The definitive guide to dimensional modeling — the standard technique for designing data warehouses that business users can actually query. Kimball's approach (dimensional modeling with fact and dimension tables) is used in virtually every modern data warehouse (Snowflake, BigQuery, Redshift). The core concept: fact tables (measurements — sales transactions, page views, support tickets) surrounded",
+    },
+    {
+        "id": "hoffman_security", "book": "WEB APPLICATION SECURITY",
+        "triggers": [["client", 3], ["concatenate", 3], ["continuously", 3], ["every", 3], ["feature", 3], ["injection", 3], ["input", 3], ["into", 3], ["manipulated", 3], ["model", 3], ["never", 3], ["parameterized", 3]],
+        "lens": "The OWASP Top 10 is the minimum; real security requires understanding the full attack surface of web applications. Hoffman provides the comprehensive guide: reconnaissance (how attackers map your system), offense (the actual attacks — XSS, CSRF, SQL injection, SSRF, auth bypass, session hijacking), and defense (secure coding, Content Security Policy, Subresource Integrity, secure headers, input va",
+    },
+    {
+        "id": "choudary_platform", "book": "PLATFORM SCALE",
+        "triggers": [["chicken", 3], ["choice", 3], ["core", 3], ["curated", 3], ["enable", 3], ["first", 3], ["happen", 3], ["important", 3], ["interaction", 3], ["open", 3], ["platform", 3], ["platforms", 3]],
+        "lens": "Platform businesses (marketplaces, app stores, social networks) operate under fundamentally different rules than traditional pipeline businesses. Choudary's framework: platforms create value by enabling interactions between producers and consumers — they don't produce anything themselves. The platform's core job: (1) Enable the core interaction (the value exchange between producer and consumer). (",
+    },
+    {
+        "id": "penenberg_viral", "book": "VIRAL LOOP",
+        "triggers": [["adding", 3], ["beats", 3], ["below", 3], ["benefit", 3], ["coefficient", 3], ["design", 3], ["exponential", 3], ["expose", 3], ["funnel", 3], ["growth", 3], ["improving", 3], ["linear", 3]],
+        "lens": "The most powerful growth engine is a viral loop — a mechanism where existing users bring new users, who bring more users, in a self-reinforcing cycle. Penenberg traces the history of viral businesses from Tupperware parties to Facebook, showing that viral growth is not luck — it's designed. The viral loop has three stages: (1) a user uses the product, (2) the product inherently exposes the product",
+    },
+    {
+        "id": "roberge_sales", "book": "THE SALES ACCELERATION FORMULA",
+        "triggers": [["build", 3], ["caps", 3], ["coach", 3], ["commission", 3], ["customers", 3], ["data", 3], ["deal", 3], ["feature", 3], ["feel", 3], ["generation", 3], ["growth", 3], ["ideal", 3]],
+        "lens": "The single biggest scaling bottleneck in SaaS is the sales team. Roberge (HubSpot CRO, grew revenue from $0 to $100M) codifies a data-driven, process-oriented approach to building a sales team. The formula: hire the same successful profile every time, provide the same training, provide the same quantity/quality of leads, and hold to the same compensation plan — then use data to identify the bottle",
+    },
+    {
+        "id": "dixon_challenger", "book": "THE CHALLENGER SALE",
+        "triggers": [["another", 3], ["best", 3], ["builders", 3], ["buying", 3], ["challenge", 3], ["collateral", 3], ["comfort", 3], ["complex", 3], ["conversation", 3], ["costs", 3], ["customer", 3], ["doesn", 3]],
+        "lens": "The old sales wisdom that 'relationship builders' win is wrong — at least in complex B2B sales. Dixon & Adamson's CEB research on 6,000+ salespeople across 100+ companies found that sales reps fall into 5 profiles: Hard Workers, Relationship Builders, Lone Wolves, Problem Solvers, and Challengers. Challengers — who teach customers something new, tailor the message to their specific context, and ta",
+    },
+    {
+        "id": "sheridan_ask", "book": "THEY ASK, YOU ANSWER",
+        "triggers": [["about", 3], ["answer", 3], ["asking", 3], ["best", 3], ["builds", 3], ["buyers", 3], ["claims", 3], ["class", 3], ["comparisons", 3], ["content", 3], ["customers", 3], ["educates", 3]],
+        "lens": "Sheridan saved his swimming pool company during the 2008 financial crisis by answering every customer question honestly and publicly — including the ones competitors hide (pricing, problems, comparisons). The result: a content machine that generated $4M+ annually from organic search alone. The thesis: your customers are asking the same questions every day. If you answer them publicly and honestly,",
+    },
+    {
+        "id": "holiday_perennial", "book": "PERENNIAL SELLER",
+        "triggers": [["asset", 3], ["compounds", 3], ["content", 3], ["control", 3], ["cost", 3], ["else", 3], ["email", 3], ["everything", 3], ["expires", 3], ["finish", 3], ["hero", 3], ["hours", 3]],
+        "lens": "Most marketing content is disposable — written for the moment, forgotten in days. Holiday's thesis: the best marketing creates assets that compound over years. A perennial seller is a book, article, talk, or body of work that continues to find an audience year after year without ongoing promotion. The principles: (1) create timeless work that doesn't expire, (2) build a platform, not a campaign, (",
+    },
+    {
+        "id": "fisher_gettingyes", "book": "GETTING TO YES",
+        "triggers": [["ability", 3], ["against", 3], ["away", 3], ["batna", 3], ["beats", 3], ["criteria", 3], ["fair", 3], ["insist", 3], ["interests", 3], ["know", 3], ["negotiate", 3], ["negotiation", 3]],
+        "lens": "The single most influential negotiation book ever written. Fisher & Ury's Harvard Negotiation Project framework: (1) Separate the people from the problem. (2) Focus on interests, not positions. (3) Invent options for mutual gain. (4) Insist on objective criteria. The cornerstone concept: BATNA (Best Alternative To a Negotiated Agreement) — your power in any negotiation is your ability to walk away",
+    },
+    {
+        "id": "reichheld_nps", "book": "The Ultimate Question (Reichheld)",
+        "triggers": [["absolute", 3], ["behavior", 3], ["call", 3], ["close", 3], ["customer", 3], ["detractor", 3], ["every", 3], ["follow", 3], ["give", 3], ["hours", 3], ["loop", 3], ["matters", 3]],
+        "lens": "The single best predictor of customer behavior — will they stay, spend more, or refer others? — is the answer to one question: 'How likely are you to recommend us to a friend or colleague?' (0-10). The Net Promoter Score (NPS) = % Promoters (9-10) minus % Detractors (0-6). NPS > 50 is world-class. But Reichheld's deeper point: NPS is useless if you don't act on it. The metric is a prompt for actio",
+    },
+    {
+        "id": "crestodina_content", "book": "CONTENT CHEMISTRY",
+        "triggers": [["awareness", 3], ["blog", 3], ["companies", 3], ["consideration", 3], ["content", 3], ["creation", 3], ["decision", 3], ["educate", 3], ["funnel", 3], ["great", 3], ["ignore", 3], ["nobody", 3]],
+        "lens": "Most content marketing fails because it's created without understanding content's place in the marketing funnel. Crestodina's framework: content must be designed for specific stages of the buyer journey (awareness → consideration → decision) AND for specific channels (search, social, email). The core insight: content strategy has two sides — content creation (what you make) and content promotion (",
+    },
+    {
+        "id": "dixon_jolt", "book": "THE JOLT EFFECT",
+        "triggers": [["another", 3], ["biggest", 3], ["competitor", 3], ["create", 3], ["decision", 3], ["fewer", 3], ["many", 3], ["options", 3], ["paralysis", 3], ["present", 3], ["sales", 3], ["tell", 3]],
+        "lens": "The biggest competitor in B2B sales is not another company — it's 'no decision.' 40-60% of qualified B2B deals are lost not to a competitor, but to the status quo. Dixon & McKenna's research on 2.5M+ sales conversations reveals why: high-performing reps (top 20%) lose fewer deals to indecision, not because they're better closers, but because they address the customer's fear of failure (FOF). Custo",
+    },
+    {
+        "id": "smith_farm", "book": "FARM DON'T HUNT",
+        "triggers": [["above", 3], ["below", 3], ["best", 3], ["class", 3], ["costs", 3], ["customers", 3], ["existing", 3], ["expansion", 3], ["farming", 3], ["highest", 3], ["hunting", 3], ["less", 3]],
+        "lens": "The most efficient growth lever in B2B SaaS is not new logo acquisition — it's farming existing customer relationships for expansion revenue. Most companies treat sales as 'hunting' (acquiring new logos) while neglecting 'farming' (growing existing accounts through upsell, cross-sell, and retention). Smith's framework: the farm is where 70-80% of lifetime value resides. Nurturing existing accounts",
+    },
+    {
+        "id": "vaynerchuk_crushing", "book": "CRUSHING IT!",
+        "triggers": [["algorithm", 3], ["asking", 3], ["before", 3], ["camera", 3], ["consistency", 3], ["create", 3], ["document", 3], ["every", 3], ["give", 3], ["hook", 3], ["once", 3], ["point", 3]],
+        "lens": "Your personal brand is the most valuable business asset you control. Vaynerchuk's thesis: every entrepreneur should build a personal brand through content on social media — not polished corporate content, but authentic, daily documentation of the journey. The platforms change (Instagram, TikTok, LinkedIn, podcast, YouTube), but the principle is constant: give value first, sell second. Jab, jab, ja",
+    },
+    {
+        "id": "torres_discovery", "book": "Continuous Discovery Habits (Torres)",
+        "triggers": [["assumption", 3], ["continuous", 3], ["discovery", 3], ["experiment", 3], ["habit", 3], ["opportunity", 3], ["problem", 2], ["product", 2], ["riskiest", 4], ["trio", 4], ["weekly", 3]],
+        "lens": "Product discovery should not be a phase before delivery — it should be continuous. Torres provides the framework for product trios to talk to customers every week and test assumptions. Opportunity Solution Tree: start with desired outcome, map opportunities (customer needs), generate solutions, run experiments. Continuous interviewing: talk to customers weekly. Assumption testing: every idea rests on assumptions; test the riskiest first with the cheapest experiment. The Product Trio (PM + designer + engineer) collaborate on discovery.",
+    },
+
 ]
 
 # Books whose lessons apply so broadly they get a small tie-break boost
@@ -929,6 +1257,60 @@ KNOWLEDGE_MAP = {
     "mans_search_for_meaning": "knowledge/08-mindset-performance/93_mans_search_for_meaning.md",
     "war_of_art": "knowledge/08-mindset-performance/94_war_of_art.md",
     "the_dip": "knowledge/08-mindset-performance/95_the_dip.md",
+    # === Generated: 40 additional knowledge map entries ===
+    "collins_built": "knowledge/02-strategy/141_built_to_last.md",
+    "aulet_disciplined": "knowledge/02-strategy/151_disciplined_entrepreneurship.md",
+    "ramadan_bigger": "knowledge/02-strategy/152_play_bigger.md",
+    "bock_workrules": "knowledge/04-leadership-management/125_work_rules.md",
+    "lencioni_dysfunctions": "knowledge/04-leadership-management/127_five_dysfunctions.md",
+    "feld_boards": "knowledge/04-leadership-management/137_startup_boards.md",
+    "covey_trust": "knowledge/04-leadership-management/139_speed_of_trust.md",
+    "watkins_90days": "knowledge/04-leadership-management/140_first_90_days.md",
+    "goldsmith_whatgotyou": "knowledge/04-leadership-management/142_what_got_you_here.md",
+    "sutton_noasshole": "knowledge/04-leadership-management/143_no_asshole_rule.md",
+    "moyer_slicingpie": "knowledge/04-leadership-management/154_slicing_pie.md",
+    "berman_finance": "knowledge/07-finance/123_financial_intelligence.md",
+    "croll_saas": "knowledge/07-finance/150_saas_metrics.md",
+    "ramaswamy_pricing": "knowledge/01-decision-making/133_monetizing_innovation.md",
+    "kohavi_experiments": "knowledge/01-decision-making/138_trustworthy_experiments.md",
+    "poundstone_priceless": "knowledge/01-decision-making/149_priceless.md",
+    "nagle_pricing": "knowledge/01-decision-making/153_strategy_tactics_pricing.md",
+    "cagan_inspired": "knowledge/05-product-innovation/126_inspired.md",
+    "chen_coldstart": "knowledge/11-growth-platform/128_cold_start_problem.md",
+    "google_sre": "knowledge/09-technology-engineering/129_site_reliability_engineering.md",
+    "kleppmann_data": "knowledge/09-technology-engineering/130_designing_data_intensive.md",
+    "bush_plg": "knowledge/11-growth-platform/131_product_led_growth.md",
+    "newman_microservices": "knowledge/09-technology-engineering/132_building_microservices.md",
+    "perri_buildtrap": "knowledge/05-product-innovation/135_escaping_build_trap.md",
+    "humble_cd": "knowledge/09-technology-engineering/148_continuous_delivery.md",
+    "feathers_legacy": "knowledge/09-technology-engineering/158_legacy_code.md",
+    "kimball_warehouse": "knowledge/09-technology-engineering/159_data_warehouse.md",
+    "hoffman_security": "knowledge/09-technology-engineering/160_web_app_security.md",
+    "choudary_platform": "knowledge/11-growth-platform/162_platform_scale.md",
+    "penenberg_viral": "knowledge/11-growth-platform/163_viral_loop.md",
+    "roberge_sales": "knowledge/03-marketing-sales/122_sales_acceleration_formula.md",
+    "dixon_challenger": "knowledge/03-marketing-sales/124_challenger_sale.md",
+    "sheridan_ask": "knowledge/03-marketing-sales/134_they_ask_you_answer.md",
+    "holiday_perennial": "knowledge/03-marketing-sales/136_perennial_seller.md",
+    "fisher_gettingyes": "knowledge/03-marketing-sales/144_getting_to_yes.md",
+    "reichheld_nps": "knowledge/10-customer-success/145_ultimate_question.md",
+    "crestodina_content": "knowledge/03-marketing-sales/155_content_chemistry.md",
+    "dixon_jolt": "knowledge/03-marketing-sales/156_jolt_effect.md",
+    "smith_farm": "knowledge/10-customer-success/157_farm_dont_hunt.md",
+    "vaynerchuk_crushing": "knowledge/03-marketing-sales/161_crushing_it.md",
+    # === First 10 gap books (manual, before auto-generation) ===
+    "smart_who": "knowledge/04-leadership-management/112_who.md",
+    "feld_venture": "knowledge/07-finance/113_venture_deals.md",
+    "ross_pipeline": "knowledge/03-marketing-sales/114_predictable_revenue.md",
+    "mehta_cs": "knowledge/10-customer-success/115_customer_success.md",
+    "croll_analytics": "knowledge/01-decision-making/116_lean_analytics.md",
+    "forsgren_accelerate": "knowledge/09-technology-engineering/117_accelerate.md",
+    "goldratt_toc": "knowledge/01-decision-making/118_the_goal.md",
+    "scott_candor": "knowledge/04-leadership-management/119_radical_candor.md",
+    "dunford_positioning": "knowledge/03-marketing-sales/120_obviously_awesome.md",
+    "wasserman_dilemmas": "knowledge/04-leadership-management/121_founders_dilemmas.md",
+    "torres_discovery": "knowledge/05-product-innovation/147_continuous_discovery.md",
+
 }
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
@@ -948,9 +1330,11 @@ def _load_knowledge_fruit(filepath: str) -> str:
 
 
 def select_lenses(latest_msg: str, model: Optional[dict] = None, max_lenses: int = 3, min_score: int = 2,
-                  boost_ids: Optional[list] = None):
+                  boost_ids: Optional[list] = None, function_health: Optional[dict] = None):
     """Pure function: pick the most relevant reasoning modules for this turn.
     boost_ids: module ids preferred by the detected decision category (get +3).
+    function_health: dict of function_name -> health_score (0-100). Unhealthy functions (<50)
+                     boost their related lenses. Wire 1: taxonomy-aware lens selection.
     Returns a prompt block string, or "" when nothing scores (keeps prompts lean)."""
     hay = (latest_msg or "").lower()
     if model:
@@ -959,6 +1343,16 @@ def select_lenses(latest_msg: str, model: Optional[dict] = None, max_lenses: int
         except Exception:
             pass
     boosts = set(boost_ids or [])
+    # Wire 1: function health boosting — unhealthy functions weight their related lenses up
+    if function_health:
+        try:
+            from business_taxonomy import function_lens_map
+            flm = function_lens_map()
+            for func, health in function_health.items():
+                if health < 50 and func in flm:
+                    boosts.update(flm[func])
+        except Exception:
+            pass
     scored = []
     for m in MODULES:
         s = sum(w for kw, w in m["triggers"] if kw in hay)

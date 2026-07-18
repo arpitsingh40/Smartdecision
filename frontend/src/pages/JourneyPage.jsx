@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { api } from '../lib/api';
 import { TopBar } from '../components/TopBar';
+import { SystemHealthBar, SystemHealthDetail, ConnectionPrompt, CapabilityPanel } from '../components/SystemHealth';
 import { Button } from '../components/ui/button';
 import BrainSection from '../components/BrainSection';
 import { Textarea } from '../components/ui/textarea';
@@ -524,6 +525,11 @@ export default function JourneyPage() {
   return (
     <div className="h-dvh flex flex-col">
       <TopBar />
+      {journey?.started && <SystemHealthBar journey={journey} />}
+      {journey?.started && <SystemHealthDetail journey={journey} />}
+      {journey?.system_health?.at_risk?.length > 0 && (
+        <ConnectionPrompt func={journey.system_health.at_risk[0].function} />
+      )}
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 overflow-hidden flex flex-col">
         {/* mode toggle */}
         <div className="flex items-center gap-1 py-3 shrink-0">

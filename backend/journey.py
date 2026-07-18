@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
-from db import users_col, journeys_col, decisions_col, members_col
+from db import users_col, journeys_col, decisions_col, members_col, orgs_col
 from security import current_user, now_utc
 from ledger import record_ledger, inc_stats
 from engine import client, _extract_json, PRIMARY_MODEL, FALLBACK_MODEL
@@ -35,14 +35,33 @@ def _bio_block(context: str) -> str:
     except Exception:
         return ""
 
-def _safe_cognition(user, text, model):
+def _safe_cognition(user, text, model, function_health=None):
     """Cognition layers for a journey turn: founder identity + decision algorithm + book lenses.
     Memory layer excluded (journey already injects its own learning digest). Never fatal."""
     try:
-        return cognition_block(user, text, model, include_memory=False)
+        return cognition_block(user, text, model, include_memory=False,
+                               function_health=function_health)
     except Exception as e:
         logging.getLogger("journey").warning(f"cognition block failed (non-fatal): {e}")
         return ""
+
+
+def _get_org_context(user: dict):
+    """Build org_id + function_health dict from user's org membership + system model.
+    Returns (org_id:str|None, function_health:dict|None)."""
+    try:
+        m = members_col.find_one({"user_id": user["id"], "status": "active"})
+        if not m:
+            return None, None
+        org = orgs_col.find_one({"id": m["org_id"]})
+        if not org:
+            return None, None
+        sm = org.get("system_model") or {}
+        functions = sm.get("functions") or {}
+        fh = {f: s.get("health", 50) for f, s in functions.items() if isinstance(s, dict)}
+        return m["org_id"], fh if fh else None
+    except Exception:
+        return None, None
 
 log = logging.getLogger("journey")
 router = APIRouter(prefix="/api/journey")
@@ -434,7 +453,7 @@ RULES FOR "spin": fill only what happened THIS turn. null otherwise.
 """
 
 
-def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block="", prev_hypotheses=None, cognition_block_text="", spin_block="", turn_count=1, force_converge=False):
+def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reasoning=None, learning="", benchmarks_block="", prev_hypotheses=None, cognition_block_text="", spin_block="", turn_count=1, force_converge=False, org_id=None, function_health=None):
     """ONE LLM call = the full reasoning sweep + reply.
     Returns (reply:str, new_model:dict, reasoning:dict|None, bench_raw:dict|None, hyp_raw, spin_raw:dict|None, model_name:str, usage:dict)."""
     model_json = json.dumps(model or _empty_model(), ensure_ascii=False)
@@ -444,6 +463,16 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
     )
     unc = (prev_reasoning or {}).get("uncertainty") or {}
     prev_map = ", ".join(f"{d}:{unc[d].get('score', 100)}" for d in REASONING_DIMS if d in unc)
+    # Wire 3: root cause context when user mentions business symptoms
+    root_cause_section = ""
+    if org_id:
+        try:
+            from business_system import root_cause_context_block
+            root_cause_section = root_cause_context_block(org_id, latest_user_msg)
+            if root_cause_section:
+                root_cause_section = root_cause_section + "\n\n"
+        except Exception:
+            pass
     prompt = (
         f"FOUNDER'S TOP-LEVEL OBJECTIVE (their very first answer): {objective or '(not yet stated)'}\n\n"
         + (f"{cognition_block_text}\n\n" if (cognition_block_text or "").strip() else "")
@@ -455,6 +484,7 @@ def journey_turn(objective, model, transcript_msgs, latest_user_msg, prev_reason
         + (f"WHAT THIS FOUNDER HAS ACTUALLY DONE BEFORE (real outcomes from their ledger, build on what "
            f"worked, never re-suggest what failed):\n{learning}\n\n" if learning else "")
         + (f"{benchmarks_block}\n\n" if benchmarks_block else "")
+        + (f"{root_cause_section}" if root_cause_section else "")
         + (_bio_block(latest_user_msg) + "\n" if _bio_block(latest_user_msg) else "")
         + (f"{spin_block}\n\n" if (spin_block or "").strip() else "")
         + f"CONVERSATION SO FAR:\n{convo or '(none yet, this is the opening turn)'}\n\n"
@@ -891,7 +921,35 @@ def _view(user, j):
         "team": _team_view(j),
         "unlocks": _unlocks(user, j),
         "credits": user.get("credits", 0),
+        # Wire 3: system health surfaced for the founder
+        "system_health": _system_health_view(user),
     }
+
+
+def _system_health_view(user):
+    """Build system health block from org's cached model. Returns None if no org/system model."""
+    try:
+        m = members_col.find_one({"user_id": user["id"], "status": "active"})
+        if not m:
+            return None
+        org = orgs_col.find_one({"id": m["org_id"]})
+        if not org:
+            return None
+        sm = org.get("system_model") or {}
+        brief = sm.get("last_scan_brief", "")
+        functions = sm.get("functions") or {}
+        at_risk = {f: s for f, s in functions.items() if s.get("status") == "at_risk"}
+        warning = {f: s for f, s in functions.items() if s.get("status") == "warning"}
+        return {
+            "has_scan": bool(brief),
+            "brief": brief if brief else None,
+            "at_risk_count": len(at_risk),
+            "warning_count": len(warning),
+            "at_risk": [{"function": f, "health": s["health"]} for f, s in list(at_risk.items())[:5]],
+            "warnings": [{"function": f, "health": s["health"]} for f, s in list(warning.items())[:5]],
+        }
+    except Exception:
+        return None
 
 
 def _team_view(j):
@@ -944,12 +1002,13 @@ def start(body: StartIn, user: dict = Depends(current_user)):
     objective = body.objective.strip()
 
     def produce():
+        org_id, fh = _get_org_context(user)
         reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw, model_name, usage = journey_turn(
             objective, _empty_model(), [], objective,
             prev_reasoning=None, learning=_learning_digest(user["id"], j),
             benchmarks_block="", prev_hypotheses=None,
-            cognition_block_text=_safe_cognition(user, objective, None),
-            spin_block=_spin_block(None), turn_count=1)
+            cognition_block_text=_safe_cognition(user, objective, None, function_health=fh),
+            spin_block=_spin_block(None), turn_count=1, org_id=org_id, function_health=fh)
         return (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), usage, model_name
 
     (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), credits_after, cost = _run_billed(user, produce)
@@ -986,11 +1045,13 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
 
     def produce():
         turn_count = len([m for m in transcript if m.get("role") == "assistant"]) + 1
+        org_id, fh = _get_org_context(user)
         reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw, model_name, usage = journey_turn(
             objective, current_model, transcript, msg,
             prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j),
             benchmarks_block="", prev_hypotheses=prev_hyps,
-            cognition_block_text=_safe_cognition(user, msg, current_model), turn_count=turn_count)
+            cognition_block_text=_safe_cognition(user, msg, current_model, function_health=fh),
+            turn_count=turn_count, org_id=org_id, function_health=fh)
         return (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), usage, model_name
 
     (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), credits_after, cost = _run_billed(user, produce)
@@ -1270,6 +1331,15 @@ def team_build(user: dict = Depends(current_user)):
     plan, credits_after, cost = _run_billed(user, produce)
     journeys_col.update_one({"id": j["id"]}, {"$set": {
         "team.plan": plan, "stage": "operating", "updated_at": now_utc()}})
+    # Wire 3: generate executable tasks from operating plan
+    org_id, _ = _get_org_context(user)
+    if org_id:
+        try:
+            from execution.bridge import generate_tasks_from_operating_plan
+            task_ids = generate_tasks_from_operating_plan(org_id, plan, user_id=user["id"])
+            log.info(f"journey team_build: generated {len(task_ids)} tasks for org {org_id}")
+        except Exception as e:
+            log.warning(f"journey team_build: task generation failed: {e}")
     j = journeys_col.find_one({"id": j["id"]})
     user["credits"] = credits_after
     out = _view(user, j)

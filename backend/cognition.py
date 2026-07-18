@@ -402,7 +402,8 @@ def cognition_block(user: dict, text: str, model: Optional[dict] = None,
                     include_identity: bool = True, include_memory: bool = True,
                     include_company_state: bool = False,
                     include_codex: bool = False,
-                    include_dna: bool = False) -> str:
+                    include_dna: bool = False,
+                    function_health: Optional[dict] = None) -> str:
     """One string with every cognition layer that applies to this turn. Lean by design:
     empty sections are omitted entirely so quiet turns stay cheap."""
     category = classify_decision(text)
@@ -430,7 +431,8 @@ def cognition_block(user: dict, text: str, model: Optional[dict] = None,
             sections.append(pb)
     if spec:
         sections.append("DECISION TYPE DETECTED: " + category.replace("_", " ").upper() + "\n" + spec["algo"])
-    lens_block = select_lenses(text, model, boost_ids=(spec["lenses"] if spec else None))
+    lens_block = select_lenses(text, model, boost_ids=(spec["lenses"] if spec else None),
+                               function_health=function_health)
     if lens_block:
         sections.append(lens_block)
     if sections:

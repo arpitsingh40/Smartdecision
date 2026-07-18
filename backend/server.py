@@ -47,6 +47,9 @@ import doc_memory
 from playbooks import router as playbooks_router
 from habits import router as habits_router
 from weekly_review import router as weekly_review_router
+from system_router import router as system_router
+from capabilities_router import router as capabilities_router
+from agents import agent_router
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
@@ -95,6 +98,17 @@ async def _lifespan(app: FastAPI):
             ensure_share_startup()
             ensure_subscriptions_startup()
             ensure_executive_startup()
+            # Sync connections from Composio on startup for all orgs
+            try:
+                from execution.connections import refresh_connections_from_composio
+                for org in orgs_col.find({}, {"_id": 0, "id": 1}):
+                    try:
+                        refresh_connections_from_composio(org["id"])
+                    except Exception:
+                        pass
+                log.info("connection sync complete")
+            except Exception:
+                pass
         except Exception as e:
             log.warning(f"Startup init failed (DB may not be ready): {e}")
         scheduler.start()
@@ -677,8 +691,18 @@ app.include_router(genesis_router)
 app.include_router(playbooks_router)
 app.include_router(habits_router)
 app.include_router(weekly_review_router)
+app.include_router(system_router)
+app.include_router(capabilities_router)
+app.include_router(agent_router)
 
 scheduler = BackgroundScheduler(daemon=True)
+
+
+def _kr_desc(kr):
+    """Extract description from a KR, whether string or dict."""
+    if isinstance(kr, dict):
+        return kr.get("description", str(kr))[:120]
+    return str(kr)[:120]
 
 
 def _saturday_night_generate():
@@ -704,7 +728,7 @@ def _saturday_night_generate():
                     member_list.append({"name": (u or {}).get("name", "Member"), "function": (u or {}).get("function", "general")})
 
                 dept_text = "\n".join(
-                    f"- {d['function']}: {d['objective']}\n  KRs: {'; '.join(d.get('key_results', [])[:4])}"
+                    f"- {d['function']}: {d['objective']}\n  KRs: {'; '.join(_kr_desc(k) for k in d.get('key_results', [])[:4])}"
                     for d in plan.get("departments", [])
                 ) if plan.get("departments") else "(no departments)"
                 member_text = "\n".join(f"- {m['name']} ({m['function']})" for m in member_list) or "(no members)"
@@ -732,7 +756,9 @@ def _saturday_night_generate():
                     func = norm_dep_function(t.get("department_function", "general"))
                     best = _best_member_for_function(org_id, func)
                     dept = next((d for d in (plan.get("departments") or []) if d.get("function") == func), {})
-                    kr_text = ((dept.get("key_results") or [])[int(t.get("linked_kr_index", 0))] if dept.get("key_results") else "")
+                    dept_krs = dept.get("key_results", [])
+                    idx = int(t.get("linked_kr_index", 0)) if dept_krs else -1
+                    kr_text = _kr_desc(dept_krs[idx]) if 0 <= idx < len(dept_krs) else ""
                     tasks.append({
                         "id": str(uuid.uuid4()), "org_id": org_id, "plan_id": plan["id"],
                         "department_function": func, "linked_kr_index": int(t.get("linked_kr_index", 0)),
@@ -811,9 +837,70 @@ def _monday_morning_digest():
     log.info("scheduler: Monday morning digest ready")
 
 
+def _execute_approved_tasks_cron():
+    """Wire 4: execute approved tasks across all orgs."""
+    try:
+        from execution.bridge import execute_approved_tasks
+        for org in orgs_col.find({}, {"_id": 0, "id": 1, "name": 1}):
+            try:
+                result = execute_approved_tasks(org["id"], max_tasks=5)
+                if result.get("executed", 0) > 0:
+                    log.info(f"exec_cron: org {org['name']} — executed {result['executed']} tasks")
+            except Exception as e:
+                log.warning(f"exec_cron: org {org.get('id')} failed — {e}")
+    except Exception as e:
+        log.exception(f"exec_cron: global failure — {e}")
+
+
+def _agent_orchestration_cron():
+    """Run agents for all orgs. Agents self-manage their own schedules internally."""
+    try:
+        from agents import run_all_agents
+        for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1, "name": 1}):
+            try:
+                result = run_all_agents(org["id"])
+                count = result.get("agents_run", 0)
+                if count > 0:
+                    alerts = sum(1 for r in result.get("results", {}).values() if r.get("needs_founder"))
+                    log.info(f"agents: org {org['name']} — {count} agents ran, {alerts} escalated to founder")
+            except Exception as e:
+                log.warning(f"agents: org {org.get('id')} failed — {e}")
+    except Exception as e:
+        log.exception(f"agents: global failure — {e}")
+
+
+def _weekly_system_scan():
+    """Rebuild system model + run signal scan for every org with a strategy set."""
+    try:
+        from business_system import init_system_model, persist_system_model, run_signal_scan
+        from execution.bridge import generate_tasks_for_at_risk_functions
+        from okr_engine import refresh_okr_progress_from_scan
+        for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1, "name": 1}):
+            try:
+                model = init_system_model(org)
+                persist_system_model(org["id"], model)
+                scan = run_signal_scan(org["id"])
+                # Wire 1: generate tasks for at-risk functions
+                if scan.get("at_risk_count", 0) > 0:
+                    task_ids = generate_tasks_for_at_risk_functions(org["id"])
+                    log.info(f"system_scan: org {org['name']} — {scan['at_risk_count']} at-risk, {len(task_ids)} tasks generated")
+                else:
+                    log.info(f"system_scan: org {org['name']} — all healthy, no tasks needed")
+                # Wire 5: refresh OKR progress from execution data
+                okr_health = refresh_okr_progress_from_scan(org["id"])
+                if okr_health:
+                    log.info(f"system_scan: org {org['name']} — OKR health: {okr_health['on_track']}/{okr_health['total_krs']} on track")
+            except Exception as e:
+                log.warning(f"system_scan: org {org.get('id')} failed — {e}")
+    except Exception as e:
+        log.exception(f"system_scan: global failure — {e}")
+
 scheduler.add_job(_saturday_night_generate, CronTrigger(day_of_week="sat", hour=22, minute=0, timezone="Asia/Kolkata"))
 scheduler.add_job(_monday_morning_digest, CronTrigger(day_of_week="mon", hour=6, minute=0, timezone="Asia/Kolkata"))
 scheduler.add_job(_six_hour_housekeeping, IntervalTrigger(hours=6))
+scheduler.add_job(_weekly_system_scan, CronTrigger(day_of_week="sat", hour=22, minute=30, timezone="Asia/Kolkata"))
+scheduler.add_job(_execute_approved_tasks_cron, IntervalTrigger(hours=3))  # Wire 4: execute approved tasks every 3 hours
+scheduler.add_job(_agent_orchestration_cron, IntervalTrigger(minutes=30))  # Agents: run every 30 minutes
 
 
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")

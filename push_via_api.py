@@ -31,12 +31,11 @@ def req(method, url, **kw):
 # Get current HEAD  
 head_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 msg = subprocess.check_output(["git", "log", "--format=%B", "-1", "HEAD"], text=True).strip()
-parent_sha = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip() if os.system("git rev-parse origin/main >/dev/null 2>&1") == 0 else None
 
-if not parent_sha:
-    print("Getting parent from API...")
-    r = req("GET", f"{API}/repos/{OWNER}/{REPO}/git/ref/heads/main")
-    parent_sha = r["object"]["sha"] if r else None
+# Always get parent from API (local ref may be stale)
+print("Getting parent from API...")
+r = req("GET", f"{API}/repos/{OWNER}/{REPO}/git/ref/heads/main")
+parent_sha = r["object"]["sha"] if r else None
 if not parent_sha:
     sys.exit("Cannot determine parent")
 
@@ -60,8 +59,9 @@ for line in entries_raw:
 print(f"Entries: {len(entries)}")
 
 # Get parent tree SHA so we can skip unchanged blobs
-parent_tree_sha = subprocess.check_output(["git", "rev-parse", f"{parent_sha}^{{tree}}"], text=True).strip()
-parent_tree = req("GET", f"{API}/repos/{OWNER}/{REPO}/git/trees/{parent_tree_sha}?recursive=1") if parent_sha else None
+parent_commit = req("GET", f"{API}/repos/{OWNER}/{REPO}/git/commits/{parent_sha}")
+parent_tree_sha = parent_commit["tree"]["sha"] if parent_commit else ""
+parent_tree = req("GET", f"{API}/repos/{OWNER}/{REPO}/git/trees/{parent_tree_sha}?recursive=1") if parent_tree_sha else None
 parent_blobs = {}
 if parent_tree and not parent_tree.get("truncated"):
     for item in parent_tree.get("tree", []):

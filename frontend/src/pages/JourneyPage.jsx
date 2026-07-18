@@ -544,7 +544,7 @@ export default function JourneyPage() {
         </div>
 
         {mode === 'journey' ? (
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 overflow-hidden min-h-0">
+          <div className={`flex-1 grid gap-6 overflow-hidden min-h-0 ${panelOpen ? 'grid-cols-1 lg:grid-cols-[1fr_300px]' : 'grid-cols-1'}`}>
         <section className="flex flex-col min-h-0" data-testid="journey-chat">
           <div className="flex-1 overflow-y-auto space-y-5 py-4">
             {journey.messages.map((m, i) => (
@@ -861,13 +861,13 @@ export default function JourneyPage() {
             <div ref={endRef} />
           </div>
 
-          {/* mobile understanding toggle */}
+          {/* understanding panel toggle (all sizes) */}
           <button
             onClick={() => setPanelOpen((o) => !o)}
-            className="lg:hidden flex items-center justify-between rounded-xl border border-border/70 px-3 py-2 text-sm text-muted-foreground mb-3"
+            className="flex items-center justify-between rounded-xl border border-border/70 px-3 py-2 text-sm text-muted-foreground mb-3 lg:sticky lg:top-0 lg:bg-background/80 lg:backdrop-blur"
             data-testid="journey-panel-toggle"
           >
-            <span>Decision confidence · {conf}%</span>
+            <span>Decision confidence · {conf}% · {panelOpen ? 'Hide details' : 'Show details'}</span>
             {panelOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
           </button>
           {panelOpen ? <div className="lg:hidden rounded-2xl border border-border/70 bg-card/60 p-4 mb-3">{Panel}</div> : null}
@@ -910,11 +910,13 @@ export default function JourneyPage() {
         </section>
 
           {/* understanding panel (desktop) */}
+        {panelOpen ? (
         <aside className="hidden lg:block">
           <div className="sticky top-4 rounded-2xl border border-border/70 bg-card/60 p-5" data-testid="journey-understanding-panel">
             {Panel}
           </div>
         </aside>
+        ) : null}
       </div>
       ) : (
         <div className="flex-1 overflow-y-auto min-h-0">

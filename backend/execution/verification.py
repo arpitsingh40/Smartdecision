@@ -14,6 +14,7 @@ Evidence and learning events persist in MongoDB (evidence / learning_events coll
 import json
 import logging
 from collections import defaultdict
+from typing import Optional
 
 from ontology import (
     Evidence, LearningEvent, LearningImpact,

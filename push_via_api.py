@@ -59,9 +59,21 @@ for line in entries_raw:
 
 print(f"Entries: {len(entries)}")
 
+# Get parent tree SHA so we can skip unchanged blobs
+parent_tree_sha = subprocess.check_output(["git", "rev-parse", f"{parent_sha}^{{tree}}"], text=True).strip()
+parent_tree = req("GET", f"{API}/repos/{OWNER}/{REPO}/git/trees/{parent_tree_sha}?recursive=1") if parent_sha else None
+parent_blobs = {}
+if parent_tree and not parent_tree.get("truncated"):
+    for item in parent_tree.get("tree", []):
+        parent_blobs[item["path"]] = item["sha"]
+
 # Upload blobs that don't exist on remote
-print("\nUploading blobs...")
+print(f"\nUploading blobs ({len(parent_blobs)} known on remote, skipping unchanged)...")
+skipped = 0
 for i, e in enumerate(entries):
+    if parent_blobs.get(e["path"]) == e["sha"]:
+        skipped += 1
+        continue
     print(f"  [{i+1}/{len(entries)}] {e['path']}...", end=" ", flush=True)
     payload = {"content": base64.b64encode(subprocess.check_output(["git", "cat-file", "-p", e["sha"]])).decode(), "encoding": "base64"}
     r = req("POST", f"{API}/repos/{OWNER}/{REPO}/git/blobs", json=payload)
@@ -71,6 +83,7 @@ for i, e in enumerate(entries):
     else:
         print(f"FAILED")
         sys.exit(1)
+print(f"  Skipped {skipped} unchanged blobs")
 
 # Create tree
 print(f"\nCreating tree...", end=" ", flush=True)

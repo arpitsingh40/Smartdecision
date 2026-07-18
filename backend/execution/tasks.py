@@ -11,6 +11,7 @@ and are org-scoped so one founder never sees another org's queue.
 
 import json
 import logging
+from typing import Optional
 from llm_client import client, _extract_json, PRIMARY_MODEL
 from db import exec_tasks_col
 

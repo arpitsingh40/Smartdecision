@@ -325,7 +325,8 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
                                  attachment=attachment, user_doc=user_doc,
                                  recall_block=recall_block,
                                  attachment_preview=attachment_preview,
-                                 understanding=understanding)
+                                 understanding=understanding,
+                                 org_id=user_doc.get("org_id"))
     sig = out["signals"]
     events_col.insert_one({
         "id": str(uuid.uuid4()), "thread_id": thread["thread_id"], "user_id": user["id"], "at": now,
@@ -386,6 +387,16 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
             "$push": {"execution_log": {"$each": [{"at": now, "actions": execution}]}}})
     inc_stats({"questions_total": 1, ("turns_ultra" if mode == "ultra" else "turns_normal"): 1,
                "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]})
+    # ── SALAAR: outcome learning loop — when founder reports progress, store pattern→outcome ──
+    if intent == "acknowledgment" and user.get("org_id"):
+        try:
+            from salaar.inline import salaar_outcome_learn
+            salaar_outcome_learn(
+                user["org_id"], "execution_stalling", "resolved",
+                {"thread_id": thread["thread_id"], "goal": thread["goal"], "action": message[:200]}
+            )
+        except Exception:
+            pass
     return out, intent, model, latency, usage
 
 

@@ -440,7 +440,7 @@ VALID_PHASES = ("exploring", "naming", "ready_to_act", "acting", "checking_in")
 def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal",
              attachment=None, user_doc=None,
              recall_block: str = "", attachment_preview=None,
-             understanding=None):
+             understanding=None, org_id: str = None):
     adjust_note = ""
     if intent == "action_adjust":
         adjust_note = ("ADJUSTMENT: the user is pushing back on the PRIOR NEXT ACTION above - "
@@ -502,6 +502,23 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                 workflow_section = workflow_section + "\n\n"
         except Exception:
             pass
+    # ── SALAAR inline: scan for threats, inject context into prompt ──
+    salaar_block = ""
+    try:
+        from salaar.inline import salaar_inline_scan, salaar_auto_execute
+        scan = salaar_inline_scan(user_msg, thread, user_doc)
+        salaar_block = scan.get("context_block", "")
+        if salaar_block:
+            salaar_block = salaar_block + "\n"
+        # Trigger L1-L2 auto-execution in background
+        if scan.get("threats") and org_id:
+            # ponytail: fire-and-forget — don't block the turn on execution
+            try:
+                salaar_auto_execute(org_id, user_doc.get("id", ""), scan["threats"])
+            except Exception:
+                pass
+    except Exception:
+        pass  # SALAAR is advisory — never block a turn on SALAAR failure
     prompt = (
         f"{user_ctx_block}"
         f"{understanding_block}"
@@ -523,6 +540,7 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         f"{root_cause_section}"
         f"{workflow_section}"
         f"{_bio_block(user_msg)}"
+        f"{salaar_block}"
         f"Their message: {user_msg}"
         f"{file_text}"
     )

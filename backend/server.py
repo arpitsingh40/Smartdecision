@@ -53,6 +53,7 @@ from system_router import router as system_router
 from capabilities_router import router as capabilities_router
 from agents import agent_router
 from salaar import generate_salaar_brief
+from salaar.causal import build_actor_map, simulate_causal_chain, execute_chain_step
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
@@ -689,6 +690,45 @@ async def salaar_brief_endpoint(user: dict = Depends(current_user_async)):
     if not org_id:
         raise HTTPException(400, "No organization — SALAAR requires a company workspace")
     return generate_salaar_brief(org_id, user["id"])
+
+# ── SALAAR Causal Engine API ──
+class CausalIn(BaseModel):
+    objective: str = Field(min_length=3, max_length=2000)
+    context: str = ""
+
+@api.post("/salaar/chain/simulate")
+async def salaar_simulate_chain(body: CausalIn, user: dict = Depends(current_user_async)):
+    """Simulate a complete causal chain for achieving an objective."""
+    org_id = user.get("org_id")
+    if not org_id:
+        raise HTTPException(400, "No organization — SALAAR requires a company workspace")
+    # Build actor map
+    actor_map = build_actor_map(org_id, body.objective, body.context)
+    if actor_map.get("error"):
+        raise HTTPException(502, f"Actor mapping failed: {actor_map['error']}")
+    # Simulate chain
+    chain = simulate_causal_chain(org_id, body.objective, actor_map, body.context)
+    if chain.get("error"):
+        raise HTTPException(502, f"Chain simulation failed: {chain['error']}")
+    return {"chain": chain, "actor_map": actor_map}
+
+@api.post("/salaar/chain/{chain_id}/execute-step/{step_number}")
+async def salaar_execute_step(chain_id: str, step_number: int, user: dict = Depends(current_user_async)):
+    """Execute one step in a causal chain."""
+    org_id = user.get("org_id")
+    if not org_id:
+        raise HTTPException(400, "No organization")
+    from salaar.causal import CAUSAL_CHAINS_COL
+    chain = CAUSAL_CHAINS_COL.find_one({"id": chain_id, "org_id": org_id}) if CAUSAL_CHAINS_COL is not None else None
+    if not chain:
+        raise HTTPException(404, "Chain not found")
+    steps = chain.get("steps", [])
+    step = next((s for s in steps if s.get("step") == step_number), None)
+    if not step:
+        raise HTTPException(404, "Step not found")
+    actor_map = {"actors": chain.get("actors", [])}
+    result = execute_chain_step(org_id, step, actor_map, chain.get("objective", ""))
+    return {"step": step_number, "result": result}
 
 app.include_router(api)
 app.include_router(v1)  # Ch.54: versioned API — new endpoints go under /api/v1

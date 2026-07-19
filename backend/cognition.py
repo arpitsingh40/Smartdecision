@@ -29,7 +29,7 @@ CATEGORIES = {
                "supplier", "partnership", "agreement", "mou", "franchise", "counter offer", "listing fee",
                "wants 3", "wants 4", "margin they", "their offer"],
         "lenses": ["munger_incentives", "taleb_antifragile", "voss_negotiation", "thorndike_capital", "lafley_wwhtt",
-                    "art_of_war", "art_of_strategy", "how_to_win_friends"],
+                     "art_of_war", "art_of_strategy", "how_to_win_friends", "adams_persuasion"],
         "algo": ("DEAL/NEGOTIATION ALGORITHM: 1) Trace the counterparty's incentives: what do they gain, where "
                  "do interests diverge? 2) Price the optionality being traded: what flexibility does this deal "
                  "sell, is the payment worth years of it, can a pilot keep the option alive? 3) What would have "
@@ -43,8 +43,9 @@ CATEGORIES = {
                "cto", "salary", "quit", "resign", "underperform", "delegate", "first hire", "intern",
                "agency or in-house", "freelancer"],
         "lenses": ["grove_leverage", "horowitz_struggle", "dalio_principles", "bungay_action", "coyle_culture",
-                    "seven_habits", "effective_executive", "team_of_teams", "turn_the_ship_around", "e_myth_revisited",
-                    "how_to_win_friends", "start_with_why", "delivering_happiness", "creativity_inc", "reinventing_organizations"],
+                     "seven_habits", "effective_executive", "team_of_teams", "turn_the_ship_around", "e_myth_revisited",
+                     "how_to_win_friends", "start_with_why", "delivering_happiness", "creativity_inc", "reinventing_organizations",
+                     "berdee_psychopaths", "greene_human_nature", "kishimi_courage"],
         "algo": ("PEOPLE/TEAM ALGORITHM: 1) Wartime or peacetime? Survival pressure changes the right call. "
                  "2) Person or machine: is this individual failing, or is the design (role, incentives, "
                  "information) producing the failure? 3) Task-relevant maturity: does their freedom match their "
@@ -91,7 +92,8 @@ CATEGORIES = {
         "kw": ["runway", "cash crisis", "can't pay", "cannot pay", "losing money", "shut down", "survive",
                "emergency", "debt", "loan due", "salaries due", "out of money", "3 months left", "burn"],
         "lenses": ["horowitz_struggle", "taleb_swan", "rumelt_kernel", "bevelin_wisdom",
-                    "skin_in_the_game", "mans_search_for_meaning", "shoe_dog", "the_dip"],
+                     "skin_in_the_game", "mans_search_for_meaning", "shoe_dog", "the_dip",
+                     "berdee_psychopaths", "kishimi_courage"],
         "algo": ("CRISIS/SURVIVAL ALGORITHM: 1) Wartime rules: exactly one priority; strip every peacetime "
                  "initiative. 2) Sacred-runway math: what cash is untouchable, what is the honest date, which "
                  "single dependency's failure is fatal? 3) The kernel: name the ONE critical obstacle between "

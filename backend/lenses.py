@@ -1134,7 +1134,73 @@ MODULES = [
     {
         "id": "torres_discovery", "book": "Continuous Discovery Habits (Torres)",
         "triggers": [["assumption", 3], ["continuous", 3], ["discovery", 3], ["experiment", 3], ["habit", 3], ["opportunity", 3], ["problem", 2], ["product", 2], ["riskiest", 4], ["trio", 4], ["weekly", 3]],
-        "lens": "Product discovery should not be a phase before delivery — it should be continuous. Torres provides the framework for product trios to talk to customers every week and test assumptions. Opportunity Solution Tree: start with desired outcome, map opportunities (customer needs), generate solutions, run experiments. Continuous interviewing: talk to customers weekly. Assumption testing: every idea rests on assumptions; test the riskiest first with the cheapest experiment. The Product Trio (PM + designer + engineer) collaborate on discovery.",
+        "lens": ("Product discovery should not be a phase before delivery — it should be continuous. Torres provides the framework for product trios to talk to customers every week and test assumptions. Opportunity Solution Tree: start with desired outcome, map opportunities (customer needs), generate solutions, run experiments. Continuous interviewing: talk to customers weekly. Assumption testing: every idea rests on assumptions; test the riskiest first with the cheapest experiment. The Product Trio (PM + designer + engineer) collaborate on discovery."),
+    },
+    {
+        "id": "berdee_psychopaths", "book": "Talking with Psychopaths and Savages (Berry-Dee)",
+        "triggers": [("gaslighting", 4), ("gaslight", 4), ("manipulat", 4), ("toxic", 3), ("cofounder conflict", 4),
+                     ("bad feeling about", 4), ("can't trust", 4), ("something off with", 4), ("narcissist", 4),
+                     ("making me feel crazy", 5), ("too good to be true", 4), ("charming but", 4),
+                     ("feels like i'm going crazy", 5), ("everyone loves them but", 4), ("brilliant but", 3)],
+        "lens": ("Diagnose the pattern before diagnosing the person: is this toxic behavior, or a toxic personality? "
+                 "A toxic personality (psychopath, malignant narcissist) follows predictable steps—charm bombing, "
+                 "gaslighting when challenged, triangulation against allies, and escalating attacks when boundaries "
+                 "are set. The founder's vulnerability is the speed at which trust must be extended; these "
+                 "personalities exploit exactly that. Check: does this person's pressure INCREASE when the founder "
+                 "sets a boundary? Normal people respect the no; predators escalate. If the founder reports feeling "
+                 "'crazy' or 'confused' after interactions, name gaslighting directly and restore their perception "
+                 "as valid. For brilliant toxic hires: the math is not their value—it's their value minus every "
+                 "healthy person they drive out. Cut fast; these personalities cannot be coached out of the pattern."),
+    },
+    {
+        "id": "greene_human_nature", "book": "The Laws of Human Nature (Greene)",
+        "triggers": [("envy", 4), ("jealous", 4), ("showing off", 3), ("insecure", 3), ("trying to prove", 4),
+                     ("ego", 3), ("defensive", 3), ("won't admit", 4), ("the law of", 5), ("can't take feedback", 4),
+                     ("takes everything personally", 4), ("character", 2), ("pattern of", 2), ("grandios", 4),
+                     ("superiority", 3), ("mask", 2), ("real them", 3), ("who they really are", 4)],
+        "lens": ("Identify which of Greene's laws is most visibly operating in the people this situation "
+                 "involves. Envy is the most denied emotion—look for effusive praise that feels slightly off, "
+                 "subtle digs disguised as jokes, celebrating failures slightly too much. Narcissism: someone who "
+                 "interprets everything through 'how does this reflect on me' and cannot receive criticism without "
+                 "counterattacking. Grandiosity: the person whose success in one domain made them believe they're "
+                 "exceptional in ALL domains—flag absolutist language about their own judgment. Character is fate: "
+                 "their 5-year pattern predicts their next 5 years better than promises or charm. For the founder's "
+                 "own decisions: high emotional language (excited, terrified, furious, desperate) means the law "
+                 "of irrationality is active—add 48 hours and distance before committing."),
+    },
+    {
+        "id": "adams_persuasion", "book": "The Art of Persuasion (Adams/Cialdini)",
+        "triggers": [("pitch", 4), ("sell", 3), ("convince", 3), ("get them to", 4), ("win them", 4),
+                     ("framing", 4), ("presentation", 3), ("how to present", 5), ("negotiate terms", 4),
+                     ("objection", 3), ("pushback", 3), ("won't budge", 3), ("make the case", 4),
+                     ("persuade", 4), ("messaging", 2), ("story for", 2)],
+        "lens": ("Architect the persuasion sequence, not just the argument. Pre-suasion first: what 3-minute "
+                 "context puts the right concept at the top of their mind before the ask? Frame the comparison: "
+                 "never present your number or terms in isolation—supply the frame that makes it the obvious "
+                 "choice (contrast principle, loss framing). Weaponized empathy: articulate their objection "
+                 "better than they can before making any argument: I know you are worried this is too expensive, "
+                 "and if I were you I would feel the same. Here is why, given those concerns, this actually saves "
+                 "you money. Deploy segment-matched social proof at the decision point: companies like yours who "
+                 "switched this quarter. Audit every tactic: would they still choose this if they knew "
+                 "everything you know? If yes, it is persuasion; if no, it is manipulation."),
+    },
+    {
+        "id": "kishimi_courage", "book": "The Courage to Be Disliked (Kishimi/Koga)",
+        "triggers": [("what will they think", 5), ("afraid to", 3), ("people-pleasing", 5), ("don't want to upset", 5),
+                     ("avoiding", 3), ("everyone expects", 4), ("approval", 4), ("disappointing", 4),
+                     ("can't let them down", 5), ("seeking validation", 5), ("need them to like", 5),
+                     ("what if they", 3), ("their reaction", 4), ("don't want conflict", 5),
+                     ("keeping everyone happy", 5), ("hate to fire", 4)],
+        "lens": ("Separate tasks: whose life bears the consequence of this decision? If the founder's, then the "
+                 "counterparty's emotional reaction is THEIR task, not the founder's reason to fail at their own. "
+                 "When the founder says 'I can't because [past event],' reframe teleologically: what present "
+                 "discomfort are they avoiding by holding that past event as a reason? The price of approval is "
+                 "permanent self-betrayal: every decision avoided to keep someone from being upset trades lasting "
+                 "integrity for temporary comfort. Ask specifically: who will be upset, and is their temporary "
+                 "upset worth more than the permanent cost of not acting? If the founder's self-worth language is "
+                 "competitive ('I have to prove,' 'I need to show them'), flag the hierarchy trap and recommend "
+                 "the community-feeling reframe: contribution over comparison. All problems are interpersonal—find "
+                 "the person inside the business problem."),
     },
 
 ]
@@ -1310,6 +1376,10 @@ KNOWLEDGE_MAP = {
     "dunford_positioning": "knowledge/03-marketing-sales/120_obviously_awesome.md",
     "wasserman_dilemmas": "knowledge/04-leadership-management/121_founders_dilemmas.md",
     "torres_discovery": "knowledge/05-product-innovation/147_continuous_discovery.md",
+    "berdee_psychopaths": "knowledge/04-leadership-management/164_psychopaths_and_savages.md",
+    "adams_persuasion": "knowledge/03-marketing-sales/165_art_of_persuasion.md",
+    "greene_human_nature": "knowledge/08-mindset-performance/166_laws_of_human_nature.md",
+    "kishimi_courage": "knowledge/08-mindset-performance/167_courage_to_be_disliked.md",
 
 }
 

@@ -10,7 +10,7 @@ import { Button } from './components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from './components/ui/dialog';
-import { api, setAuthToken } from './lib/api';
+import { api } from './lib/api';
 import { toast } from 'sonner';
 import './App.css';
 
@@ -49,9 +49,8 @@ interface AppUser {
 }
 
 interface AuthContextType {
-  token: string | null;
   user: AppUser | null;
-  login: (tok: string, usr: AppUser) => void;
+  login: (usr: AppUser) => void;
   logout: () => void;
   setCredits: (credits: number) => void;
   setUser: React.Dispatch<React.SetStateAction<AppUser | null>>;
@@ -104,71 +103,53 @@ function InsufficientCreditsModal() {
 }
 
 const App: FC = () => {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('sdg_token'));
-  const [user, setUser] = useState<AppUser | null>(() => {
-    try { return JSON.parse(localStorage.getItem('sdg_user') || 'null'); } catch { return null; }
-  });
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [checking, setChecking] = useState(true);
 
-  useEffect(() => { setAuthToken(token); }, [token]);
-
-  const login = useCallback((tok: string, usr: AppUser) => {
-    localStorage.setItem('sdg_token', tok);
-    localStorage.setItem('sdg_user', JSON.stringify(usr));
-    setAuthToken(tok);
-    setToken(tok);
+  const login = useCallback((usr: AppUser) => {
     setUser(usr);
   }, []);
 
   const logout = useCallback(() => {
     api.post('/auth/logout').catch(() => {});
-    localStorage.removeItem('sdg_token');
-    localStorage.removeItem('sdg_user');
-    localStorage.removeItem('sdg_last_thread');
-    setAuthToken(null);
-    setToken(null);
     setUser(null);
   }, []);
 
   const setCredits = useCallback((credits: number) => {
-    setUser((u) => {
-      if (!u) return u;
-      const next = { ...u, credits };
-      localStorage.setItem('sdg_user', JSON.stringify(next));
-      return next;
-    });
+    setUser((u) => u ? { ...u, credits } : u);
   }, []);
 
   useEffect(() => {
-    if (!token) return;
     let cancelled = false;
-    const verify = (attempt: number) => {
+    const verify = () => {
       api.get<AppUser>('/auth/me').then((r) => {
         if (cancelled) return;
         setUser(r.data);
-        localStorage.setItem('sdg_user', JSON.stringify(r.data));
-      }).catch((err) => {
+      }).catch(() => {
         if (cancelled) return;
-        if (err?.response?.status === 401) { logout(); return; }
-        if (attempt < 3) setTimeout(() => verify(attempt + 1), 1000 * Math.pow(2, attempt));
+        setUser(null);
+      }).finally(() => {
+        if (!cancelled) setChecking(false);
       });
     };
-    verify(0);
+    verify();
     return () => { cancelled = true; };
-  }, [token, logout]);
+  }, []);
 
   useEffect(() => {
+    if (!user) return;
     const beat = () => api.post('/track/session', { session_id: sessionStorage.getItem('sdg_session') || null })
       .then((r: { data: { session_id: string } }) => sessionStorage.setItem('sdg_session', r.data.session_id))
       .catch(() => {});
     beat();
     const id = setInterval(beat, 60000);
     return () => clearInterval(id);
-  }, [token]);
+  }, [user]);
 
   useEffect(() => {
-    if (!token || !user) return;
+    if (!user || user.org_id) return;
     const pending = localStorage.getItem('sdg_pending_invite');
-    if (!pending || user.org_id) return;
+    if (!pending) return;
     api.post('/org/join', { code: pending })
       .then((r: { data: { id: string; name: string; role: string } }) => {
         localStorage.removeItem('sdg_pending_invite');
@@ -176,39 +157,57 @@ const App: FC = () => {
         toast.success(`You've joined ${r.data.name}.`);
       })
       .catch(() => { localStorage.removeItem('sdg_pending_invite'); });
-  }, [token, user]);
+  }, [user]);
+
+  if (checking) {
+    return (
+      <div className="paper min-h-screen">
+        <div className="flex items-center justify-center min-h-screen bg-background">
+          <div className="space-y-4 w-full max-w-md mx-auto px-6">
+            <div className="h-8 w-3/5 animate-pulse rounded-lg bg-primary/10" />
+            <div className="h-4 w-2/5 animate-pulse rounded-lg bg-primary/10" />
+            <div className="mt-8 space-y-3">
+              <div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" />
+              <div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" />
+              <div className="h-3 w-4/5 animate-pulse rounded-lg bg-primary/10" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, setCredits, setUser }}>
+    <AuthContext.Provider value={{ user, login, logout, setCredits, setUser }}>
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <div className="paper min-h-screen">
         <BrowserRouter>
           <InsufficientCreditsModal />
           <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-background"><div className="space-y-4 w-full max-w-md mx-auto px-6"><div className="h-8 w-3/5 animate-pulse rounded-lg bg-primary/10" /><div className="h-4 w-2/5 animate-pulse rounded-lg bg-primary/10" /><div className="mt-8 space-y-3"><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-4/5 animate-pulse rounded-lg bg-primary/10" /></div></div></div>}>
           <Routes>
-            <Route path="/" element={token ? <Navigate to="/app" replace /> : withErrorBoundary(LandingPage)({})} />
-            <Route path="/auth" element={token ? <Navigate to="/app" replace /> : withErrorBoundary(AuthPage)({})} />
-            <Route path="/app" element={token ? withErrorBoundary(JourneyPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/decisions" element={token ? withErrorBoundary(DecisionsPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/brain" element={token ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/brain/:decisionId" element={token ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/thread/:threadId" element={token ? withErrorBoundary(ThreadPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/team" element={token ? withErrorBoundary(TeamPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/my-tasks" element={token ? withErrorBoundary(MyTasksPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/cockpit" element={token ? withErrorBoundary(CockpitPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/mission-control" element={token ? withErrorBoundary(MissionControlPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/goal-setup" element={token ? withErrorBoundary(GoalSetupPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/founder-profile" element={token ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/questionnaire" element={token ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/profile" element={token ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/" element={user ? <Navigate to="/app" replace /> : withErrorBoundary(LandingPage)({})} />
+            <Route path="/auth" element={user ? <Navigate to="/app" replace /> : withErrorBoundary(AuthPage)({})} />
+            <Route path="/app" element={user ? withErrorBoundary(JourneyPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/decisions" element={user ? withErrorBoundary(DecisionsPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/brain" element={user ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/brain/:decisionId" element={user ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/thread/:threadId" element={user ? withErrorBoundary(ThreadPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/team" element={user ? withErrorBoundary(TeamPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/my-tasks" element={user ? withErrorBoundary(MyTasksPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/cockpit" element={user ? withErrorBoundary(CockpitPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/mission-control" element={user ? withErrorBoundary(MissionControlPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/goal-setup" element={user ? withErrorBoundary(GoalSetupPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/founder-profile" element={user ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/questionnaire" element={user ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/profile" element={user ? withErrorBoundary(ProfilePage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/join/:code" element={withErrorBoundary(JoinPage)({})} />
             <Route path="/d/:shareId" element={withErrorBoundary(DecisionCardPage)({})} />
-            <Route path="/app/billing" element={token ? withErrorBoundary(BillingPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/billing" element={user ? withErrorBoundary(BillingPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/pay/result" element={withErrorBoundary(PaymentResultPage)({})} />
-            <Route path="/app/admin" element={token ? withErrorBoundary(AdminPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/habits" element={token ? withErrorBoundary(HabitsPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/playbooks" element={token ? withErrorBoundary(PlaybooksPage)({}) : <Navigate to="/auth" replace />} />
-            <Route path="/app/weekly-review" element={token ? withErrorBoundary(WeeklyReviewPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/admin" element={user ? withErrorBoundary(AdminPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/habits" element={user ? withErrorBoundary(HabitsPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/playbooks" element={user ? withErrorBoundary(PlaybooksPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/weekly-review" element={user ? withErrorBoundary(WeeklyReviewPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </Suspense>

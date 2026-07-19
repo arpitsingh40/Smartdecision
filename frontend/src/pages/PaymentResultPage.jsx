@@ -16,7 +16,7 @@ export default function PaymentResultPage() {
   const orderId = params.get('order_id');
   const auth = useAuth();
   const setCredits = auth?.setCredits;
-  const isLoggedIn = !!auth?.token;
+  const isLoggedIn = !!auth?.user;
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [attempts, setAttempts] = useState(0);

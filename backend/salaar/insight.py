@@ -101,6 +101,27 @@ def generate_salaar_brief(org_id: str, user_id: str) -> dict:
                 ),
             })
 
+    # Active causal chains
+    brief["active_chains"] = []
+    try:
+        chains_col = db["salaar_chains"] if db is not None else None
+        if chains_col is not None:
+            chains = list(chains_col.find(
+                {"org_id": org_id, "type": "causal_chain", "status": "simulated"}
+            ).sort("created_at", -1).limit(3))
+            for c in chains:
+                brief["active_chains"].append({
+                    "chain_id": c.get("id", ""),
+                    "chain_name": c.get("chain_name", ""),
+                    "objective": c.get("objective", "")[:200],
+                    "success_probability": c.get("success_probability"),
+                    "total_steps": c.get("total_steps"),
+                    "critical_link": c.get("critical_chain_link", ""),
+                    "founder_only": c.get("founder_only_decision", ""),
+                })
+    except Exception:
+        pass
+
     # Shadow summary: what SALAAR handled
     auto_count = brief["actions_auto_executed"]
     threat_count = brief["threats_active"]

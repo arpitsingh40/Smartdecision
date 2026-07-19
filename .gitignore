@@ -96,3 +96,4 @@ ui-ux-pro-max-skill
 # deploy
 .gh_token
 setup_fly.sh
+atlas-credentials.env

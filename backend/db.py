@@ -80,6 +80,9 @@ class _MongomockAsyncAdapter:
     async def delete_many(self, *args, **kwargs):
         return self._col.delete_many(*args, **kwargs)
 
+    async def update_many(self, *args, **kwargs):
+        return self._col.update_many(*args, **kwargs)
+
     async def create_index(self, *args, **kwargs):
         return self._col.create_index(*args, **kwargs)
 
@@ -137,6 +140,7 @@ learning_col = _col("learning_events")                # Ch.47 Verified organizat
 playbooks_col = _col("playbooks")                     # Playbook Engine state
 habits_col = _col("habits")                           # Habit Tracker
 weekly_reviews_col = _col("weekly_reviews")           # Weekly Review
+sessions_col = _col("sessions")                       # JWT session tokens
 
 async_users_col = _async_col("users")
 async_threads_col = _async_col("goal_threads")
@@ -161,3 +165,4 @@ async_token_usage_col = _async_col("token_usage")
 async_user_patterns_col = _async_col("user_patterns")
 async_conversation_memory_col = _async_col("conversation_memory")
 async_rate_limits_col = _async_col("rate_limits")
+async_sessions_col = _async_col("sessions")

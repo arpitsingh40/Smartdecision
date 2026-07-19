@@ -120,6 +120,7 @@ const App: FC = () => {
   }, []);
 
   const logout = useCallback(() => {
+    api.post('/auth/logout').catch(() => {});
     localStorage.removeItem('sdg_token');
     localStorage.removeItem('sdg_user');
     localStorage.removeItem('sdg_last_thread');

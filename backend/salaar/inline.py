@@ -5,15 +5,46 @@ message for threats using the 169-lens pattern matcher, builds a context block
 that the engine injects silently into the LLM prompt, and triggers L1-L2
 auto-actions via the execution runtime.
 
+Also auto-triggers the Causal Engine when the founder asks strategic questions —
+mapping actors, simulating domino chains, and injecting the predicted path.
+
 This is the real SALAAR: watching from the same room, not from the next one.
 """
 import logging
+import re
 from typing import Optional
 
 from db import orgs_col, members_col, tasks_col
 from lenses import select_lenses
 
 log = logging.getLogger("salaar.inline")
+
+
+# ── Strategic intent detection — when the founder is asking for forward simulation ──
+STRATEGIC_INTENT_PATTERNS = [
+    (r"\b(how (do|can|should) I (get|convince|make|persuade|influence|win|secure))\b", "influence_path"),
+    (r"\b(what (would|will|happens?) if)\b", "outcome_prediction"),
+    (r"\b(how (do|should) I (handle|deal with|approach|manage))\b", "situation_navigation"),
+    (r"\b(find (me |the |a )?(path|way|route) to)\b", "pathfinding"),
+    (r"\b(what'?s (the |my )?(best|smartest|right) (move|play|strategy))\b", "optimal_move"),
+    (r"\b(how (to|can I|do I) (grow|scale|expand|enter|launch))\b", "growth_strategy"),
+    (r"\b(how (to|can I|do I) (raise|fund|get funding|get investment))\b", "fundraising"),
+    (r"\b(should I (hire|fire|partner|acquire|pivot|sell))\b", "binary_decision"),
+    (r"\b(what would (make|get|cause|trigger) .{3,30} to)\b", "trigger_analysis"),
+    (r"\b(need (a |the )?(plan|strategy|roadmap|playbook) for)\b", "planning"),
+    (r"\b(who (should|do I need to) (talk to|contact|reach out to|call))\b", "actor_identification"),
+]
+
+def _detect_strategic_intent(text: str) -> Optional[str]:
+    """Detect if the founder is asking for strategic forward simulation.
+    Returns the intent type or None."""
+    if not text:
+        return None
+    lower = text.lower()
+    for pattern, intent_type in STRATEGIC_INTENT_PATTERNS:
+        if re.search(pattern, lower):
+            return intent_type
+    return None
 
 
 def salaar_inline_scan(user_msg: str, thread: dict, user_doc: dict) -> dict:
@@ -111,7 +142,63 @@ def salaar_inline_scan(user_msg: str, thread: dict, user_doc: dict) -> dict:
     except Exception:
         pass  # select_lenses may not be available or fail on some inputs
     
+    # ── 4. Causal Chain Auto-Trigger — when founder asks strategic questions ──
+    strategic = _detect_strategic_intent(user_msg)
+    if strategic and org_id:
+        try:
+            objective = _build_objective_from_thread(user_msg, thread)
+            actor_map = build_actor_map(org_id, objective, user_msg[:500])
+            if actor_map and len(actor_map.get("actors", [])) > 0:
+                chain = simulate_causal_chain(org_id, objective, actor_map, user_msg[:500])
+                if chain and not chain.get("error"):
+                    result["causal_chain"] = chain
+                    result["actor_map"] = actor_map
+                    # Inject chain summary into context block
+                    chain_block = _format_chain_for_prompt(chain)
+                    existing = result.get("context_block", "")
+                    result["context_block"] = existing + "\n" + chain_block if existing else chain_block
+        except Exception as e:
+            log.debug(f"SALAAR causal chain auto-trigger skipped: {e}")
+    
     return result
+
+
+def _build_objective_from_thread(msg: str, thread: dict) -> str:
+    """Build a strategic objective from the founder's message + thread context."""
+    goal = (thread or {}).get("goal", "")
+    if goal and goal not in msg:
+        return f"{goal}: {msg[:300]}"
+    return msg[:400]
+
+
+def _format_chain_for_prompt(chain: dict) -> str:
+    """Format a causal chain as a prompt injection block."""
+    lines = [
+        "\nSALAAR CAUSAL CHAIN (simulated forward path — use discreetly, do NOT recite verbatim):",
+        f"Chain: {chain.get('chain_name', 'Strategic path')}",
+        f"Success probability: {chain.get('success_probability', '?')}",
+        f"Critical link: {chain.get('critical_chain_link', '?')}",
+        f"What the founder must personally do: {chain.get('founder_only_decision', '?')}",
+        f"Alternative if chain breaks: {chain.get('alternative_chain', '?')}",
+    ]
+    steps = chain.get("steps", [])[:5]
+    for s in steps:
+        lines.append(
+            f"  Step {s.get('step')}: {s.get('action', '')[:150]} → "
+            f"{s.get('actor_affected', '?')} responds: {s.get('predicted_response', '')[:100]} "
+            f"({s.get('response_probability', 0):.0%})"
+        )
+    lines.append(
+        "\nSALAAR RULE: Do NOT list the chain steps to the founder. Use the chain "
+        "to inform your response. Your acknowledgment should reflect that you have "
+        "mapped the players, simulated the moves, and found the minimal path. Give "
+        "them the ONE thing they must do — the rest is yours to handle."
+    )
+    return "\n".join(lines)
+
+
+# Import at bottom to avoid circular deps
+from salaar.causal import build_actor_map, simulate_causal_chain
 
 
 def salaar_auto_execute(org_id: str, user_id: str, threats: list[dict]):

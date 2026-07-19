@@ -2,6 +2,7 @@ import os
 import uuid
 import time
 import math
+import jwt
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,7 +26,7 @@ from db import (
     users_col, threads_col, events_col, telemetry_col, orgs_col, tasks_col, plans_col, members_col,
     async_users_col, async_threads_col, async_events_col, async_telemetry_col,
 )
-from security import pwd, make_token, current_user, current_user_async
+from security import pwd, make_token, revoke_token, cleanup_expired_sessions, current_user, current_user_async
 from ledger import record_ledger, inc_stats, ensure_startup
 from tracking import router as tracking_router, client_ip, geo_lookup
 from admin import router as admin_router
@@ -243,7 +244,7 @@ async def signup(body: SignupIn, request: Request):
             record_ledger(referrer["id"], "referral_bonus", bonus, reason=f"invited {user['email']}")
             inc_stats({"credits_issued_free": 2 * bonus})
             user["credits"] += bonus
-    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False}}
+    return {"token": make_token(user["id"])[1], "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False}}
 
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
@@ -256,11 +257,23 @@ async def login(body: LoginIn, request: Request):
     if not user.get("country"):
         geo = geo_lookup(ip)
         await async_users_col.update_one({"id": user["id"]}, {"$set": {"country": geo["country"], "city": geo["city"]}})
-    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}}
+    return {"token": make_token(user["id"])[1], "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}}
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(current_user_async)):
     return {"id": user["id"], "phone": user.get("phone", ""), "email": user.get("email", ""), "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}
+
+
+@api.post("/auth/logout")
+async def logout(request: Request, user: dict = Depends(current_user_async)):
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        try:
+            payload = jwt.decode(auth.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
+            revoke_token(payload.get("jti", ""))
+        except Exception:
+            pass
+    return {"ok": True}
 
 
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
@@ -903,6 +916,7 @@ scheduler.add_job(_six_hour_housekeeping, IntervalTrigger(hours=6))
 scheduler.add_job(_weekly_system_scan, CronTrigger(day_of_week="sat", hour=22, minute=30, timezone="Asia/Kolkata"))
 scheduler.add_job(_execute_approved_tasks_cron, IntervalTrigger(hours=3))  # Wire 4: execute approved tasks every 3 hours
 scheduler.add_job(_agent_orchestration_cron, IntervalTrigger(minutes=30))  # Agents: run every 30 minutes
+scheduler.add_job(cleanup_expired_sessions, IntervalTrigger(hours=24))  # Session cleanup
 
 
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")

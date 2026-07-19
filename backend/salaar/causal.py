@@ -648,11 +648,11 @@ def _mark_chain_resolved(chain_id: str, reason: str):
 # ======================================================================
 
 def auto_advance_all_chains():
-    """Run across all orgs with active chains. Called every 30 min by SALAAR deep scan."""
+    """Run across all orgs with active chains. Called every 15 min by SALAAR deep scan."""
     total_advanced = 0
     total_fallbacks = 0
     try:
-        for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1, "name": 1}) if orgs_col is not None else []:
+        for org in orgs_col.find({}, {"_id": 0, "id": 1, "name": 1}) if orgs_col is not None else []:
             try:
                 r = auto_advance_chains(org["id"])
                 total_advanced += r.get("advanced", 0)

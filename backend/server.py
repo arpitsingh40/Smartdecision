@@ -100,6 +100,7 @@ async def _lifespan(app: FastAPI):
             ensure_share_startup()
             ensure_subscriptions_startup()
             ensure_executive_startup()
+            ensure_salaar_startup()
             # Sync connections from Composio on startup for all orgs
             try:
                 from execution.connections import refresh_connections_from_composio
@@ -930,6 +931,21 @@ scheduler.add_job(_weekly_system_scan, CronTrigger(day_of_week="sat", hour=22, m
 scheduler.add_job(_execute_approved_tasks_cron, IntervalTrigger(hours=3))  # Wire 4: execute approved tasks every 3 hours
 scheduler.add_job(_agent_orchestration_cron, IntervalTrigger(minutes=30))  # Agents: run every 30 minutes
 scheduler.add_job(cleanup_expired_sessions, IntervalTrigger(hours=24))  # Session cleanup
+
+# ── SALAAR: The Shadow Agent ──
+from salaar import salaar_realtime_scan, salaar_deep_scan, generate_salaar_brief
+from salaar.threats import ensure_salaar_startup
+scheduler.add_job(salaar_realtime_scan, IntervalTrigger(minutes=5))   # Awareness: scan every 5 min
+scheduler.add_job(salaar_deep_scan, IntervalTrigger(minutes=30))        # Deep: people, patterns, health
+
+
+# ── SALAAR Brief API ──
+@api.get("/salaar/brief")
+async def salaar_brief_endpoint(user: dict = Depends(current_user_async)):
+    org_id = user.get("org_id")
+    if not org_id:
+        raise HTTPException(400, "No organization — SALAAR requires a company workspace")
+    return generate_salaar_brief(org_id, user["id"])
 
 
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")

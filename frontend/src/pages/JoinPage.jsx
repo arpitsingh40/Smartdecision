@@ -8,7 +8,7 @@ import { Users, Loader2, LogIn, AlertCircle } from 'lucide-react';
 
 export default function JoinPage() {
   const { code } = useParams();
-  const { token, user, setUser } = useAuth();
+  const { user, setUser } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -80,7 +80,7 @@ export default function JoinPage() {
               {"Join the workspace to get decisions backed by the team's playbook."}
             </p>
 
-            {token && user ? (
+            {user ? (
               <Button data-testid="join-confirm-btn" onClick={join} disabled={busy} className="rounded-xl mt-6 w-full">
                 {busy ? <Loader2 className="animate-spin" size={16} /> : `Join ${info.org_name}`}
               </Button>

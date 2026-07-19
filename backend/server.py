@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from pymongo import ReturnDocument
 from typing import Optional
@@ -26,7 +27,7 @@ from db import (
     users_col, threads_col, events_col, telemetry_col, orgs_col, tasks_col, plans_col, members_col,
     async_users_col, async_threads_col, async_events_col, async_telemetry_col,
 )
-from security import pwd, make_token, revoke_token, cleanup_expired_sessions, current_user, current_user_async
+from security import pwd, make_token, revoke_token, cleanup_expired_sessions, set_auth_cookie, clear_auth_cookie, current_user, current_user_async
 from ledger import record_ledger, inc_stats, ensure_startup
 from tracking import router as tracking_router, client_ip, geo_lookup
 from admin import router as admin_router
@@ -244,7 +245,10 @@ async def signup(body: SignupIn, request: Request):
             record_ledger(referrer["id"], "referral_bonus", bonus, reason=f"invited {user['email']}")
             inc_stats({"credits_issued_free": 2 * bonus})
             user["credits"] += bonus
-    return {"token": make_token(user["id"])[1], "user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False}}
+    _, jwt_str = make_token(user["id"])
+    resp = JSONResponse({"user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False}})
+    set_auth_cookie(resp, jwt_str)
+    return resp
 
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
@@ -257,7 +261,10 @@ async def login(body: LoginIn, request: Request):
     if not user.get("country"):
         geo = geo_lookup(ip)
         await async_users_col.update_one({"id": user["id"]}, {"$set": {"country": geo["country"], "city": geo["city"]}})
-    return {"token": make_token(user["id"])[1], "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}}
+    _, jwt_str = make_token(user["id"])
+    resp = JSONResponse({"user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}})
+    set_auth_cookie(resp, jwt_str)
+    return resp
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(current_user_async)):
@@ -266,14 +273,20 @@ async def me(user: dict = Depends(current_user_async)):
 
 @api.post("/auth/logout")
 async def logout(request: Request, user: dict = Depends(current_user_async)):
-    auth = request.headers.get("authorization", "")
-    if auth.startswith("Bearer "):
+    token = request.cookies.get("sdg_token")
+    if not token:
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth.split(" ", 1)[1]
+    if token:
         try:
-            payload = jwt.decode(auth.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
+            payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
             revoke_token(payload.get("jti", ""))
         except Exception:
             pass
-    return {"ok": True}
+    resp = JSONResponse({"ok": True})
+    clear_auth_cookie(resp)
+    return resp
 
 
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",

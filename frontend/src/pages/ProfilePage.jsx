@@ -86,7 +86,6 @@ export default function ProfilePage() {
       if (typeof r.data?.credits === 'number' && setCredits) setCredits(r.data.credits);
       if (setUser && user) {
         const next = { ...user, credits: r.data.credits ?? user.credits, questionnaire_completed: true };
-        localStorage.setItem('sdg_user', JSON.stringify(next));
         setUser(next);
       }
       if (r.data?.first_completion) { trackPixel('CompleteRegistration', { value: 399, currency: 'INR' }); toast.success(`+${r.data.credits_added} credits dropped in your wallet.`); }

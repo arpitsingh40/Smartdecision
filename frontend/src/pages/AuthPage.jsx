@@ -43,7 +43,7 @@ export default function AuthPage() {
         ? { email, password }
         : { email, password, name, ...(refCode ? { ref: refCode } : {}) };
       const r = await api.post(path, payload);
-      login(r.data.token, r.data.user);
+      login(r.data.user);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Something went wrong.');
     } finally { setBusy(false); }

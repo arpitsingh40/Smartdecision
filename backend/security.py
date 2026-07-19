@@ -1,10 +1,12 @@
 """Auth primitives shared by all routers (JWT, password hashing, admin gate).
-Supports both sync and async endpoints. Tokens stored in DB — revocable server-side."""
+Supports both sync and async endpoints. Tokens stored in DB — revocable server-side.
+Auth via httpOnly cookie (primary) or Authorization header (fallback)."""
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
 import jwt
-from fastapi import HTTPException, Header, Depends
+from fastapi import HTTPException, Header, Depends, Request
+from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from db import users_col, async_users_col, sessions_col, async_sessions_col
 
@@ -20,6 +22,26 @@ if not JWT_SECRET or JWT_SECRET in ("dev-secret", "dev-jwt-secret", "dev-jwt-sec
         _log.warning(f"  Current JWT_SECRET starts with 'dev-', suggesting it's a placeholder.")
 
 TOKEN_DAYS = 30
+COOKIE_NAME = "sdg_token"
+COOKIE_OPTIONS = {"httponly": True, "secure": True, "samesite": "lax", "max_age": TOKEN_DAYS * 86400, "path": "/"}
+
+
+def set_auth_cookie(response, jwt_str: str):
+    response.set_cookie(COOKIE_NAME, jwt_str, **COOKIE_OPTIONS)
+
+
+def clear_auth_cookie(response):
+    response.delete_cookie(COOKIE_NAME, path="/")
+
+
+def _get_token(request: Request, authorization: str = Header(None)) -> str | None:
+    """Read JWT from httpOnly cookie first, fallback to Authorization header."""
+    token = request.cookies.get(COOKIE_NAME)
+    if token:
+        return token
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.split(" ", 1)[1]
+    return None
 
 
 def now_utc():
@@ -53,11 +75,11 @@ def revoke_all_user_tokens(user_id: str):
     sessions_col.update_many({"user_id": user_id}, {"$set": {"revoked": True}})
 
 
-def _decode_token(authorization: str) -> dict:
-    if not authorization or not authorization.startswith("Bearer "):
+def _decode_token(token: str | None) -> dict:
+    if not token:
         raise HTTPException(401, "Not authenticated")
     try:
-        return jwt.decode(authorization.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
+        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except Exception:
         raise HTTPException(401, "Invalid or expired token")
 
@@ -71,8 +93,9 @@ def _verify_session(payload: dict):
         raise HTTPException(401, "Session revoked or not found")
 
 
-def current_user(authorization: str = Header(None)) -> dict:
-    payload = _decode_token(authorization)
+def current_user(request: Request, authorization: str = Header(None)) -> dict:
+    token = _get_token(request, authorization)
+    payload = _decode_token(token)
     _verify_session(payload)
     user = users_col.find_one({"id": payload["sub"]})
     if not user:
@@ -80,8 +103,9 @@ def current_user(authorization: str = Header(None)) -> dict:
     return user
 
 
-async def current_user_async(authorization: str = Header(None)) -> dict:
-    payload = _decode_token(authorization)
+async def current_user_async(request: Request, authorization: str = Header(None)) -> dict:
+    token = _get_token(request, authorization)
+    payload = _decode_token(token)
     token_id = payload.get("jti")
     if not token_id:
         raise HTTPException(401, "Token missing session id")
@@ -94,11 +118,12 @@ async def current_user_async(authorization: str = Header(None)) -> dict:
     return user
 
 
-def optional_user(authorization: str = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
+def optional_user(request: Request, authorization: str = Header(None)):
+    token = _get_token(request, authorization)
+    if not token:
         return None
     try:
-        payload = _decode_token(authorization)
+        payload = _decode_token(token)
         token_id = payload.get("jti")
         if not token_id:
             return None
@@ -110,11 +135,12 @@ def optional_user(authorization: str = Header(None)):
         return None
 
 
-async def optional_user_async(authorization: str = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
+async def optional_user_async(request: Request, authorization: str = Header(None)):
+    token = _get_token(request, authorization)
+    if not token:
         return None
     try:
-        payload = _decode_token(authorization)
+        payload = _decode_token(token)
         token_id = payload.get("jti")
         if not token_id:
             return None

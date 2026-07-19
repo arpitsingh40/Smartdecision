@@ -3,18 +3,10 @@ import { toast } from 'sonner';
 
 const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL || '';
 
-export const api = axios.create({ baseURL: `${BACKEND_URL}/api` });
-
-export function setAuthToken(token: string | null): void {
-  if (token) {
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  } else {
-    delete api.defaults.headers.common['Authorization'];
-  }
-}
-
-const stored = localStorage.getItem('sdg_token');
-if (stored) setAuthToken(stored);
+export const api = axios.create({
+  baseURL: `${BACKEND_URL}/api`,
+  withCredentials: true,
+});
 
 interface TaskUpdateBody {
   status?: string;

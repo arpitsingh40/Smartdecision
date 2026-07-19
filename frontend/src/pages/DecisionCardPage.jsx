@@ -12,7 +12,7 @@ import {
 
 export default function DecisionCardPage() {
   const { shareId } = useParams();
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const [card, setCard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
@@ -186,7 +186,7 @@ export default function DecisionCardPage() {
             <div className="text-sm text-muted-foreground">No takes yet. Be the first founder to weigh in.</div>
           )}
 
-          {token ? (
+          {user ? (
             <div className="mt-4 space-y-2">
               <Textarea
                 data-testid="opinion-input"

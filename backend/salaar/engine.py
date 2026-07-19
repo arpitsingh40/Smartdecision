@@ -196,7 +196,7 @@ def salaar_realtime_scan():
     total_threats = 0
     total_actions = 0
     try:
-        for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1, "name": 1}):
+        for org in orgs_col.find({}, {"_id": 0, "id": 1, "name": 1}):
             try:
                 r = scan_org(org["id"])
                 total_threats += r.get("threats_detected", 0)
@@ -213,7 +213,7 @@ def salaar_deep_scan():
     log.info("SALAAR: deep scan starting")
     total_patterns = 0
     try:
-        for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1, "name": 1}):
+        for org in orgs_col.find({}, {"_id": 0, "id": 1, "name": 1}):
             try:
                 r = deep_scan_org(org["id"])
                 total_patterns += r.get("patterns_recalled", 0)

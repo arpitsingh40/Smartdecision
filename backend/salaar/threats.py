@@ -44,6 +44,7 @@ def _uid():
 def ensure_salaar_startup():
     """Idempotent indexes. Called from server startup."""
     if db is None:
+        log.warning("SALAAR startup: db is None, skipping indexes")
         return
     for col_name, fields in [
         ("salaar_events", [("id", 1), ("org_id", 1)]),
@@ -56,8 +57,9 @@ def ensure_salaar_startup():
         for field in fields:
             try:
                 db[col_name].create_index(field, unique=field[0] == "id")
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"SALAAR startup: index {col_name}.{field} failed: {e}")
+    log.info("SALAAR startup: collections and indexes ready")
 
 
 # ── Authority gradient (Constitution §6) ──

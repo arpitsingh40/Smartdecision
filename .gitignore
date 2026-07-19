@@ -92,3 +92,7 @@ credentials.json
 .env.test.local
 *.env.local
 ui-ux-pro-max-skill
+
+# deploy
+.gh_token
+setup_fly.sh

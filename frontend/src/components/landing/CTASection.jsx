@@ -48,17 +48,16 @@ export default function CTASection() {
         <h2
           className="font-display text-5xl sm:text-6xl lg:text-[4.5rem] leading-[0.92] text-white tracking-tight"
         >
-          Stop deciding.<br />
+          Your company.<br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#b89165] via-[#c9a86b] to-[#b89165]">
-            Start doing.
+            On autopilot.
           </span>
         </h2>
 
         <p
           className="mt-6 text-lg text-white/50 max-w-lg mx-auto leading-relaxed"
         >
-          One goal. One action. Real progress — held across weeks.<br />
-          Join the founders who stopped overthinking and started shipping.
+          One conversation to build your company model. One direction with milestones. Daily actions that compound. Your team, running while you sleep.
         </p>
 
         <div

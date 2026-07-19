@@ -4,6 +4,7 @@ import { useAuth } from '../App';
 import { api } from '../lib/api';
 import { TopBar } from '../components/TopBar';
 import { SystemHealthBar, SystemHealthDetail, ConnectionPrompt, CapabilityPanel } from '../components/SystemHealth';
+import { SalaarBrief } from '../components/SalaarBrief';
 import { Button } from '../components/ui/button';
 import BrainSection from '../components/BrainSection';
 import { Textarea } from '../components/ui/textarea';
@@ -525,6 +526,7 @@ export default function JourneyPage() {
   return (
     <div className="h-dvh flex flex-col">
       <TopBar />
+      <SalaarBrief />
       {journey?.started && <SystemHealthBar journey={journey} />}
       {journey?.started && <SystemHealthDetail journey={journey} />}
       {journey?.system_health?.at_risk?.length > 0 && (

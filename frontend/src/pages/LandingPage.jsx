@@ -107,10 +107,10 @@ function ParticleCanvas({ mousePos }) {
 function StatsBar() {
   // ponytail: honest commitments, not invented metrics
   const stats = [
-    { num: '1', suffix: '', label: 'Goal. One next action. 48 hours.' },
-    { num: 'You', suffix: '', label: 'Approve every high-stakes action' },
-    { num: 'Real', suffix: '', label: 'Verified outcomes, never vibes' },
-    { num: 'Yours', suffix: '', label: 'Kill switch, data, and final say' },
+    { num: '1', suffix: '', label: 'LLM call per turn. Zero-waste routing.' },
+    { num: '170+', suffix: '', label: 'Book-derived reasoning lenses' },
+    { num: '12', suffix: '', label: 'Autonomous executive agents' },
+    { num: '1,403', suffix: '', label: 'Tools via execution runtime' },
   ];
 
   return (

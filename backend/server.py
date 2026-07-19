@@ -363,6 +363,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
 
 @api.post("/goals")
 async def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_user_async)):
+    _rate_limit(f"goal:{user['id']}", max_reqs=5, window=300.0)
     reserve = TURN_RESERVE_NORMAL
     u = users_col.find_one_and_update({"id": user["id"], "credits": {"$gte": reserve}},
                                       {"$inc": {"credits": -reserve}}, return_document=ReturnDocument.AFTER)
@@ -476,6 +477,7 @@ async def get_thread(thread_id: str, user: dict = Depends(current_user_async)):
 
 @api.post("/threads/{thread_id}/turn")
 async def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundTasks, user: dict = Depends(current_user_async)):
+    _rate_limit(f"turn:{user['id']}", max_reqs=15, window=60.0)
     if body.mode not in ("normal", "ultra"):
         raise HTTPException(422, "mode must be 'normal' or 'ultra'")
     if body.mode == "ultra":

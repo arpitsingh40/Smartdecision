@@ -992,7 +992,10 @@ scheduler.add_job(_agent_orchestration_cron, IntervalTrigger(minutes=30))  # Age
 scheduler.add_job(cleanup_expired_sessions, IntervalTrigger(hours=24))  # Session cleanup
 
 # ── SALAAR: The Shadow Agent ──
-from salaar import salaar_realtime_scan, salaar_deep_scan
+from salaar import salaar_realtime_scan, salaar_deep_scan, auto_advance_all_chains
+scheduler.add_job(salaar_realtime_scan, IntervalTrigger(minutes=5))   # Awareness: scan every 5 min
+scheduler.add_job(salaar_deep_scan, IntervalTrigger(minutes=30))        # Deep: people, patterns, health
+scheduler.add_job(auto_advance_all_chains, IntervalTrigger(minutes=15))  # Chain auto-advance + verify
 from salaar.threats import ensure_salaar_startup
 scheduler.add_job(salaar_realtime_scan, IntervalTrigger(minutes=5))   # Awareness: scan every 5 min
 scheduler.add_job(salaar_deep_scan, IntervalTrigger(minutes=30))        # Deep: people, patterns, health

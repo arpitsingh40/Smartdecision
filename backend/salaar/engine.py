@@ -173,6 +173,15 @@ def deep_scan_org(org_id: str):
         result["patterns_recalled"] = patterns_recalled
     except Exception as e:
         log.warning(f"SALAAR deep scan: pattern memory failed for {org_id}: {e}")
+    
+    # ── Auto-advance active causal chains ──
+    try:
+        from salaar.causal import auto_advance_chains
+        chain_result = auto_advance_chains(org_id)
+        result["chains_advanced"] = chain_result.get("advanced", 0)
+        result["chains_fallback"] = chain_result.get("fallbacks_triggered", 0)
+    except Exception as e:
+        log.warning(f"SALAAR deep scan: chain auto-advance failed for {org_id}: {e}")
 
     return result
 

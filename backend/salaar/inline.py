@@ -147,7 +147,7 @@ def salaar_inline_scan(user_msg: str, thread: dict, user_doc: dict) -> dict:
     if strategic and org_id:
         try:
             objective = _build_objective_from_thread(user_msg, thread)
-            actor_map = build_actor_map(org_id, objective, user_msg[:500])
+            actor_map = build_actor_map_cached(org_id, objective, user_msg[:500])
             if actor_map and len(actor_map.get("actors", [])) > 0:
                 chain = simulate_causal_chain(org_id, objective, actor_map, user_msg[:500])
                 if chain and not chain.get("error"):
@@ -198,7 +198,7 @@ def _format_chain_for_prompt(chain: dict) -> str:
 
 
 # Import at bottom to avoid circular deps
-from salaar.causal import build_actor_map, simulate_causal_chain
+from salaar.causal import build_actor_map_cached, simulate_causal_chain
 
 
 def salaar_auto_execute(org_id: str, user_id: str, threats: list[dict]):

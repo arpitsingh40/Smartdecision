@@ -52,6 +52,7 @@ from weekly_review import router as weekly_review_router
 from system_router import router as system_router
 from capabilities_router import router as capabilities_router
 from agents import agent_router
+from salaar import generate_salaar_brief
 
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
@@ -671,6 +672,13 @@ def robots():
     from fastapi.responses import Response
     return Response(content="User-agent: *\nDisallow: /\n", media_type="text/plain")
 
+@api.get("/salaar/brief")
+async def salaar_brief_endpoint(user: dict = Depends(current_user_async)):
+    org_id = user.get("org_id")
+    if not org_id:
+        raise HTTPException(400, "No organization — SALAAR requires a company workspace")
+    return generate_salaar_brief(org_id, user["id"])
+
 app.include_router(api)
 app.include_router(v1)  # Ch.54: versioned API — new endpoints go under /api/v1
 
@@ -933,19 +941,10 @@ scheduler.add_job(_agent_orchestration_cron, IntervalTrigger(minutes=30))  # Age
 scheduler.add_job(cleanup_expired_sessions, IntervalTrigger(hours=24))  # Session cleanup
 
 # ── SALAAR: The Shadow Agent ──
-from salaar import salaar_realtime_scan, salaar_deep_scan, generate_salaar_brief
+from salaar import salaar_realtime_scan, salaar_deep_scan
 from salaar.threats import ensure_salaar_startup
 scheduler.add_job(salaar_realtime_scan, IntervalTrigger(minutes=5))   # Awareness: scan every 5 min
 scheduler.add_job(salaar_deep_scan, IntervalTrigger(minutes=30))        # Deep: people, patterns, health
-
-
-# ── SALAAR Brief API ──
-@api.get("/salaar/brief")
-async def salaar_brief_endpoint(user: dict = Depends(current_user_async)):
-    org_id = user.get("org_id")
-    if not org_id:
-        raise HTTPException(400, "No organization — SALAAR requires a company workspace")
-    return generate_salaar_brief(org_id, user["id"])
 
 
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")

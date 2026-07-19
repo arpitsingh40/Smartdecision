@@ -1003,11 +1003,23 @@ def start(body: StartIn, user: dict = Depends(current_user)):
 
     def produce():
         org_id, fh = _get_org_context(user)
+        # SALAAR inline: scan first message for threats
+        salaar_ctx = ""
+        try:
+            from salaar.inline import salaar_inline_scan
+            user_doc = users_col.find_one({"id": user["id"]}) if users_col else None
+            scan = salaar_inline_scan(objective, {}, user_doc or user)
+            salaar_ctx = scan.get("context_block", "")
+        except Exception:
+            pass
+        cog = _safe_cognition(user, objective, None, function_health=fh)
+        if salaar_ctx:
+            cog = cog + "\n" + salaar_ctx
         reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw, model_name, usage = journey_turn(
             objective, _empty_model(), [], objective,
             prev_reasoning=None, learning=_learning_digest(user["id"], j),
             benchmarks_block="", prev_hypotheses=None,
-            cognition_block_text=_safe_cognition(user, objective, None, function_health=fh),
+            cognition_block_text=cog,
             spin_block=_spin_block(None), turn_count=1, org_id=org_id, function_health=fh)
         return (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), usage, model_name
 
@@ -1046,11 +1058,23 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
     def produce():
         turn_count = len([m for m in transcript if m.get("role") == "assistant"]) + 1
         org_id, fh = _get_org_context(user)
+        # SALAAR inline: scan for threats, inject into cognition
+        salaar_ctx = ""
+        try:
+            from salaar.inline import salaar_inline_scan
+            user_doc = users_col.find_one({"id": user["id"]}) if users_col else None
+            scan = salaar_inline_scan(msg, {"goal": objective}, user_doc or user)
+            salaar_ctx = scan.get("context_block", "")
+        except Exception:
+            pass
+        cog = _safe_cognition(user, msg, current_model, function_health=fh)
+        if salaar_ctx:
+            cog = cog + "\n" + salaar_ctx
         reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw, model_name, usage = journey_turn(
             objective, current_model, transcript, msg,
             prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j),
             benchmarks_block="", prev_hypotheses=prev_hyps,
-            cognition_block_text=_safe_cognition(user, msg, current_model, function_health=fh),
+            cognition_block_text=cog,
             turn_count=turn_count, org_id=org_id, function_health=fh)
         return (reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw), usage, model_name
 

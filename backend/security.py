@@ -23,7 +23,14 @@ if not JWT_SECRET or JWT_SECRET in ("dev-secret", "dev-jwt-secret", "dev-jwt-sec
 
 TOKEN_DAYS = 30
 COOKIE_NAME = "sdg_token"
-COOKIE_OPTIONS = {"httponly": True, "secure": True, "samesite": "lax", "max_age": TOKEN_DAYS * 86400, "path": "/"}
+COOKIE_OPTIONS = {
+    "httponly": True,
+    "secure": True,
+    "samesite": "lax",
+    "max_age": TOKEN_DAYS * 86400,
+    "path": "/",
+    "domain": ".smartdecigen.com",  # covers both smartdecigen.com and www.smartdecigen.com
+}
 
 
 def set_auth_cookie(response, jwt_str: str):
@@ -31,7 +38,7 @@ def set_auth_cookie(response, jwt_str: str):
 
 
 def clear_auth_cookie(response):
-    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(COOKIE_NAME, path="/", domain=".smartdecigen.com")
 
 
 def _get_token(request: Request, authorization: str = Header(None)) -> str | None:

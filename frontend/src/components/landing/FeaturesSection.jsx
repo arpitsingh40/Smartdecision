@@ -47,7 +47,7 @@ const FEATURES = [
 
 export default function FeaturesSection() {
   return (
-    <section id="features" className="relative py-28 sm:py-36 bg-surface-2 overflow-hidden">
+    <section id="features" className="relative py-28 sm:py-36 bg-surface-2 overflow-x-clip">
       <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
         <div className="absolute -top-40 -right-40 w-[800px] h-[800px] rounded-full opacity-25"
           style={{ background: 'radial-gradient(circle, hsl(var(--accent)/0.08) 0%, transparent 65%)' }} />

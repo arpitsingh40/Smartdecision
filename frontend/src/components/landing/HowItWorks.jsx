@@ -35,7 +35,7 @@ const STEPS = [
 
 export default function HowItWorks() {
   return (
-    <section id="how-it-works" className="relative py-28 sm:py-36 bg-surface overflow-hidden">
+    <section id="how-it-works" className="relative py-28 sm:py-36 bg-surface overflow-x-clip">
       <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[800px] rounded-full opacity-15"
           style={{ background: 'radial-gradient(circle at 50% 0%, hsl(var(--accent)/0.08) 0%, transparent 60%)' }} />

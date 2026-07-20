@@ -99,7 +99,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="paper min-h-screen bg-background">
+    <div className="paper min-h-screen bg-background overflow-x-clip">
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
 
       <ParticleCanvas mousePos={mousePos} />

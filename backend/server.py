@@ -241,6 +241,37 @@ async def signup(body: SignupIn, request: Request):
     await async_users_col.insert_one(user)
     record_ledger(user["id"], "free_grant", SIGNUP_CREDITS, reason="signup")
     inc_stats({"credits_issued_free": SIGNUP_CREDITS})
+
+    # Auto-create organization + init agents for instant company setup
+    try:
+        org_id = str(uuid.uuid4())
+        org_name = (body.name.strip() + "'s Company") if body.name.strip() else "My Company"
+        org = {
+            "id": org_id, "name": org_name, "owner_user_id": user["id"],
+            "member_count": 1, "created_at": now_utc(),
+        }
+        orgs_col.insert_one(org)
+        members_col.insert_one({
+            "user_id": user["id"], "org_id": org_id, "role": "owner",
+            "status": "active", "joined_at": now_utc(),
+        })
+        users_col.update_one({"id": user["id"]}, {
+            "$set": {"org_id": org_id, "org_role": "owner"}})
+        user["org_id"] = org_id
+        user["org_role"] = "owner"
+        log.info(f"auto-created org '{org_name}' for user {user['email']}")
+
+        # Initialize 12 agents (background, non-blocking)
+        try:
+            from agents import AGENT_DEFINITIONS, create_agent
+            for atype in AGENT_DEFINITIONS:
+                create_agent(org_id, atype, user["id"])
+            log.info(f"auto-init 12 agents for org {org_id}")
+        except Exception as e:
+            log.warning(f"agent init failed (non-fatal): {e}")
+    except Exception as e:
+        log.warning(f"auto-org creation failed (non-fatal): {e}")
+        # Don't block signup if org creation fails — user can create one later
     ref = (body.ref or "").strip()
     if ref:
         referrer = users_col.find_one({"referral_code": ref}, {"id": 1, "email": 1})
@@ -255,7 +286,7 @@ async def signup(body: SignupIn, request: Request):
             inc_stats({"credits_issued_free": 2 * bonus})
             user["credits"] += bonus
     _, jwt_str = make_token(user["id"])
-    resp = JSONResponse({"user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False}})
+    resp = JSONResponse({"user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False, "org_id": user.get("org_id"), "org_role": user.get("org_role")}})
     set_auth_cookie(resp, jwt_str)
     return resp
 

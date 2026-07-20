@@ -321,7 +321,12 @@ export default function BusinessOSPage() {
                 )}
               </>
             ) : (
-              <div className="text-center py-16 text-sm text-muted">No cockpit data — set your North Star on the Team page first.</div>
+              <div className="text-center py-16 px-6">
+                <Target size={28} className="mx-auto mb-3 text-muted/40" />
+                <p className="text-sm font-medium text-text">Set your North Star</p>
+                <p className="text-xs text-muted mt-1.5 max-w-xs mx-auto">Define direction once. All agents align to it automatically.</p>
+                <Button size="sm" className="rounded-lg mt-4" onClick={() => navigate('/app/team')}>Set North Star →</Button>
+              </div>
             )}
           </div>
         )}
@@ -339,7 +344,11 @@ export default function BusinessOSPage() {
                 </div>
                 <div className="rounded-2xl border border-hairline divide-y">
                   {records.events.length === 0 ? (
-                    <div className="py-12 text-center text-sm text-muted">No events yet.</div>
+                    <div className="py-12 text-center">
+                      <History size={28} className="mx-auto mb-3 text-muted/40" />
+                      <p className="text-sm font-medium text-text">Activity will appear here</p>
+                      <p className="text-xs text-muted mt-1">Every decision, execution, and connection is logged automatically.</p>
+                    </div>
                   ) : records.events.slice(0, 15).map(ev => {
                     const ts = ev.created_at ? new Date(ev.created_at).toLocaleString() : '';
                     return (

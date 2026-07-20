@@ -12,7 +12,7 @@ import {
   Send, Loader2, Sparkles, ArrowRight, Brain, ChevronDown, ChevronUp, CircleDot,
   Target, Gauge, Flag, CheckCircle2, Circle, AlertTriangle, HelpCircle, Lightbulb, Clock,
   Users, UserPlus, Calendar, Shield, ListChecks, Radar, Scale, Rocket, Activity,
-  FlaskConical, Share2,
+  FlaskConical, Share2, Layers, Wifi,
 } from 'lucide-react';
 
 const PLACEHOLDERS = [
@@ -317,12 +317,31 @@ export default function JourneyPage() {
           <div className="w-full max-w-xl mx-auto -mt-10 sm:-mt-16 space-y-8">
             <OSStatusStrip />
 
-            <div className="text-center space-y-6" data-testid="journey-landing">
-              <h1 className="font-display text-3xl sm:text-5xl lg:text-6xl text-text tracking-[-0.02em] leading-[1.06]">
-                What's the decision<br className="hidden sm:block" /> you've been circling?
+            {/* Company status cards — shown when org exists */}
+            {user?.org_id && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { icon: Layers, label: 'Organization', value: 'Ready', color: 'text-emerald-600' },
+                  { icon: Zap, label: 'Agents', value: '12 initialized', color: 'text-accent' },
+                  { icon: Brain, label: 'Knowledge', value: 'Upload docs', color: 'text-muted', onClick: () => navigate('/app/brain') },
+                  { icon: Wifi, label: 'Tools', value: 'Connect', color: 'text-muted', onClick: () => navigate('/app/business-os') },
+                ].map(c => (
+                  <button key={c.label} onClick={c.onClick}
+                    className="rounded-xl border border-hairline bg-surface p-3 sm:p-4 text-left hover:border-accent/30 hover:shadow-sm transition-all">
+                    <c.icon size={16} strokeWidth={1.5} className={c.color} />
+                    <p className="text-[11px] text-muted mt-2 uppercase tracking-wide">{c.label}</p>
+                    <p className={`text-sm font-medium mt-0.5 ${c.color}`}>{c.value}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="text-center space-y-5" data-testid="journey-landing">
+              <h1 className="font-display text-2xl sm:text-4xl lg:text-5xl text-text tracking-[-0.02em] leading-[1.08]">
+                What's on your mind?
               </h1>
-              <p className="text-muted text-sm sm:text-base max-w-sm mx-auto leading-relaxed">
-                Name it. Your Chief of Staff will find what you're missing and hand you one clear next move.
+              <p className="text-muted text-sm max-w-sm mx-auto">
+                Ask anything. Get direction. Your company runs in the background.
               </p>
 
               {busy ? (

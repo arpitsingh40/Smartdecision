@@ -320,8 +320,8 @@ export default function JourneyPage() {
     return (
       <div className="min-h-screen flex flex-col">
         <TopBar />
-        <main className="flex-1 flex items-center justify-center px-4">
-          <div className="w-full max-w-2xl mx-auto -mt-10 space-y-6">
+        <main className="flex-1 flex items-center justify-center px-4" style={{paddingBottom: 'env(safe-area-inset-bottom, 16px)'}}>
+          <div className="w-full max-w-2xl mx-auto -mt-6 sm:-mt-10 space-y-6">
             {/* Business OS status strip */}
             <OSStatusStrip />
 
@@ -329,7 +329,7 @@ export default function JourneyPage() {
             <div className="inline-flex items-center gap-2 text-xs text-muted-foreground mb-6 rounded-full border border-border/70 px-3 py-1">
               <Sparkles size={13} strokeWidth={2} /> Your AI Chief of Staff
             </div>
-            <h1 className="font-display text-3xl sm:text-5xl tracking-[-0.02em] leading-[1.05]">
+            <h1 className="font-display text-2xl sm:text-5xl tracking-[-0.02em] leading-[1.1]">
               What is the decision you have been circling?
             </h1>
             <p className="text-muted-foreground mt-4 text-sm sm:text-base">

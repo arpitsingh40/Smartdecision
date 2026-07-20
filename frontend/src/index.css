@@ -175,3 +175,7 @@
   .thinking-field { animation: none; opacity: 0.6; }
   .elevation-1, .elevation-2, .elevation-3, .elevation-4 { transition: none; }
 }
+
+/* iOS safe area */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }

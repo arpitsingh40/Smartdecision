@@ -101,7 +101,7 @@ export const TopBar = () => {
   const allRoutes = allNavItems.map(n => n.to);
 
   return (
-    <header className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-2">
+    <header className="relative z-10 max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-2 overflow-x-clip">
       <div className="flex items-center justify-between gap-3">
         <button onClick={() => navigate('/app')} data-testid="brand-home" className="flex items-center gap-2 shrink-0">
           <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-text text-background font-display text-sm">S</span>
@@ -139,8 +139,9 @@ export const TopBar = () => {
             </button>
           )}
           <button data-testid="credits-balance" onClick={() => navigate('/app/billing')}
-            className="group flex items-center gap-1 font-mono-plex text-xs text-muted hover:text-text transition-colors" title="Credits">
-            {user?.credits ?? 0} credits
+            className="group flex items-center gap-1 font-mono-plex text-xs text-muted hover:text-text transition-colors shrink-0" title="Credits">
+            <span className="hidden xs:inline">{user?.credits ?? 0} credits</span>
+            <span className="xs:hidden">{user?.credits ?? 0}</span>
             <Plus size={12} strokeWidth={2} className="opacity-60 group-hover:opacity-100" />
           </button>
           <DropdownMenu>

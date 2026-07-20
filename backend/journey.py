@@ -1070,6 +1070,22 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
         cog = _safe_cognition(user, msg, current_model, function_health=fh)
         if salaar_ctx:
             cog = cog + "\n" + salaar_ctx
+
+        # Auto-inject doc memory passages when user asks knowledge questions
+        doc_passages = ""
+        try:
+            import doc_memory
+            from engine import salaar_route
+            route = salaar_route(msg)
+            if route == "knowledge":
+                recall = doc_memory.recall("journey_" + user["id"], msg)
+                if recall and recall.strip():
+                    doc_passages = "\n\nRETRIEVED FROM YOUR DOCUMENTS:\n" + recall[:2000]
+                    cog = cog + doc_passages
+                    log.info(f"journey turn: injected doc memory ({len(recall)} chars)")
+        except Exception as e:
+            log.warning(f"doc recall failed (non-fatal): {e}")
+
         reply, new_model, reasoning, bench_raw, hyp_raw, spin_raw, model_name, usage = journey_turn(
             objective, current_model, transcript, msg,
             prev_reasoning=prev_reasoning, learning=_learning_digest(user["id"], j),

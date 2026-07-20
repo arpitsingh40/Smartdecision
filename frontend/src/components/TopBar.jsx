@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, ShieldCheck, Flame, Compass, Zap, Wifi, History } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, ShieldCheck, Flame, Compass, Zap, Wifi, History, Brain, Layers } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -20,6 +20,34 @@ const fmtLeft = (iso) => {
   return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h` : `${mm}m`;
 };
 
+const NAV_SECTIONS = [
+  {
+    id: 'think', label: 'Think',
+    items: [
+      { to: '/app', label: 'Threads', icon: MessageCircle, testid: 'nav-threads' },
+      { to: '/app/brain', label: 'Brain', icon: Brain, testid: 'nav-brain' },
+      { to: '/app/decisions', label: 'Decisions', icon: CheckSquare, testid: 'nav-decisions' },
+    ],
+  },
+  {
+    id: 'run', label: 'Run',
+    items: [
+      { to: '/app/business-os', label: 'Business OS', icon: Zap, testid: 'nav-business-os' },
+      { to: '/app/cockpit', label: 'Cockpit', icon: Gauge, testid: 'nav-cockpit' },
+      { to: '/app/my-tasks', label: 'Tasks', icon: CheckCircle, testid: 'nav-tasks' },
+      { to: '/app/connections', label: 'Tools', icon: Wifi, testid: 'nav-connections' },
+    ],
+  },
+  {
+    id: 'review', label: 'Review',
+    items: [
+      { to: '/app/record-room', label: 'Records', icon: History, testid: 'nav-records' },
+      { to: '/app/weekly-review', label: 'Weekly', icon: Compass, testid: 'nav-weekly' },
+      { to: '/app/team', label: 'Team', icon: Users, testid: 'nav-team' },
+    ],
+  },
+];
+
 export const TopBar = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -27,7 +55,6 @@ export const TopBar = () => {
   const { theme, setTheme } = useTheme();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [active, setActive] = useState(null);
-  const [unlocks, setUnlocks] = useState(null);
   const [threadCount, setThreadCount] = useState(0);
   const [journeyState, setJourneyState] = useState(null);
 
@@ -39,7 +66,6 @@ export const TopBar = () => {
   useEffect(() => {
     if (!user) return undefined;
     const loadJourney = () => api.get('/journey').then((r) => {
-      setUnlocks(r.data?.unlocks || null);
       setJourneyState({
         started: r.data?.started || false,
         has_direction: r.data?.has_direction || false,
@@ -68,19 +94,11 @@ export const TopBar = () => {
     return () => { clearInterval(id); window.removeEventListener('sdg-actions-changed', onChange); };
   }, [loadActive]);
 
-  const u = unlocks || {};
-  const nav = [
-    ...(threadCount > 0 ? [{ to: '/app', label: `Situations (${threadCount})`, icon: MessageCircle, testid: 'nav-situations' }] : [{ to: '/app', label: 'Home', icon: MessageCircle, testid: 'nav-home' }]),
-    { to: '/app/brain', label: 'Brain', icon: BookOpen, testid: 'nav-knowledge' },
-    ...(u.decisions ? [{ to: '/app/decisions', label: 'My Decisions', icon: CheckSquare, testid: 'nav-decisions' }] : []),
-    ...(u.team ? [{ to: '/app/team', label: 'Team', icon: Users, testid: 'nav-team' }] : []),
-    ...(u.cockpit ? [{ to: '/app/cockpit', label: 'Cockpit', icon: Gauge, testid: 'nav-cockpit' }] : []),
-    ...(u.cockpit ? [{ to: '/app/mission-control', label: 'Mission Control', icon: ShieldCheck, testid: 'nav-mission-control' }] : []),
-    ...(u.cockpit ? [{ to: '/app/founder-profile', label: 'My Profile', icon: UserCog, testid: 'nav-founder-profile' }] : []),
-  ];
   const isActive = (to) => (to === '/app' ? location.pathname === '/app' : location.pathname.startsWith(to));
-
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+  const allNavItems = NAV_SECTIONS.flatMap(s => s.items);
+  const allRoutes = allNavItems.map(n => n.to);
 
   return (
     <header className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-2">
@@ -90,25 +108,27 @@ export const TopBar = () => {
           <span className="font-display text-lg sm:text-xl hidden sm:inline">SmartDeciGen</span>
         </button>
 
-        <nav className="hidden md:flex items-center gap-1 ml-2 mr-auto">
-          {nav.map((n) => {
-            const Icon = n.icon;
-            return (
-              <button key={n.to} data-testid={n.testid} onClick={() => navigate(n.to)}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm transition-colors ${isActive(n.to) ? 'bg-surface-2 text-text' : 'text-muted hover:text-text hover:bg-surface-2/60'}`}>
-                <Icon size={15} strokeWidth={1.75} /> {n.label}
-              </button>
-            );
-          })}
+        <nav className="hidden lg:flex items-center gap-1 ml-3 mr-auto">
+          {NAV_SECTIONS.map(section => (
+            <div key={section.id} className="flex items-center">
+              <span className="text-[9px] uppercase tracking-[0.2em] text-muted/50 px-2 select-none">{section.label}</span>
+              {section.items.map((n) => {
+                const Icon = n.icon;
+                return (
+                  <button key={n.to} data-testid={n.testid} onClick={() => navigate(n.to)}
+                    className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm transition-colors ${isActive(n.to) ? 'bg-surface-2 text-text' : 'text-muted hover:text-text hover:bg-surface-2/60'}`}>
+                    <Icon size={15} strokeWidth={1.75} /> {n.label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-          <button
-            onClick={toggleTheme}
-            data-testid="theme-toggle"
+          <button onClick={toggleTheme} data-testid="theme-toggle"
             className="flex items-center justify-center w-8 h-8 rounded-xl text-muted hover:text-text hover:bg-surface-2/60 transition-all duration-200"
-            aria-label="Toggle theme"
-          >
+            aria-label="Toggle theme">
             {theme === 'dark' ? <Sun size={15} strokeWidth={1.75} /> : <Moon size={15} strokeWidth={1.75} />}
           </button>
           {active && (
@@ -119,8 +139,8 @@ export const TopBar = () => {
             </button>
           )}
           <button data-testid="credits-balance" onClick={() => navigate('/app/billing')}
-            className="group flex items-center gap-1 font-mono-plex text-xs text-muted hover:text-text transition-colors" title="Subscription & tokens">
-            {user?.credits ?? 0} tokens · plan
+            className="group flex items-center gap-1 font-mono-plex text-xs text-muted hover:text-text transition-colors" title="Credits">
+            {user?.credits ?? 0} credits
             <Plus size={12} strokeWidth={2} className="opacity-60 group-hover:opacity-100" />
           </button>
           <DropdownMenu>
@@ -129,7 +149,7 @@ export const TopBar = () => {
                 <CircleUser size={18} strokeWidth={1.75} />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-xl">
+            <DropdownMenuContent align="end" className="rounded-xl w-56">
               <DropdownMenuLabel className="text-xs font-normal text-muted">{user?.email}</DropdownMenuLabel>
               {journeyState && (
                 <div className="px-3 py-2 space-y-1 border-b border-hairline mb-1" data-testid="progress-checklist">
@@ -151,11 +171,16 @@ export const TopBar = () => {
                 </div>
               )}
               <DropdownMenuSeparator />
-              <div className="md:hidden">
-                {nav.map((n) => (
-                  <DropdownMenuItem key={n.to} data-testid={`menu-${n.testid}`} onClick={() => navigate(n.to)} className="text-sm cursor-pointer">
-                    <n.icon size={16} strokeWidth={1.75} className="mr-2" /> {n.label}
-                  </DropdownMenuItem>
+              <div className="lg:hidden">
+                {NAV_SECTIONS.map(section => (
+                  <div key={section.id}>
+                    <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted/50 px-3 py-1">{section.label}</DropdownMenuLabel>
+                    {section.items.map((n) => (
+                      <DropdownMenuItem key={n.to} data-testid={`menu-${n.testid}`} onClick={() => navigate(n.to)} className="text-sm cursor-pointer">
+                        <n.icon size={16} strokeWidth={1.75} className="mr-2" /> {n.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
                 ))}
                 <DropdownMenuSeparator />
               </div>
@@ -165,17 +190,8 @@ export const TopBar = () => {
               <DropdownMenuItem onClick={() => navigate('/app/playbooks')} className="text-sm cursor-pointer">
                 <BookOpen size={16} strokeWidth={1.75} className="mr-2" /> Playbooks
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/app/weekly-review')} className="text-sm cursor-pointer">
-                <Compass size={16} strokeWidth={1.75} className="mr-2" /> Weekly Review
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/app/business-os')} className="text-sm cursor-pointer">
-                <Zap size={16} strokeWidth={1.75} className="mr-2" /> Business OS
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/app/connections')} className="text-sm cursor-pointer">
-                <Wifi size={16} strokeWidth={1.75} className="mr-2" /> Connections
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/app/record-room')} className="text-sm cursor-pointer">
-                <History size={16} strokeWidth={1.75} className="mr-2" /> Record Room
+              <DropdownMenuItem onClick={() => navigate('/app/founder-profile')} className="text-sm cursor-pointer">
+                <UserCog size={16} strokeWidth={1.75} className="mr-2" /> My Profile
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem data-testid="buy-credits-menu" onClick={() => navigate('/app/billing')} className="text-sm cursor-pointer">

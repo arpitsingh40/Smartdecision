@@ -1,87 +1,73 @@
+import { MessageCircle, Zap, BarChart3 } from 'lucide-react';
+
 const SCREENS = [
   {
-    id: 'journey',
-    title: 'Strategy Room',
-    heading: 'Your AI chief of staff',
-    desc: 'A persistent conversation that remembers everything. Set a goal, explore options, get a decision package with confidence scores.',
-    lines: [
-      { align: 'left', text: 'We need to decide on the Q3 hiring plan. Should we hire a senior backend engineer or double down on contractors?', meta: 'You · 2 days ago' },
-      { align: 'right', text: 'Let me analyze that against your current constraints...', meta: 'Thinking' },
-    ],
+    icon: MessageCircle,
+    label: 'Situation Pane',
+    desc: '4 living fields — current state, easiest path, next action, open question. Updated every turn with one LLM call. Not a chatbot.',
+    lines: ['Current state', 'You\'ve validated demand — 3 pilot customers signed.', 'Why this matters', 'Revenue in 30 days if you ship the onboarding flow.', 'Next action (24-48h)', 'Draft the onboarding email sequence. Ship by Thursday.', 'Open question', 'What\'s the one feature those 3 pilots all asked for?'],
   },
   {
-    id: 'thread',
-    title: 'Daily Check-in',
-    heading: 'One action, 48 hours',
-    desc: 'Every session surfaces your single next action. No overwhelm, no task bloat — just the one thing that moves the needle.',
-    lines: [
-      { align: 'left', text: 'Yesterday\'s action: "Review backend contractor proposals." Done?', meta: 'SmartDeciGen · Today' },
-      { align: 'right', text: 'Shared my feedback in the thread. Drafting contracts now.', meta: 'You · 2h ago' },
-    ],
+    icon: Zap,
+    label: 'Business OS',
+    desc: '12 autonomous agents running on schedule. Connected to your tools. Executing, verifying, learning. Founder sees dashboard.',
+    lines: ['Business OS — Live', '4 tools connected', 'Agents active: 12/12', 'Last cycle: 30 min ago', 'Sales Agent: Followed up 3 leads via Gmail', 'Ops Agent: Flagged 2 overdue tasks', 'Pending approvals: 1'],
   },
   {
-    id: 'cockpit',
-    title: 'Cockpit',
-    heading: 'Ship velocity at a glance',
-    desc: 'North star progress, team alignment, follow-through rates, and drift detection — all in one dashboard.',
-    lines: [
-      { align: 'left', text: 'North star: 10 paying customers by Oct', meta: 'Goal' },
-      { align: 'right', text: 'Momentum: +2 this week · 40% to target', meta: 'On track' },
-    ],
+    icon: BarChart3,
+    label: 'Record Room',
+    desc: 'Every decision, execution, and outcome tracked. Unified audit trail. Query your company history like a database.',
+    lines: ['Record Room — Last 24h', 'agent_decision: Sales Agent — FOLLOW_UP_LEADS', 'agent_execution: GMAIL_SEND_EMAIL — sent', 'business_cycle: 12 agents, 4 executed, 3 tools', 'task_verified: Onboarding doc created — SUCCESS', 'Total: 47 events in 24h'],
   },
 ];
 
 export default function DemoSection() {
   return (
-    <section className="relative py-24 sm:py-32 bg-[#f8f6f1]">
+    <section id="demo" className="relative py-28 sm:py-36 bg-surface-2 overflow-hidden">
       <div className="max-w-6xl mx-auto px-6 sm:px-10 lg:px-14">
         <div className="text-center max-w-2xl mx-auto mb-16">
-          <span className="inline-flex items-center gap-2 text-[11px] tracking-[0.26em] uppercase text-[#b89165] font-semibold mb-5">
-            <span className="h-px w-8 bg-[#b89165]" />
+          <span className="inline-flex items-center gap-2 text-[11px] tracking-[0.26em] uppercase text-accent font-semibold mb-5">
+            <span className="h-px bg-accent w-8" />
             See it in action
           </span>
-          <h2 className="font-display text-4xl sm:text-5xl text-[#1a1a1a] tracking-tight leading-[1.1]">
-            What you&apos;ll see when you<br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#b89165] via-[#c9a86b] to-[#b89165]">
-              sign up.
-            </span>
+          <h2 className="font-display text-4xl sm:text-5xl text-text tracking-tight">
+            Your company, on autopilot.
           </h2>
+          <p className="mt-4 text-sm text-muted max-w-md mx-auto">
+            Three surfaces. One organization. This is what your team sees.
+          </p>
         </div>
 
-        <div className="space-y-8">
-          {SCREENS.map((screen) => (
-            <div key={screen.id}
-              className="bg-white rounded-2xl border border-[#e5dccf]/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-[#e5dccf]/40 bg-[#faf9f7]">
-                <span className="w-3 h-3 rounded-full bg-[#e5dccf]" />
-                <span className="w-3 h-3 rounded-full bg-[#e5dccf]" />
-                <span className="w-3 h-3 rounded-full bg-[#e5dccf]" />
-                <span className="ml-3 text-[11px] text-[#6b645c] font-medium">{screen.title}</span>
-              </div>
-              <div className="p-5 sm:p-6 flex flex-col lg:flex-row gap-6">
-                <div className="lg:w-2/5">
-                  <h3 className="font-display text-2xl text-[#1a1a1a] mb-2">{screen.heading}</h3>
-                  <p className="text-sm text-[#6b645c] leading-relaxed">{screen.desc}</p>
+        <div className="grid md:grid-cols-3 gap-6">
+          {SCREENS.map((s) => {
+            const Icon = s.icon;
+            return (
+              <div key={s.label} className="bg-surface rounded-2xl border border-hairline overflow-hidden shadow-elevation-1">
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-2 border-b border-hairline">
+                  <div className="flex gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-300/60" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-300/60" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-300/60" />
+                  </div>
+                  <span className="text-[10px] text-muted ml-2">{s.label}</span>
                 </div>
-                <div className="lg:w-3/5 space-y-3">
-                  {screen.lines.map((line, i) => (
-                    <div key={i} className={`flex ${line.align === 'right' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                        line.align === 'right'
-                          ? 'bg-[#b89165] text-white rounded-tr-sm'
-                          : 'bg-[#f8f6f1] text-[#4a443c] border border-[#e5dccf]/60 rounded-tl-sm'
-                      }`}>
-                        <p className="text-sm leading-relaxed">{line.text}</p>
-                        <p className={`text-[10px] mt-1.5 ${line.align === 'right' ? 'text-white/60' : 'text-[#6b645c]'}`}>
-                          {line.meta}
-                        </p>
+                <div className="p-5 space-y-2.5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Icon size={16} strokeWidth={1.5} className="text-accent" />
+                    <span className="text-sm font-medium text-text">{s.label}</span>
+                  </div>
+                  <p className="text-xs text-muted leading-relaxed mb-3">{s.desc}</p>
+                  <div className="space-y-1.5">
+                    {s.lines.map((line, i) => (
+                      <div key={i} className={`text-[11px] ${i % 4 === 0 ? 'text-text font-medium pt-1' : 'text-muted'}`}>
+                        {line}
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

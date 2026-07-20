@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, Target, CheckCircle2, RefreshCw,
-  Sparkles, Lock, Mail, User, ShieldCheck, ArrowLeft,
+  Sparkles, Lock, Mail, User, ArrowLeft,
 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -19,7 +19,7 @@ const BrandMark = ({ size = 28 }) => (
 
 const PILLARS = [
   { num: '01', icon: Target, label: 'One goal', sub: 'The thing you keep avoiding.' },
-  { num: '02', icon: CheckCircle2, label: 'One action', sub: 'Easiest move for the next 48 h.' },
+  { num: '02', icon: CheckCircle2, label: 'One action', sub: 'Easiest move for the next 48h.' },
   { num: '03', icon: RefreshCw, label: 'Real progress', sub: 'Kept promises. Not vibes.' },
 ];
 
@@ -32,6 +32,8 @@ export default function AuthPage() {
   const [name, setName] = useState('');
   const [emailMode, setEmailMode] = useState('signup');
   const [busy, setBusy] = useState(false);
+  const [config, setConfig] = useState({ signup_credits: 100 });
+  useState(() => { api.get('/config').then(r => setConfig(r.data)).catch(() => {}); }, []);
 
   const submitEmail = async (e) => {
     e.preventDefault();
@@ -44,143 +46,166 @@ export default function AuthPage() {
         : { email, password, name, ...(refCode ? { ref: refCode } : {}) };
       const r = await api.post(path, payload);
       login(r.data.user);
+      if (r.data.user?.questionnaire_completed === false) {
+        try { window.trackPixel?.('Lead', {}); } catch (_) {}
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Something went wrong.');
     } finally { setBusy(false); }
   };
 
   return (
-    <div className="relative z-10 min-h-screen bg-background overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-        <div className="absolute -top-32 -right-40 w-[760px] h-[760px] rounded-full opacity-60"
-          style={{ background: 'radial-gradient(circle, #f3d6a8 0%, rgba(243,214,168,0) 65%)' }} />
-        <div className="absolute -bottom-40 -left-32 w-[640px] h-[640px] rounded-full opacity-40"
-          style={{ background: 'radial-gradient(circle, #c9a86b 0%, rgba(201,168,107,0) 60%)' }} />
-        <div className="absolute top-1/3 left-1/2 w-[420px] h-[420px] rounded-full opacity-25 -translate-x-1/2"
-          style={{ background: 'radial-gradient(circle, #2f8f8a 0%, rgba(47,143,138,0) 60%)' }} />
-      </div>
+    <div className="paper min-h-screen bg-background flex flex-col">
+      <header className="relative z-10 max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6">
+        <button onClick={() => navigate('/')} className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-text transition-colors">
+          <ArrowLeft size={14} /> Back to home
+        </button>
+      </header>
 
-      <div className="relative max-w-7xl mx-auto px-6 sm:px-10 lg:px-14 py-8 lg:py-12 min-h-screen flex flex-col">
-        <header className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 text-foreground rise-1">
-            <button onClick={() => navigate('/')} className="flex items-center gap-2.5">
-              <BrandMark size={26} />
-              <span className="text-sm tracking-[0.32em] font-semibold uppercase">SmartDecigen</span>
-            </button>
-            <span className="w-px h-4 bg-border/60 mx-2" />
-            <button onClick={() => navigate('/')} className="flex items-center gap-1 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors">
-              <ArrowLeft size={12} strokeWidth={2} /> Back to home
-            </button>
-          </div>
-          <div className="hidden md:flex items-center gap-2 text-[11px] tracking-[0.18em] uppercase text-muted-foreground rise-1">
-            <ShieldCheck size={13} strokeWidth={2} className="text-[#b89165]" />
-            <span>AI Chief of Staff · Built to be returned to</span>
-          </div>
-        </header>
-
-        <div className="flex-1 grid lg:grid-cols-12 gap-10 lg:gap-16 mt-14 lg:mt-20 items-center pb-10">
-          <div className="lg:col-span-7 max-w-2xl">
-            <span className="rise-1 inline-flex items-center gap-2 text-[11px] tracking-[0.26em] uppercase text-[#b89165] font-semibold mb-7">
-              <span className="w-7 h-px bg-[#b89165]" />
-              AI Chief of Staff
-            </span>
-            <h1 className="rise-1 font-display text-5xl sm:text-6xl lg:text-[5.5rem] leading-[0.95] text-foreground tracking-tight">
-              For founders who are<br />tired of guessing.
-            </h1>
-            <div className="rise-2 mt-8 flex items-start gap-4">
-              <div className="hidden sm:block w-10 h-px bg-[#b89165] mt-3" />
-              <p className="font-display text-2xl md:text-[26px] leading-[1.25] text-[#b89165] max-w-md">
-                <span className="font-semibold">SmartDeciGen</span> pressure-tests your decisions and holds you accountable.
-              </p>
+      <div className="flex-1 flex items-center justify-center px-4">
+        <div className="w-full max-w-4xl grid md:grid-cols-2 gap-8 md:gap-16 items-center">
+          {/* Left */}
+          <div className="hidden md:block">
+            <div className="flex items-center gap-2 mb-6">
+              <BrandMark size={32} />
+              <span className="font-display text-xl text-text">SmartDeciGen</span>
             </div>
-            <ul className="rise-3 mt-12 grid sm:grid-cols-3 gap-6 sm:gap-8 max-w-2xl">
-              {PILLARS.map(({ num, icon: Icon, label, sub }, idx) => (
-                <li key={label} className="group">
-                  <div className="flex items-center gap-2 text-[10px] tracking-[0.3em] text-[#b89165] font-semibold mb-2">
-                    <span>{num}</span>
-                    <span className="w-3 h-px bg-[#b89165]/50" />
-                    <Icon size={12} strokeWidth={2.5} />
-                  </div>
-                  <div className="font-display text-xl text-foreground">{label}.</div>
-                  <div className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{sub}</div>
-                </li>
-              ))}
-            </ul>
-            <p className="rise-4 mt-14 text-xs text-muted-foreground tracking-wide italic">
-              Return to it. Keep moving forward.
+            <h1 className="font-display text-3xl lg:text-4xl text-text leading-[1.15] tracking-tight">
+              For founders who are<br />
+              tired of guessing.
+            </h1>
+            <p className="mt-4 text-sm text-muted leading-relaxed max-w-sm">
+              One conversation. One direction. Daily action. Your company starts running itself.
             </p>
+            <div className="mt-8 space-y-4">
+              {PILLARS.map((p) => {
+                const Icon = p.icon;
+                return (
+                  <div key={p.num} className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <Icon size={14} strokeWidth={1.75} className="text-accent" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-text">{p.label}</p>
+                      <p className="text-xs text-muted">{p.sub}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="lg:col-span-5 rise-3">
-            <div className="relative bg-white border border-border/60 rounded-3xl p-7 sm:p-8 premium-lift overflow-hidden">
-              <div className="absolute -top-20 -right-20 w-48 h-48 rounded-full pointer-events-none"
-                style={{ background: 'radial-gradient(circle, rgba(184,145,101,0.20) 0%, rgba(184,145,101,0) 70%)' }}
-                aria-hidden="true" />
+          {/* Right form card */}
+          <div className="w-full max-w-sm mx-auto md:mx-0">
+            <div className="md:hidden text-center mb-6">
+              <BrandMark size={36} />
+              <h1 className="font-display text-2xl text-text mt-3">SmartDeciGen</h1>
+            </div>
 
-              <h2 className="relative font-display text-[28px] leading-tight mb-1">
-                Try free.
-              </h2>
-              <p className="relative text-xs text-muted-foreground mb-6 flex items-center gap-1.5">
-                <Sparkles size={11} className="text-[#b89165]" />
-                <span>50 decisions on us. No card. ~30 seconds.</span>
-              </p>
+            {refCode && (
+              <div className="mb-4 rounded-xl border border-accent/20 bg-accent/5 px-4 py-2.5 text-sm text-muted">
+                <Sparkles size={14} className="inline mr-1.5 text-accent" />
+                You've been invited. Bonus credits will be applied after signup.
+              </div>
+            )}
 
-              {refCode ? (
-                <div className="relative mb-4 rounded-xl border border-emerald-300/60 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                  A founder invited you. You will both get a bonus when you sign up.
-                </div>
-              ) : null}
+            <div className="rounded-2xl border border-hairline bg-surface p-6 shadow-elevation-1">
+              <div className="flex items-center rounded-xl bg-surface-2 p-0.5 mb-5">
+                <button
+                  onClick={() => setEmailMode('signup')}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${emailMode === 'signup' ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text'}`}>
+                  Start free
+                </button>
+                <button
+                  onClick={() => setEmailMode('login')}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${emailMode === 'login' ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text'}`}>
+                  Sign in
+                </button>
+              </div>
 
               <form onSubmit={submitEmail} className="space-y-3">
                 {emailMode === 'signup' && (
                   <div className="relative">
-                    <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
-                    <Input value={name} onChange={(e) => setName(e.target.value)}
-                      placeholder="Your name (optional)" className="rounded-xl pl-10 h-12" />
+                    <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                    <Input
+                      placeholder="Your name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="pl-9 rounded-xl h-10 text-sm"
+                      required
+                    />
                   </div>
                 )}
                 <div className="relative">
-                  <Mail size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
-                  <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@domain.com" className="rounded-xl pl-10 h-12" />
+                  <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="email"
+                    placeholder="Email address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="pl-9 rounded-xl h-10 text-sm"
+                    required
+                  />
                 </div>
                 <div className="relative">
-                  <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
-                  <Input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
-                    placeholder={emailMode === 'signup' ? 'Pick a password (6+ chars)' : 'Your password'}
-                    className="rounded-xl pl-10 h-12" />
+                  <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-9 rounded-xl h-10 text-sm"
+                    minLength={6}
+                    required
+                  />
                 </div>
+
                 <Button type="submit" disabled={busy}
-                  className="w-full rounded-xl h-12 text-sm font-medium mt-3 active:scale-[0.99]">
-                  {busy ? 'One moment\u2026' : (emailMode === 'signup' ? 'Start Free' : 'Sign in')}
+                  className="w-full rounded-xl h-10 text-sm bg-accent hover:bg-accent/90 text-white">
+                  {busy ? 'Please wait...' : emailMode === 'signup' ? 'Start free' : 'Sign in'}
+                  {!busy && <ArrowRight size={14} className="ml-1.5" />}
                 </Button>
-                <div className="flex items-center justify-between mt-2">
-                  <button type="button" onClick={() => setEmailMode(emailMode === 'signup' ? 'login' : 'signup')}
-                    className="text-[11px] text-muted-foreground hover:text-foreground underline">
-                    {emailMode === 'signup' ? 'Already have an account?' : 'Create a new account'}
-                  </button>
-                </div>
-                {emailMode === 'login' && (
-                  <div className="text-center mt-1">
-                    <button type="button" onClick={() => toast.message('Contact support at ceo@smartdecigen.com to reset your password.')}
-                      className="text-[11px] text-muted-foreground hover:text-foreground underline">
-                      Forgot password?
-                    </button>
-                  </div>
-                )}
               </form>
 
-              <div className="relative mt-6 flex items-center justify-center gap-2.5 text-[10px] text-muted-foreground/85 tracking-wide">
-                <span className="inline-flex items-center gap-1"><ShieldCheck size={11} className="text-[#b89165]" /> Privacy-first</span>
-                <span className="w-1 h-1 rounded-full bg-muted-foreground/40" />
-                <span>No spam</span>
-                <span className="w-1 h-1 rounded-full bg-muted-foreground/40" />
-                <span>Cancel anytime</span>
-              </div>
+              {emailMode === 'login' && (
+                <p className="mt-3 text-center">
+                  <button type="button" onClick={() => toast.info('Password reset is manual right now. Contact ceo@smartdecigen.com.')}
+                    className="text-xs text-muted hover:text-accent transition-colors">
+                    Forgot your password?
+                  </button>
+                </p>
+              )}
+
+              {emailMode === 'signup' && (
+                <div className="mt-5 pt-4 border-t border-hairline">
+                  <p className="text-[11px] text-muted text-center">What happens next</p>
+                  <div className="mt-2 space-y-1.5">
+                    {['Tell us your vision in one conversation', 'Get a direction with concrete next moves', 'Your autonomous agents start running'].map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[11px] text-muted">
+                        <span className="w-4 h-4 rounded-full bg-accent/10 text-[9px] flex items-center justify-center text-accent font-medium">{i + 1}</span>
+                        {s}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="text-center mt-5 text-[11px] text-muted-foreground/80 leading-5 max-w-sm mx-auto">
-              For founders who are tired of guessing — and ready to decide.
+
+            <p className="mt-3 text-center text-[11px] text-muted">
+              {emailMode === 'signup'
+                ? `${config.signup_credits} free credits · No card · ~30 seconds`
+                : "Don't have an account? "}
+              {emailMode === 'login' && (
+                <button type="button" onClick={() => setEmailMode('signup')}
+                  className="text-accent hover:underline">Start free</button>
+              )}
             </p>
+
+            <div className="mt-4 flex items-center justify-center gap-4 text-[10px] text-muted">
+              <span className="flex items-center gap-1"><Lock size={10} /> Privacy-first</span>
+              <span>No spam</span>
+              <span>Cancel anytime</span>
+            </div>
           </div>
         </div>
       </div>

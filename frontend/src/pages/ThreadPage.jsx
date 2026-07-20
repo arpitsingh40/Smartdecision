@@ -327,7 +327,7 @@ export default function ThreadPage() {
 
           {/* Thinking state — shimmer overlay */}
           {thinking ? (
-            <div data-testid="engine-thinking-state" className="flex-1 space-y-5">
+            <div data-testid="engine-thinking-state" className="flex-1 space-y-5" aria-live="polite" aria-label="Processing your message">
               <div className="space-y-2">
                 <Skeleton className="h-3 w-24 rounded-md" />
                 <Skeleton className="h-4 w-full rounded-md" />

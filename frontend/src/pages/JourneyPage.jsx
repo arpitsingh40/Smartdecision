@@ -57,6 +57,44 @@ function DirList({ icon: Icon, label, items }) {
   );
 }
 
+// Business OS status strip — shows live org status on dashboard
+function OSStatusStrip() {
+  const [os, setOs] = useState(null);
+  useEffect(() => {
+    api.get('/business-os/status').then(r => setOs(r.data)).catch(() => {});
+    const id = setInterval(() => {
+      api.get('/business-os/status').then(r => setOs(r.data)).catch(() => {});
+    }, 60000);
+    return () => clearInterval(id);
+  }, []);
+  if (!os || !os.connected_tools || os.connected_tools.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-hairline bg-surface p-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-muted flex items-center gap-1.5">
+          <Activity size={13} className="text-accent" /> Your company is running
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <span className="text-muted">{os.agent_count || 0} agents active</span>
+        <span className="text-muted">·</span>
+        <span className="text-muted">{os.connected_count || 0} tools connected</span>
+        {os.tasks?.total > 0 && (
+          <>
+            <span className="text-muted">·</span>
+            <span className="text-muted">{os.tasks.executed || 0} tasks executed</span>
+          </>
+        )}
+        {(os.approvals?.pending || 0) > 0 && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+            {os.approvals.pending} pending
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function JourneyPage() {
   const { user, setCredits } = useAuth();
   const navigate = useNavigate();
@@ -283,7 +321,11 @@ export default function JourneyPage() {
       <div className="min-h-screen flex flex-col">
         <TopBar />
         <main className="flex-1 flex items-center justify-center px-4">
-          <div className="w-full max-w-2xl mx-auto -mt-10 text-center" data-testid="journey-landing">
+          <div className="w-full max-w-2xl mx-auto -mt-10 space-y-6">
+            {/* Business OS status strip */}
+            <OSStatusStrip />
+
+            <div className="text-center" data-testid="journey-landing">
             <div className="inline-flex items-center gap-2 text-xs text-muted-foreground mb-6 rounded-full border border-border/70 px-3 py-1">
               <Sparkles size={13} strokeWidth={2} /> Your AI Chief of Staff
             </div>
@@ -336,6 +378,7 @@ export default function JourneyPage() {
                   </p>
                 </>
               )}
+            </div>
             </div>
           </div>
         </main>

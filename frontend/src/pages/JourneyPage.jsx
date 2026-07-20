@@ -69,24 +69,19 @@ function OSStatusStrip() {
   }, []);
   if (!os || !os.connected_tools || os.connected_tools.length === 0) return null;
   return (
-    <div className="rounded-2xl border border-hairline bg-surface p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-muted flex items-center gap-1.5">
-          <Activity size={13} className="text-accent" /> Your company is running
+    <div className="rounded-2xl border border-accent/15 bg-accent/[0.03] px-5 py-3.5 flex flex-wrap items-center gap-3 sm:gap-5">
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
         </span>
+        <span className="text-xs font-medium text-text">Your company is running</span>
       </div>
-      <div className="flex flex-wrap items-center gap-3 text-xs">
-        <span className="text-muted">{os.agent_count || 0} agents active</span>
-        <span className="text-muted">·</span>
-        <span className="text-muted">{os.connected_count || 0} tools connected</span>
-        {os.tasks?.total > 0 && (
-          <>
-            <span className="text-muted">·</span>
-            <span className="text-muted">{os.tasks.executed || 0} tasks executed</span>
-          </>
-        )}
-        {(os.approvals?.pending || 0) > 0 && (
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
+        {os.agent_count > 0 && <span>{os.agent_count} agents active</span>}
+        {os.connected_count > 0 && <span className="hidden sm:inline">{os.connected_count} tools connected</span>}
+        {os.approvals?.pending > 0 && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">
             {os.approvals.pending} pending
           </span>
         )}
@@ -318,67 +313,65 @@ export default function JourneyPage() {
   // ---------------------------------------------------------------- LANDING (not started)
   if (!journey?.started) {
     return (
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col bg-background">
         <TopBar />
-        <main className="flex-1 flex items-center justify-center px-4" style={{paddingBottom: 'env(safe-area-inset-bottom, 16px)'}}>
-          <div className="w-full max-w-2xl mx-auto -mt-6 sm:-mt-10 space-y-6">
-            {/* Business OS status strip */}
+        <main className="flex-1 flex items-center justify-center px-4 sm:px-6" style={{paddingBottom: 'env(safe-area-inset-bottom, 16px)'}}>
+          <div className="w-full max-w-xl mx-auto -mt-10 sm:-mt-16 space-y-8">
             <OSStatusStrip />
 
-            <div className="text-center" data-testid="journey-landing">
-            <div className="inline-flex items-center gap-2 text-xs text-muted-foreground mb-6 rounded-full border border-border/70 px-3 py-1">
-              <Sparkles size={13} strokeWidth={2} /> Your AI Chief of Staff
-            </div>
-            <h1 className="font-display text-2xl sm:text-5xl tracking-[-0.02em] leading-[1.1]">
-              What is the decision you have been circling?
-            </h1>
-            <p className="text-muted-foreground mt-4 text-sm sm:text-base">
-              Name it plainly. Your Chief of Staff will surface what you are missing and give you one clear next move.
-            </p>
+            <div className="text-center space-y-6" data-testid="journey-landing">
+              <h1 className="font-display text-3xl sm:text-5xl lg:text-6xl text-text tracking-[-0.02em] leading-[1.06]">
+                What's the decision<br className="hidden sm:block" /> you've been circling?
+              </h1>
+              <p className="text-muted text-sm sm:text-base max-w-sm mx-auto leading-relaxed">
+                Name it. Your Chief of Staff will find what you're missing and hand you one clear next move.
+              </p>
 
-              <div className="mt-8 text-left">
               {busy ? (
-                <div className="flex flex-col items-center py-6" data-testid="journey-generating">
-                  <div className="rounded-2xl bg-card border border-border/70 px-5 py-4 w-full text-center">
-                    <Loader2 className="animate-spin mx-auto mb-3" size={22} />
-                    <p className="text-sm font-medium">Your Chief of Staff is reading…</p>
-                    <p className="text-xs text-muted-foreground mt-1.5">This takes about a minute. Every word shapes the response.</p>
+                <div className="flex flex-col items-center py-8" data-testid="journey-generating">
+                  <div className="rounded-2xl border border-hairline bg-surface px-6 py-5 w-full max-w-lg text-center shadow-elevation-1">
+                    <div className="relative mx-auto w-10 h-10 mb-4">
+                      <div className="absolute inset-0 rounded-full border-2 border-accent/20" />
+                      <div className="absolute inset-0 rounded-full border-2 border-t-accent animate-spin-slow" />
+                    </div>
+                    <p className="text-sm font-medium text-text">Building your company model…</p>
+                    <p className="text-xs text-muted mt-1.5">This takes about a minute. Every word shapes the response.</p>
                   </div>
-                  <div className="mt-4 w-full space-y-2.5">
-                    {[...Array(4)].map((_, i) => (
-                      <div key={i} className="h-3 rounded-full bg-muted/60 animate-pulse" style={{ width: `${70 + i * 8}%` }} />
+                  <div className="mt-5 w-full max-w-lg space-y-2">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-2.5 rounded-full bg-surface-2 animate-pulse" style={{ width: `${85 - i * 12}%`, animationDelay: `${i * 150}ms` }} />
                     ))}
                   </div>
                 </div>
               ) : (
-                <>
-                  <Textarea
-                    data-testid="journey-objective-input"
-                    value={objective}
-                    onChange={(e) => setObjective(e.target.value)}
-                    onKeyDown={(e) => onKey(e, start)}
-                    placeholder={PLACEHOLDERS[phIdx]}
-                    rows={4}
-                    className="text-base resize-none rounded-2xl border-border/70 focus-visible:ring-1 px-4 py-3.5 shadow-sm"
-                  />
-                  <div className="mt-4 flex justify-center">
-                    <Button
-                      data-testid="journey-start-btn"
-                      onClick={start}
-                      disabled={!objective.trim() || busy}
-                      className="rounded-full px-7 h-11 text-sm"
-                    >
-                      {busy ? <Loader2 className="animate-spin mr-2" size={16} /> : null}
-                      {busy ? 'Thinking' : 'Start Conversation'}
-                      {!busy ? <ArrowRight size={16} strokeWidth={2} className="ml-2" /> : null}
-                    </Button>
+                <div className="mt-2">
+                  <div className="rounded-2xl border border-hairline bg-surface shadow-elevation-1 p-1.5">
+                    <Textarea
+                      data-testid="journey-objective-input"
+                      value={objective}
+                      onChange={(e) => setObjective(e.target.value)}
+                      onKeyDown={(e) => onKey(e, start)}
+                      placeholder={PLACEHOLDERS[phIdx]}
+                      rows={3}
+                      className="text-base sm:text-lg resize-none border-0 focus-visible:ring-0 shadow-none bg-transparent px-4 py-3.5 placeholder:text-muted/50"
+                    />
+                    <div className="flex items-center justify-between px-3 pb-2">
+                      <span className="text-[11px] text-muted/60">
+                        {user?.credits ?? 0} credits · Enter to start
+                      </span>
+                      <Button
+                        data-testid="journey-start-btn"
+                        onClick={start}
+                        disabled={!objective.trim() || busy}
+                        size="sm"
+                        className="rounded-xl gap-1.5"
+                      >
+                        Start <ArrowRight size={14} strokeWidth={2} />
+                      </Button>
+                    </div>
                   </div>
-                  <p className="text-center text-xs text-muted-foreground mt-3">
-                    {user?.credits ?? 0} tokens available · Cmd/Ctrl + Enter to start
-                  </p>
-                </>
+                </div>
               )}
-            </div>
             </div>
           </div>
         </main>
@@ -577,13 +570,13 @@ export default function JourneyPage() {
       )}
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 overflow-hidden flex flex-col">
         {/* mode toggle */}
-        <div className="flex items-center gap-1 py-3 shrink-0">
+        <div className="flex items-center gap-0.5 py-3 shrink-0">
           <button onClick={() => setMode('journey')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'journey' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${mode === 'journey' ? 'bg-text text-background shadow-sm' : 'text-muted hover:text-text hover:bg-surface-2'}`}>
             Journey
           </button>
           <button onClick={() => setMode('brain')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'brain' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${mode === 'brain' ? 'bg-text text-background shadow-sm' : 'text-muted hover:text-text hover:bg-surface-2'}`}>
             Brain
           </button>
         </div>
@@ -928,28 +921,28 @@ export default function JourneyPage() {
 
           {/* composer */}
           <div className="mt-3">
-            <div className="rounded-2xl border border-border/70 bg-card shadow-sm p-2 flex items-end gap-2">
+            <div className="rounded-2xl border border-hairline bg-surface shadow-elevation-1 p-1.5 flex items-end gap-2 transition-shadow focus-within:shadow-elevation-2 focus-within:border-accent/30">
               <Textarea
                 data-testid="journey-message-input"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={(e) => onKey(e, send)}
-                placeholder="Type your answer…"
-                rows={3}
-                className="min-h-[90px] max-h-40 resize-none border-0 focus-visible:ring-0 shadow-none text-[15px] px-2 py-2.5"
+                placeholder="Your answer…"
+                rows={2}
+                className="min-h-[52px] sm:min-h-[56px] max-h-32 resize-none border-0 focus-visible:ring-0 shadow-none bg-transparent text-[15px] px-3 py-3 placeholder:text-muted/40"
               />
               <Button
                 data-testid="journey-send-btn"
                 onClick={send}
                 disabled={!message.trim() || busy}
                 size="icon"
-                className="rounded-xl h-10 w-10 shrink-0"
+                className="rounded-xl h-9 w-9 sm:h-10 sm:w-10 shrink-0 mb-0.5 mr-0.5"
               >
                 {busy ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} strokeWidth={2} />}
               </Button>
             </div>
-            <p className="text-center text-[11px] text-muted-foreground mt-2">
-              {user?.credits ?? 0} tokens available · one focused step at a time
+            <p className="text-[11px] text-muted/60 mt-2 text-center">
+              {user?.credits ?? 0} credits · Enter to send
             </p>
           </div>
         </section>

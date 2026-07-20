@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, ShieldCheck, Flame, Compass, Zap, Wifi, History, Brain, Layers } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Clock, BookOpen, CheckSquare, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, Flame, Compass, Zap, History, Brain } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -22,27 +22,16 @@ const fmtLeft = (iso) => {
 
 const NAV_SECTIONS = [
   {
-    id: 'think', label: 'Think',
+    id: 'think', label: '',
     items: [
       { to: '/app', label: 'Threads', icon: MessageCircle, testid: 'nav-threads' },
       { to: '/app/brain', label: 'Brain', icon: Brain, testid: 'nav-brain' },
-      { to: '/app/decisions', label: 'Decisions', icon: CheckSquare, testid: 'nav-decisions' },
     ],
   },
   {
-    id: 'run', label: 'Run',
+    id: 'run', label: '',
     items: [
-      { to: '/app/business-os', label: 'Business OS', icon: Zap, testid: 'nav-business-os' },
-      { to: '/app/cockpit', label: 'Cockpit', icon: Gauge, testid: 'nav-cockpit' },
-      { to: '/app/my-tasks', label: 'Tasks', icon: CheckCircle, testid: 'nav-tasks' },
-      { to: '/app/connections', label: 'Tools', icon: Wifi, testid: 'nav-connections' },
-    ],
-  },
-  {
-    id: 'review', label: 'Review',
-    items: [
-      { to: '/app/record-room', label: 'Records', icon: History, testid: 'nav-records' },
-      { to: '/app/weekly-review', label: 'Weekly', icon: Compass, testid: 'nav-weekly' },
+      { to: '/app/business-os', label: 'Ops', icon: Zap, testid: 'nav-business-os' },
       { to: '/app/team', label: 'Team', icon: Users, testid: 'nav-team' },
     ],
   },

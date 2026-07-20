@@ -320,21 +320,26 @@ def run_agent(org_id: str, agent_type: str, context: dict = None) -> dict:
     if not definition:
         return {"error": f"No definition for {agent_type}"}
 
-    # Build context from system model + OKRs + signals
+    # Build context from system model + OKRs + cross-agent signals
     ctx = _build_agent_context(org_id, agent, context or {})
 
-    # LLM decision
+    # ── LLM decision via multi-provider smart router ──
     try:
-        r = llm_client().messages.create(
-            model="deepseek-v4-flash", max_tokens=600,
-            system=[{"type": "text", "text": definition["decision_prompt"]}],
+        from llm_router import agent_decision as _agent_call
+        result = _agent_call(
+            system=definition["decision_prompt"],
             messages=[{"role": "user", "content": ctx}],
         )
-        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        txt = result["text"]
+        from llm_client import _extract_json
         decision = json.loads(_extract_json(txt))
+        # Store model info for telemetry
+        decision["_model"] = result.get("model", "")
+        decision["_provider"] = result.get("provider", "")
+        decision["_tokens"] = result.get("input_tokens", 0) + result.get("output_tokens", 0)
     except Exception as e:
         log.error(f"Agent {agent_type} decision failed: {e}")
-        decision = {"action": "NOTHING", "summary": f"Decision engine error: {str(e)[:100]}", "needs_founder": False}
+        decision = {"action": "NOTHING", "summary": f"Decision engine error: {str(e)[:100]}", "needs_founder": False, "_model": "fallback", "_provider": "none"}
 
     # Process the decision
     action = decision.get("action", "NOTHING")
@@ -346,6 +351,12 @@ def run_agent(org_id: str, agent_type: str, context: dict = None) -> dict:
     # Execute based on action
     if action in ("ALERT", "ESCALATE", "FLAG_OVERSPEND") and needs_founder:
         _send_to_inbox(org_id, agent_type, agent["role"], summary, decision.get("recommendation", ""), severity)
+        # Also submit to approval inbox so founder can one-tap approve
+        try:
+            from business_os import request_approval
+            request_approval(org_id, agent_type, agent["role"], decision)
+        except Exception:
+            pass
 
     # Autonomous external communication: L3 agents with auto_send flag
     if auto_send and definition["authority"] in ("L2", "L3") and not needs_founder:
@@ -354,6 +365,15 @@ def run_agent(org_id: str, agent_type: str, context: dict = None) -> dict:
     if action in ("GENERATE_TASKS", "CREATE_TICKET", "DRAFT_MEMO", "PROPOSE_EXPERIMENT", "INTERVENE"):
         if definition["authority"] in ("L2", "L3") and not needs_founder:
             _execute_agent_action(org_id, agent_type, agent["role"], action, summary, decision)
+            # Schedule outcome verification 24h later
+            try:
+                from business_os import verify_business_outcome
+                verify_business_outcome(
+                    f"agent_{agent_type}_{_now().strftime('%Y%m%d%H%M%S')}",
+                    org_id, agent_type, summary, actual=None,
+                )
+            except Exception:
+                pass
         else:
             _send_to_inbox(org_id, agent_type, agent["role"], summary, decision.get("recommendation", ""), severity)
 
@@ -371,7 +391,113 @@ def run_agent(org_id: str, agent_type: str, context: dict = None) -> dict:
     _update_agent_memory(org_id, agent_type, action, summary)
 
     log.info(f"Agent {agent_type}: action={action}, needs_founder={needs_founder}, summary='{summary[:80]}'")
+
+    # ── Audit trail: record every agent decision ──
+    try:
+        from audit import record_agent_decision
+        record_agent_decision(org_id, agent_type, action, summary[:200],
+                              model=decision.get("_model", ""))
+    except Exception:
+        pass
+
+    # ── Quality tracking: update agent stats ──
+    _update_agent_quality(org_id, agent_type, action, needs_founder, summary)
+
+    log.info(f"Agent {agent_type}: action={action}, needs_founder={needs_founder}, summary='{summary[:80]}'")
     return {"agent": agent_type, "action": action, "summary": summary, "needs_founder": needs_founder}
+
+
+# ── Quality tracking ──
+
+def _update_agent_quality(org_id: str, agent_type: str, action: str, needs_founder: bool, summary: str):
+    """Track agent decision quality: action rates, escalation rates, decision types."""
+    if AGENTS_COL is None:
+        return
+    inc = {"memory.decisions_made": 1}
+    if needs_founder:
+        inc["memory.escalations"] = 1
+    if action != "NOTHING":
+        inc["memory.active_decisions"] = 1
+    AGENTS_COL.update_one(
+        {"org_id": org_id, "type": agent_type},
+        {"$inc": inc},
+    )
+
+
+def get_agent_quality(org_id: str) -> dict:
+    """Quality metrics per agent: action rate, escalation rate, decision distribution."""
+    agents = get_agents(org_id)
+    result = {}
+    for a in agents:
+        mem = a.get("memory", {})
+        total = mem.get("decisions_made", 0) or 1
+        escalations = mem.get("escalations", 0) or 0
+        active = mem.get("active_decisions", 0) or 0
+        actions = mem.get("actions_taken", 0) or 0
+        result[a["type"]] = {
+            "role": a.get("role", ""),
+            "total_decisions": total,
+            "active_decisions": active,
+            "action_rate_pct": round(100 * active / total, 1),
+            "escalation_rate_pct": round(100 * escalations / total, 1),
+            "auto_actions": actions,
+            "autonomy_score": round(100 * actions / max(total, 1), 1),
+        }
+    return result
+
+
+# ── Cross-agent coordination enrichment ──
+
+COORDINATION_MAP = {
+    "sales_agent": {"ask": ["customer_agent", "finance_agent"],
+                     "reason": "Check customer health and payment history before any deal action"},
+    "customer_agent": {"ask": ["sales_agent", "ops_agent"],
+                        "reason": "Check deal status and recent interactions before intervention"},
+    "growth_agent": {"ask": ["marketing_agent", "sales_agent"],
+                      "reason": "Check campaign performance and pipeline before growth recommendations"},
+    "marketing_agent": {"ask": ["growth_agent", "brand_agent"],
+                         "reason": "Check growth experiments and brand sentiment before budget shifts"},
+    "finance_agent": {"ask": ["sales_agent", "ops_agent"],
+                       "reason": "Check pipeline and operational spending before financial alerts"},
+    "ops_agent": {"ask": ["hr_agent", "tech_agent"],
+                   "reason": "Check team capacity and system health before operational decisions"},
+    "hr_agent": {"ask": ["ops_agent", "finance_agent"],
+                  "reason": "Check workload and budget before people recommendations"},
+    "product_agent": {"ask": ["tech_agent", "customer_agent"],
+                       "reason": "Check tech debt and customer feedback before roadmap decisions"},
+    "tech_agent": {"ask": ["product_agent", "ops_agent"],
+                    "reason": "Check roadmap priorities and ops load before tech decisions"},
+    "strategy_agent": {"ask": ["finance_agent", "growth_agent"],
+                        "reason": "Check financial health and growth trajectory before strategy moves"},
+    "brand_agent": {"ask": ["marketing_agent", "customer_agent"],
+                     "reason": "Check campaigns and customer sentiment before brand actions"},
+    "system_agent": {"ask": [],
+                      "reason": "System agent sees all — coordinates through signal bus"},
+}
+
+
+def _enrich_with_coordination(org_id: str, agent_type: str, lines: list[str]):
+    """Enrich agent context with what related agents have detected.
+    Sales should know what Customer agents see about the customer before acting."""
+    coord = COORDINATION_MAP.get(agent_type)
+    if not coord or not coord["ask"]:
+        return
+    lines.append(f"\nCOORDINATION: Before deciding, check what these agents know ({coord['reason']}):")
+    for related_type in coord["ask"]:
+        related = get_agent(org_id, related_type)
+        if related:
+            last = related.get("memory", {}).get("last_action", "")
+            lines.append(f"  - {related.get('role', related_type)} last action: {last[:120]}")
+            # Also get recent signals specifically from this agent
+            try:
+                if SIGNALS_COL:
+                    sig = list(SIGNALS_COL.find(
+                        {"org_id": org_id, "from_agent": related_type},
+                    ).sort("created_at", -1).limit(2))
+                    for s in sig:
+                        lines.append(f"    → Signal: {s.get('message', '')[:120]}")
+            except Exception:
+                pass
 
 
 def _build_agent_context(org_id: str, agent: dict, extra: dict) -> str:
@@ -402,14 +528,17 @@ def _build_agent_context(org_id: str, agent: dict, extra: dict) -> str:
     except Exception:
         pass
 
-    # Recent signals from other agents
+    # Recent signals from other agents — consume + coordinate
     try:
         if SIGNALS_COL:
-            signals = list(SIGNALS_COL.find({"org_id": org_id}).sort("created_at", -1).limit(5))
+            signals = list(SIGNALS_COL.find({"org_id": org_id}).sort("created_at", -1).limit(8))
             if signals:
-                lines.append("RECENT SIGNALS FROM OTHER AGENTS:")
+                lines.append("RECENT SIGNALS FROM OTHER AGENTS (coordinate your decision with these):")
                 for s in signals:
-                    lines.append(f"  [{s['from_agent']}]: {s['message'][:120]}")
+                    # Mark signal as consumed
+                    SIGNALS_COL.update_one({"id": s["id"]}, {"$set": {"consumed_by": agent_type, "consumed_at": _now().isoformat()}})
+                    lines.append(f"  [{s['from_agent']}]: {s['message'][:150]}")
+                lines.append("If another agent already acted on this issue, do NOT duplicate. Coordinate: who owns what.")
     except Exception:
         pass
 
@@ -417,6 +546,9 @@ def _build_agent_context(org_id: str, agent: dict, extra: dict) -> str:
     for k, v in extra.items():
         if v:
             lines.append(f"{k.upper()}: {str(v)[:300]}")
+
+    # Cross-agent coordination enrichment
+    _enrich_with_coordination(org_id, agent_type, lines)
 
     return "\n".join(lines)
 
@@ -713,7 +845,7 @@ def action_inbox_item(item_id: str, body: dict, user: dict = Depends(current_use
 # Self-check
 # ======================================================================
 if __name__ == "__main__":
-    assert len(AGENT_DEFINITIONS) == 8
+    assert len(AGENT_DEFINITIONS) == 12, f"Expected 12 agents, got {len(AGENT_DEFINITIONS)}"
     assert all("decision_prompt" in d for d in AGENT_DEFINITIONS.values())
     assert all("authority" in d for d in AGENT_DEFINITIONS.values())
     print("OK — multi-agent system verified")

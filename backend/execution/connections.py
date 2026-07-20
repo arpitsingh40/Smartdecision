@@ -176,7 +176,16 @@ def complete_connection(org_id: str, toolkit: str) -> dict:
         )
         return {"connection_id": conn_id, "toolkit": toolkit, "status": "active", "new": True}
 
+    _audit_connection(org_id, toolkit, True)
     return {"toolkit": toolkit, "status": "active"}
+
+
+def _audit_connection(org_id: str, toolkit: str, connected: bool):
+    try:
+        from audit import record_tool_connection
+        record_tool_connection(org_id, toolkit, connected)
+    except Exception:
+        pass
 
 
 def disconnect_toolkit(org_id: str, toolkit: str) -> dict:
@@ -187,6 +196,7 @@ def disconnect_toolkit(org_id: str, toolkit: str) -> dict:
         {"org_id": org_id, "toolkit": toolkit},
         {"$set": {"status": "disconnected", "disconnected_at": _now().isoformat()}},
     )
+    _audit_connection(org_id, toolkit, False)
     return {"toolkit": toolkit, "status": "disconnected"}
 
 

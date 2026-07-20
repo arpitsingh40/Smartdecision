@@ -72,6 +72,7 @@ export default function ThreadPage() {
   const [myTasks, setMyTasks] = useState([]);
   const [thinkingElapsed, setThinkingElapsed] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLimit, setHistoryLimit] = useState(50);
   const fileInputRef = useRef(null);
   const [fieldRefresh, setFieldRefresh] = useState(false);
 
@@ -573,7 +574,7 @@ export default function ThreadPage() {
             <div className="mt-2 rounded-xl border border-hairline bg-surface-2/30">
               <ScrollArea data-testid="history-scroll-area" className="max-h-96 overflow-y-auto px-4 py-3">
                 <div className="space-y-2">
-                  {messages.slice(-50).map((m, i) => (
+                  {messages.slice(-historyLimit).map((m, i) => (
                     <div key={i} data-testid={`history-message-${i}`}
                       className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[85%] rounded-xl px-3 py-2 ${m.role === 'user' ? 'bg-accent-wash/50' : 'bg-surface'}`}>
@@ -582,11 +583,11 @@ export default function ThreadPage() {
                       </div>
                     </div>
                   ))}
-                  {messages.length > 50 && (
+                  {messages.length > historyLimit && (
                     <button data-testid="load-older-messages"
-                      onClick={() => toast.info('Older messages will load here')}
+                      onClick={() => setHistoryLimit(l => l + 50)}
                       className="text-xs text-accent hover:underline w-full text-center py-2 block">
-                      Load older messages
+                      Load older messages ({messages.length - historyLimit} remaining)
                     </button>
                   )}
                 </div>

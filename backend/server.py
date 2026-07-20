@@ -52,6 +52,10 @@ from weekly_review import router as weekly_review_router
 from system_router import router as system_router
 from capabilities_router import router as capabilities_router
 from agents import agent_router
+from business_os_router import router as business_os_router
+from audit_router import router as audit_router
+from business_os import ensure_business_os_startup
+from audit import ensure_audit_startup
 from salaar import generate_salaar_brief
 from salaar.causal import build_actor_map, simulate_causal_chain, execute_chain_step
 
@@ -103,6 +107,8 @@ async def _lifespan(app: FastAPI):
             ensure_subscriptions_startup()
             ensure_executive_startup()
             ensure_salaar_startup()
+            ensure_business_os_startup()
+            ensure_audit_startup()
             # Sync connections from Composio on startup for all orgs
             try:
                 from execution.connections import refresh_connections_from_composio
@@ -388,6 +394,16 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
             "$push": {"execution_log": {"$each": [{"at": now, "actions": execution}]}}})
     inc_stats({"questions_total": 1, ("turns_ultra" if mode == "ultra" else "turns_normal"): 1,
                "tokens_in": usage["input_tokens"], "tokens_out": usage["output_tokens"]})
+
+    # Audit trail: record every turn
+    try:
+        org_id = user.get("org_id")
+        if org_id:
+            from audit import record_turn
+            record_turn(org_id, user["id"], thread["thread_id"], intent, model,
+                        usage["input_tokens"] + usage["output_tokens"])
+    except Exception:
+        pass
     # ── SALAAR: outcome learning loop — when founder reports progress, store pattern→outcome ──
     if intent == "acknowledgment" and user.get("org_id"):
         try:
@@ -782,6 +798,8 @@ app.include_router(weekly_review_router)
 app.include_router(system_router)
 app.include_router(capabilities_router)
 app.include_router(agent_router)
+app.include_router(business_os_router)
+app.include_router(audit_router)
 
 scheduler = BackgroundScheduler(daemon=True)
 
@@ -940,21 +958,52 @@ def _execute_approved_tasks_cron():
         log.exception(f"exec_cron: global failure — {e}")
 
 
-def _agent_orchestration_cron():
-    """Run agents for all orgs. Agents self-manage their own schedules internally."""
+def _business_os_cron():
+    """Autonomous Business OS cycle — agents run, execute through tools, verify, learn."""
     try:
-        from agents import run_all_agents
+        from business_os import business_cycle_all_orgs
+        result = business_cycle_all_orgs()
+        count = result.get("orgs_processed", 0)
+        if count > 0:
+            log.info(f"business_os: {count} orgs processed autonomously")
+    except Exception as e:
+        log.exception(f"business_os: global failure — {e}")
+
+
+def _morning_brief_cron():
+    try:
+        from business_os import run_business_process
         for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1, "name": 1}):
             try:
-                result = run_all_agents(org["id"])
-                count = result.get("agents_run", 0)
-                if count > 0:
-                    alerts = sum(1 for r in result.get("results", {}).values() if r.get("needs_founder"))
-                    log.info(f"agents: org {org['name']} — {count} agents ran, {alerts} escalated to founder")
-            except Exception as e:
-                log.warning(f"agents: org {org.get('id')} failed — {e}")
+                run_business_process(org["id"], "morning_brief")
+            except Exception:
+                pass
     except Exception as e:
-        log.exception(f"agents: global failure — {e}")
+        log.exception(f"morning_brief cron failed: {e}")
+
+
+def _midday_followup_cron():
+    try:
+        from business_os import run_business_process
+        for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1, "name": 1}):
+            try:
+                run_business_process(org["id"], "midday_followup")
+            except Exception:
+                pass
+    except Exception as e:
+        log.exception(f"midday_followup cron failed: {e}")
+
+
+def _evening_wrap_cron():
+    try:
+        from business_os import run_business_process
+        for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1, "name": 1}):
+            try:
+                run_business_process(org["id"], "evening_wrap")
+            except Exception:
+                pass
+    except Exception as e:
+        log.exception(f"evening_wrap cron failed: {e}")
 
 
 def _weekly_system_scan():
@@ -988,7 +1037,10 @@ scheduler.add_job(_monday_morning_digest, CronTrigger(day_of_week="mon", hour=6,
 scheduler.add_job(_six_hour_housekeeping, IntervalTrigger(hours=6))
 scheduler.add_job(_weekly_system_scan, CronTrigger(day_of_week="sat", hour=22, minute=30, timezone="Asia/Kolkata"))
 scheduler.add_job(_execute_approved_tasks_cron, IntervalTrigger(hours=3))  # Wire 4: execute approved tasks every 3 hours
-scheduler.add_job(_agent_orchestration_cron, IntervalTrigger(minutes=30))  # Agents: run every 30 minutes
+scheduler.add_job(_business_os_cron, IntervalTrigger(minutes=15))  # Business OS: autonomous cycle every 15 min
+scheduler.add_job(_morning_brief_cron, CronTrigger(hour=8, minute=0, timezone="Asia/Kolkata"))
+scheduler.add_job(_midday_followup_cron, CronTrigger(hour=14, minute=0, timezone="Asia/Kolkata"))
+scheduler.add_job(_evening_wrap_cron, CronTrigger(hour=19, minute=0, timezone="Asia/Kolkata"))
 scheduler.add_job(cleanup_expired_sessions, IntervalTrigger(hours=24))  # Session cleanup
 
 # ── SALAAR: The Shadow Agent ──

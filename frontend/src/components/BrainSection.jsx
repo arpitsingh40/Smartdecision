@@ -51,7 +51,6 @@ export default function BrainSection({ compact }) {
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewImpact, setReviewImpact] = useState('');
   const [reviewNote, setReviewNote] = useState('');
-  const [kpiSent, setKpiSent] = useState({});
 
   const loadReviews = useCallback(async () => {
     try { const r = await api.get('/brain/reviews/due'); setReviewsDue(r.data.due || []); } catch (_e) { /* noop */ }

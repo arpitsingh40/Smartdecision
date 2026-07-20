@@ -34,6 +34,9 @@ const DecisionCardPage = lazy(() => import('./pages/DecisionCardPage'));
 const HabitsPage = lazy(() => import('./pages/HabitsPage'));
 const PlaybooksPage = lazy(() => import('./pages/PlaybooksPage'));
 const WeeklyReviewPage = lazy(() => import('./pages/WeeklyReviewPage'));
+const BusinessOSPage = lazy(() => import('./pages/BusinessOSPage'));
+const ConnectionsPage = lazy(() => import('./pages/ConnectionsPage'));
+const RecordRoomPage = lazy(() => import('./pages/RecordRoomPage'));
 
 interface AppUser {
   id: string;
@@ -208,6 +211,9 @@ const App: FC = () => {
             <Route path="/app/habits" element={user ? withErrorBoundary(HabitsPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/app/playbooks" element={user ? withErrorBoundary(PlaybooksPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/app/weekly-review" element={user ? withErrorBoundary(WeeklyReviewPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/business-os" element={user ? withErrorBoundary(BusinessOSPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/connections" element={user ? withErrorBoundary(ConnectionsPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/record-room" element={user ? withErrorBoundary(RecordRoomPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </Suspense>

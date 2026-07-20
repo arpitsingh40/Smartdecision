@@ -4,7 +4,11 @@ import { api } from '../lib/api';
 import { TopBar } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Loader2, CheckCircle2, Clock, Upload, MessageCircle, AlertTriangle, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Input } from '../components/ui/input';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '../components/ui/dialog';
+import { Loader2, CheckCircle2, Clock, Upload, MessageCircle, AlertTriangle, FileText, ChevronDown, ChevronUp, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STATUS_COLORS = {
@@ -26,6 +30,10 @@ const TaskCard = ({ task, onUpdate, busy }) => {
   const [expanded, setExpanded] = useState(false);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [clarifyOpen, setClarifyOpen] = useState(false);
+  const [clarifyQuestion, setClarifyQuestion] = useState('');
+  const [clarifyBusy, setClarifyBusy] = useState(false);
+  const [clarifyAnswer, setClarifyAnswer] = useState('');
 
   const handleFile = (e) => {
     const f = e.target.files?.[0];
@@ -66,21 +74,29 @@ const TaskCard = ({ task, onUpdate, busy }) => {
     }
   };
 
-  const askAboutTask = async () => {
-    const msg = prompt('Ask SmartDecision about this task:');
-    if (!msg) return;
+  const askAboutTask = () => {
+    setClarifyQuestion('');
+    setClarifyAnswer('');
+    setClarifyOpen(true);
+  };
+
+  const submitClarify = async () => {
+    if (!clarifyQuestion.trim()) return;
+    setClarifyBusy(true);
     try {
-      const r = await api.post('/brain/task-clarify', { task_id: task.id, question: msg });
-      toast.success(r.data.answer);
+      const r = await api.post('/brain/task-clarify', { task_id: task.id, question: clarifyQuestion.trim() });
+      setClarifyAnswer(r.data.answer);
+      toast.success('Answer ready');
     } catch (e) {
-      toast.error('Could not get clarity right now.');
-    }
+      toast.error(e.response?.data?.detail || 'Could not get clarification.');
+    } finally { setClarifyBusy(false); }
   };
 
   const due = task.due_at ? new Date(task.due_at) : null;
   const overdue = due && due.getTime() < Date.now() && task.status !== 'done';
 
   return (
+    <>
     <div className={`rounded-xl border bg-background px-4 py-3 ${overdue ? 'border-amber-200' : 'border-border/70'}`}>
       <div className="flex items-start justify-between gap-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div className="min-w-0 flex-1">
@@ -172,6 +188,56 @@ const TaskCard = ({ task, onUpdate, busy }) => {
         </div>
       )}
     </div>
+
+    {/* Clarification Dialog */}
+    <Dialog open={clarifyOpen} onOpenChange={setClarifyOpen}>
+      <DialogContent className="sm:max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-lg font-normal">Ask about this task</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
+            {task.title}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          {!clarifyAnswer ? (
+            <>
+              <div className="relative">
+                <textarea
+                  value={clarifyQuestion}
+                  onChange={e => setClarifyQuestion(e.target.value)}
+                  placeholder="What do you need help with? E.g. 'How should I approach this?' or 'What's the first step?'"
+                  className="w-full rounded-xl border bg-background px-3 py-2 text-sm min-h-[80px] resize-none"
+                  rows={3}
+                  autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitClarify(); } }}
+                />
+              </div>
+              <Button
+                className="w-full rounded-xl"
+                onClick={submitClarify}
+                disabled={clarifyBusy || !clarifyQuestion.trim()}
+              >
+                {clarifyBusy ? <Loader2 size={14} className="animate-spin mr-2" /> : <Send size={14} className="mr-2" />}
+                Ask
+              </Button>
+            </>
+          ) : (
+            <div className="rounded-xl border bg-accent/5 p-4">
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{clarifyAnswer}</p>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-lg mt-3"
+                onClick={() => { setClarifyQuestion(''); setClarifyAnswer(''); }}
+              >
+                Ask another
+              </Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
 

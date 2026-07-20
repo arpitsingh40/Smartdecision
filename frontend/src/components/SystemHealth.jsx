@@ -321,7 +321,7 @@ export function CapabilityPanel() {
               {capType && (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <TypeIcon size={12} />
-                  <span>Detected: <span className="font-medium text-foreground">{CAPABILITIES[capType] || capType.replace(/_/g, ' ')}</span></span>
+                  <span>Detected: <span className="font-medium text-foreground">{capabilities?.[capType]?.label || capType.replace(/_/g, ' ')}</span></span>
                   {capabilities?.[capType]?.label && <span className="text-muted-foreground">— {capabilities[capType].label}</span>}
                 </div>
               )}

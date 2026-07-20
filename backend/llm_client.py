@@ -284,10 +284,67 @@ class LLMClient:
 class _MessagesProxy:
     def __init__(self, provider: _BaseProvider):
         self._provider = provider
+        self._fallback_providers: list[_BaseProvider] = []
+        self._init_fallbacks()
+
+    def _init_fallbacks(self):
+        """Build fallback provider chain from available API keys."""
+        # Anthropic fallback
+        anthro_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if anthro_key and self._provider._api_key != anthro_key:
+            self._fallback_providers.append(
+                OpenAICompatibleProvider(anthro_key, "https://api.anthropic.com/v1"))
+        # OpenAI fallback
+        openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if openai_key and self._provider._api_key != openai_key:
+            self._fallback_providers.append(
+                OpenAICompatibleProvider(openai_key, "https://api.openai.com/v1"))
+        # Moonshot/Kimi fallback
+        moonshot_key = os.environ.get("MOONSHOT_API_KEY", "").strip()
+        if moonshot_key and self._provider._api_key != moonshot_key:
+            self._fallback_providers.append(
+                OpenAICompatibleProvider(moonshot_key, "https://api.moonshot.cn/v1"))
 
     def create(self, model: str, system=None, messages=None, max_tokens=None, tools=None, **kwargs) -> Response:
-        return self._provider.create(model=model, system=system, messages=messages,
-                                      max_tokens=max_tokens, tools=tools, **kwargs)
+        try:
+            return self._provider.create(model=model, system=system, messages=messages,
+                                          max_tokens=max_tokens, tools=tools, **kwargs)
+        except Exception as primary_err:
+            log.warning(f"Primary provider failed: {primary_err}")
+            # Try fallback providers
+            for fb in self._fallback_providers:
+                try:
+                    fb_model = self._remap_model(model, fb)
+                    result = fb.create(model=fb_model, system=system, messages=messages,
+                                        max_tokens=max_tokens, tools=tools, **kwargs)
+                    log.info(f"Fallback to {fb.__class__.__name__} succeeded")
+                    return result
+                except Exception as fb_err:
+                    log.warning(f"Fallback provider failed: {fb_err}")
+                    continue
+            raise primary_err
+
+    @staticmethod
+    def _remap_model(model: str, provider: _BaseProvider) -> str:
+        """Remap model name to the fallback provider's equivalent."""
+        model_lower = model.lower()
+        # DeepSeek → Anthropic
+        if "deepseek-v4-pro" in model_lower or "deepseek" in model_lower:
+            return "claude-sonnet-4-5-20250914"
+        if "deepseek-v4-flash" in model_lower:
+            return "claude-haiku-4-5-20251001"
+        # DeepSeek → OpenAI
+        if "deepseek-v4-pro" in model_lower:
+            return "gpt-4o"
+        if "deepseek-v4-flash" in model_lower:
+            return "gpt-4o-mini"
+        # Anthropic models pass through
+        if model_lower.startswith("claude"):
+            return model
+        # OpenAI models pass through
+        if model_lower.startswith("gpt") or model_lower.startswith("o1") or model_lower.startswith("o3"):
+            return model
+        return model
 
 
 _client: Optional[LLMClient] = None

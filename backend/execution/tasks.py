@@ -102,6 +102,14 @@ def enqueue_task(executive_id: str, task_data: dict, trace_id: str = None, org_i
     }
     if exec_tasks_col is not None:
         exec_tasks_col.insert_one(dict(task))
+
+    # Audit trail
+    try:
+        from audit import record_task_event
+        record_task_event(org_id, tid, "proposed", task_data.get("description", ""), executive_id)
+    except Exception:
+        pass
+
     return tid
 
 

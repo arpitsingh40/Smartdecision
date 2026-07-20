@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, ShieldCheck, Flame, Compass } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Gauge, Clock, BookOpen, CheckSquare, UserCog, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, ShieldCheck, Flame, Compass, Zap, Wifi, History } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -167,6 +167,15 @@ export const TopBar = () => {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate('/app/weekly-review')} className="text-sm cursor-pointer">
                 <Compass size={16} strokeWidth={1.75} className="mr-2" /> Weekly Review
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/app/business-os')} className="text-sm cursor-pointer">
+                <Zap size={16} strokeWidth={1.75} className="mr-2" /> Business OS
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/app/connections')} className="text-sm cursor-pointer">
+                <Wifi size={16} strokeWidth={1.75} className="mr-2" /> Connections
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/app/record-room')} className="text-sm cursor-pointer">
+                <History size={16} strokeWidth={1.75} className="mr-2" /> Record Room
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem data-testid="buy-credits-menu" onClick={() => navigate('/app/billing')} className="text-sm cursor-pointer">

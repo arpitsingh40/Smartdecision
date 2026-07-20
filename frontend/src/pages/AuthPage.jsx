@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, Target, CheckCircle2, RefreshCw,
@@ -33,7 +33,7 @@ export default function AuthPage() {
   const [emailMode, setEmailMode] = useState('signup');
   const [busy, setBusy] = useState(false);
   const [config, setConfig] = useState({ signup_credits: 100 });
-  useState(() => { api.get('/config').then(r => setConfig(r.data)).catch(() => {}); }, []);
+  useEffect(() => { api.get('/config').then(r => setConfig(r.data)).catch(() => {}); }, []);
 
   const submitEmail = async (e) => {
     e.preventDefault();

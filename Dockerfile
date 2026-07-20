@@ -23,4 +23,7 @@ COPY --from=frontend-builder /app/frontend/build /frontend/build
 
 EXPOSE 8000
 
-CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}
+# Gunicorn with 2 Uvicorn workers for concurrent request handling
+# Bumps throughput from 1 req at a time to 2 parallel requests
+# For >1000 users, bump to -w 4 and increase Railway RAM to 2GB
+CMD gunicorn -w 2 -k uvicorn.workers.UvicornWorker server:app --bind 0.0.0.0:${PORT:-8000} --timeout 120 --graceful-timeout 30

@@ -27,4 +27,5 @@ pytest==9.0.3
 requests==2.34.2
 tiktoken==0.13.0
 uvicorn==0.25.0
+gunicorn==23.0.0
 composio>=0.17.0

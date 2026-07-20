@@ -17,7 +17,7 @@ mongo_url = os.environ.get("MONGO_URL", "").strip()
 if mongo_url:
     from pymongo import MongoClient
     import motor.motor_asyncio
-    mongo = MongoClient(mongo_url, maxPoolSize=100, serverSelectionTimeoutMS=5000)
+    mongo = MongoClient(mongo_url, maxPoolSize=50, minPoolSize=5, serverSelectionTimeoutMS=5000, connectTimeoutMS=5000)
     db = mongo[os.environ.get("DB_NAME", "smartdecision")]
     async_mongo = motor.motor_asyncio.AsyncIOMotorClient(mongo_url, maxPoolSize=100, serverSelectionTimeoutMS=5000)
     async_db = async_mongo[os.environ.get("DB_NAME", "smartdecision")]

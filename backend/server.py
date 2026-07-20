@@ -691,6 +691,12 @@ async def credits(user: dict = Depends(current_user_async)):
 def root():
     return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok", "version": "1"}
 
+
+@api.get("/health")
+def health():
+    """Lightweight health check — no DB, no filesystem. Used by Railway."""
+    return {"status": "ok"}
+
 @v1.get("")
 def v1_root():
     return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok", "version": "1"}  # ponytail: duplicate needed for /api/v1 root

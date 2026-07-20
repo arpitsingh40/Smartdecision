@@ -45,7 +45,7 @@ function DirList({ icon: Icon, label, items }) {
   if (!items || !items.length) return null;
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1">
+      <div className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1 mb-1">
         <Icon size={12} /> {label}
       </div>
       <ul className="space-y-1">
@@ -396,13 +396,13 @@ export default function JourneyPage() {
     <div className="space-y-5">
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Decision confidence</span>
+          <span className="text-xs font-medium text-muted uppercase tracking-wide">Decision confidence</span>
           <span data-testid="journey-confidence" className="font-mono-plex text-xs text-foreground">{conf}%</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
           <div className="h-full rounded-full bg-primary transition-all duration-700" style={{ width: `${conf}%` }} />
         </div>
-        <div className="text-xs text-muted-foreground mt-1.5">{journey.confidence_band}</div>
+        <div className="text-xs text-muted mt-1.5">{journey.confidence_band}</div>
         {journey.ready_for_direction && !journey.has_direction ? (
           <div className="mt-3 flex items-start gap-2 rounded-xl bg-secondary/70 px-3 py-2 text-xs text-foreground">
             <Sparkles size={13} className="mt-0.5 shrink-0" />
@@ -412,7 +412,7 @@ export default function JourneyPage() {
         {journey.milestones && journey.milestones.length ? (
           <div className="mt-3">
             <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-muted-foreground uppercase tracking-wide flex items-center gap-1"><Flag size={11} /> Plan progress</span>
+              <span className="text-muted uppercase tracking-wide flex items-center gap-1"><Flag size={11} /> Plan progress</span>
               <span className="font-mono-plex">{journey.progress_pct}%</span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -423,8 +423,8 @@ export default function JourneyPage() {
       </div>
 
       {(journey.hypotheses || []).length ? (
-        <div className="pt-3 border-t border-border/60 space-y-2" data-testid="journey-hypotheses-panel">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+        <div className="pt-3 border-t border-hairline/60 space-y-2" data-testid="journey-hypotheses-panel">
+          <div className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1">
             <FlaskConical size={11} /> Current hypotheses
           </div>
           <div className="space-y-2">
@@ -438,10 +438,10 @@ export default function JourneyPage() {
               return (
                 <div key={h.id} data-testid={`hypothesis-${h.id}`} title={evid}>
                   <div className="flex items-start justify-between gap-2 text-[11px]">
-                    <span className={`leading-snug ${ruledOut ? 'line-through text-muted-foreground/60' : leading ? 'font-semibold text-foreground' : 'text-foreground/85'}`}>
+                    <span className={`leading-snug ${ruledOut ? 'line-through text-muted/60' : leading ? 'font-semibold text-foreground' : 'text-foreground/85'}`}>
                       {h.statement}
                     </span>
-                    <span className={`font-mono-plex shrink-0 ${ruledOut ? 'text-muted-foreground/60' : leading ? 'text-emerald-600 font-semibold' : 'text-muted-foreground'}`}>
+                    <span className={`font-mono-plex shrink-0 ${ruledOut ? 'text-muted/60' : leading ? 'text-emerald-600 font-semibold' : 'text-muted'}`}>
                       {h.probability}%
                     </span>
                   </div>
@@ -452,21 +452,21 @@ export default function JourneyPage() {
                     />
                   </div>
                   {ruledOut ? (
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mt-0.5">ruled out</div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted/60 mt-0.5">ruled out</div>
                   ) : null}
                 </div>
               );
             })}
           </div>
-          <p className="text-[10px] text-muted-foreground leading-snug">
+          <p className="text-[10px] text-muted leading-snug">
             Each answer you give moves these probabilities. Hover one to see the evidence.
           </p>
         </div>
       ) : null}
 
       {reasoning ? (
-        <div className="pt-3 border-t border-border/60 space-y-3" data-testid="journey-reasoning-panel">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+        <div className="pt-3 border-t border-hairline/60 space-y-3" data-testid="journey-reasoning-panel">
+          <div className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1">
             <Radar size={11} /> How clearly I see each dimension
           </div>
           <div className="space-y-1.5">
@@ -478,10 +478,10 @@ export default function JourneyPage() {
               return (
                 <div key={d} data-testid={`reasoning-dim-${d}`} title={u.note || ''}>
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className={biggest ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                    <span className={biggest ? 'font-semibold text-foreground' : 'text-muted'}>
                       {reasoning.dim_labels?.[d] || d}{biggest ? ' · probing this' : ''}
                     </span>
-                    <span className="font-mono-plex text-muted-foreground">{clarity}%</span>
+                    <span className="font-mono-plex text-muted">{clarity}%</span>
                   </div>
                   <div className="h-1 w-full rounded-full bg-muted overflow-hidden mt-0.5">
                     <div
@@ -495,7 +495,7 @@ export default function JourneyPage() {
           </div>
           {reasoning.question_rationale ? (
             <div className="rounded-xl bg-secondary/60 px-3 py-2 text-xs leading-snug" data-testid="reasoning-rationale">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground block mb-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted block mb-0.5">
                 {reasoning.sufficient ? 'Why I stopped asking' : 'Why I asked that'}
               </span>
               {reasoning.sufficient && reasoning.sufficiency_reason ? reasoning.sufficiency_reason : reasoning.question_rationale}
@@ -503,7 +503,7 @@ export default function JourneyPage() {
           ) : null}
           {reasoning.assumptions_detected?.length ? (
             <div data-testid="reasoning-assumptions">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Assumptions I am hearing</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted mb-1">Assumptions I am hearing</div>
               <ul className="space-y-1">
                 {reasoning.assumptions_detected.map((a, i) => (
                   <li key={i} className="text-xs text-foreground/85 leading-snug flex items-start gap-1.5">
@@ -525,31 +525,31 @@ export default function JourneyPage() {
               <span className="text-[10px] uppercase tracking-wide rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5">reversible</span>
             ) : null}
             {(reasoning.expert_lenses || []).map((l, i) => (
-              <span key={i} className="text-[10px] rounded-full border border-border/70 px-2 py-0.5 text-muted-foreground">{l}</span>
+              <span key={i} className="text-[10px] rounded-full border border-hairline/70 px-2 py-0.5 text-muted">{l}</span>
             ))}
           </div>
         </div>
       ) : null}
 
-      <div className="space-y-3 pt-3 border-t border-border/60">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">What I understand</div>
+      <div className="space-y-3 pt-3 border-t border-hairline/60">
+        <div className="text-[11px] uppercase tracking-wide text-muted">What I understand</div>
         {filled.map((f) => (
           <div key={f} data-testid={`journey-field-${f}`}>
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels[f] || f}</div>
+            <div className="text-[11px] uppercase tracking-wide text-muted">{labels[f] || f}</div>
             <div className="text-sm text-foreground leading-snug mt-0.5">{fieldValue(f, model[f])}</div>
           </div>
         ))}
         {filled.length === 0 ? (
-          <div className="text-sm text-muted-foreground">Building your picture as we talk…</div>
+          <div className="text-sm text-muted">Building your picture as we talk…</div>
         ) : null}
       </div>
 
       {empties.length ? (
-        <div className="pt-2 border-t border-border/60">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Still exploring</div>
+        <div className="pt-2 border-t border-hairline/60">
+          <div className="text-[11px] uppercase tracking-wide text-muted mb-2">Still exploring</div>
           <div className="flex flex-wrap gap-1.5">
             {empties.map((f) => (
-              <span key={f} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground rounded-full border border-dashed border-border/70 px-2 py-0.5">
+              <span key={f} className="inline-flex items-center gap-1 text-[11px] text-muted rounded-full border border-dashed border-hairline/70 px-2 py-0.5">
                 <CircleDot size={10} strokeWidth={2} className="opacity-50" /> {labels[f] || f}
               </span>
             ))}
@@ -592,13 +592,13 @@ export default function JourneyPage() {
                     <Brain size={15} strokeWidth={1.75} />
                   </span>
                   <div className="flex flex-col gap-2 max-w-[44rem]">
-                    <div className="rounded-2xl rounded-tl-sm bg-card border border-border/70 px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap">
+                    <div className="rounded-2xl rounded-tl-sm bg-surface border border-hairline/70 px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap">
                       {m.text}
                     </div>
                     {/* first-turn "Why I asked" card */}
                     {i === 0 && journey.reasoning?.question_rationale && (
-                      <div className="rounded-xl bg-secondary/60 border border-border/60 px-3.5 py-2.5 text-xs leading-snug" data-testid="first-turn-rationale">
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground block mb-0.5">Why I asked that</span>
+                      <div className="rounded-xl bg-secondary/60 border border-hairline/60 px-3.5 py-2.5 text-xs leading-snug" data-testid="first-turn-rationale">
+                        <span className="text-[10px] uppercase tracking-wide text-muted block mb-0.5">Why I asked that</span>
                         {journey.reasoning.question_rationale}
                       </div>
                     )}
@@ -613,7 +613,7 @@ export default function JourneyPage() {
               )
             ))}
             {busy && !teamMode ? (
-              <div className="flex gap-3 items-center text-muted-foreground" data-testid="journey-thinking">
+              <div className="flex gap-3 items-center text-muted" data-testid="journey-thinking">
                 <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary/80 text-primary-foreground shrink-0">
                   <Brain size={15} strokeWidth={1.75} />
                 </span>
@@ -637,9 +637,9 @@ export default function JourneyPage() {
 
             {/* Initial Direction card */}
             {journey.direction ? (
-              <div className="rounded-2xl border border-border/70 bg-card p-5 space-y-4" data-testid="direction-card">
+              <div className="rounded-2xl border border-hairline/70 bg-surface p-5 space-y-4" data-testid="direction-card">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted flex items-center gap-1.5">
                     <Target size={13} /> Decision package
                   </span>
                   <div className="flex items-center gap-2">
@@ -654,21 +654,21 @@ export default function JourneyPage() {
                 </div>
                 {journey.direction.decision ? (
                   <div className="rounded-xl bg-primary/5 border border-primary/20 px-3.5 py-2.5" data-testid="direction-decision">
-                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground block">The call</span>
+                    <span className="text-[11px] uppercase tracking-wide text-muted block">The call</span>
                     <div className="text-[15px] font-medium leading-snug mt-0.5">{journey.direction.decision}</div>
                   </div>
                 ) : null}
                 <div>
                   <div className="font-display text-lg leading-snug">{journey.direction.goal}</div>
                   {journey.direction.probability_rationale ? (
-                    <div className="text-xs text-muted-foreground mt-1">{journey.direction.probability_rationale}</div>
+                    <div className="text-xs text-muted mt-1">{journey.direction.probability_rationale}</div>
                   ) : null}
                 </div>
                 {journey.direction.highest_leverage ? (
                   <div className="flex items-start gap-2 rounded-xl bg-secondary/60 px-3 py-2.5 text-sm">
                     <Lightbulb size={15} className="mt-0.5 shrink-0 text-primary" />
                     <div>
-                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground block">Highest leverage</span>
+                      <span className="text-[11px] uppercase tracking-wide text-muted block">Highest leverage</span>
                       {journey.direction.highest_leverage}
                     </div>
                   </div>
@@ -679,8 +679,8 @@ export default function JourneyPage() {
                   <DirList icon={HelpCircle} label="Missing info" items={journey.direction.missing_info} />
                 </div>
                 {journey.direction.trade_offs?.length ? (
-                  <div className="pt-3 border-t border-border/60" data-testid="direction-tradeoffs">
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5">
+                  <div className="pt-3 border-t border-hairline/60" data-testid="direction-tradeoffs">
+                    <div className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1 mb-1.5">
                       <Scale size={12} /> Trade-offs you are accepting
                     </div>
                     <ul className="space-y-1">
@@ -692,7 +692,7 @@ export default function JourneyPage() {
                 ) : null}
                 {journey.direction.first_moves?.length ? (
                   <div data-testid="direction-first-moves">
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5">
+                    <div className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1 mb-1.5">
                       <Rocket size={12} /> First moves
                     </div>
                     <ol className="space-y-1">
@@ -703,14 +703,14 @@ export default function JourneyPage() {
                   </div>
                 ) : null}
                 {journey.direction.learning_loop && (journey.direction.learning_loop.signals?.length || journey.direction.learning_loop.assumptions_to_test?.length) ? (
-                  <div className="grid sm:grid-cols-2 gap-4 pt-3 border-t border-border/60" data-testid="direction-learning-loop">
+                  <div className="grid sm:grid-cols-2 gap-4 pt-3 border-t border-hairline/60" data-testid="direction-learning-loop">
                     <DirList icon={Activity} label="Signals to watch" items={journey.direction.learning_loop.signals} />
                     <DirList icon={FlaskConical} label="Assumptions to test" items={journey.direction.learning_loop.assumptions_to_test} />
                   </div>
                 ) : null}
                 {journey.stage === 'refine' && !journey.milestones.length ? (
-                  <div className="pt-3 border-t border-border/60 space-y-2.5" data-testid="direction-refine">
-                    <div className="text-xs text-muted-foreground">Does this represent your business? Refine it, or approve to lock measurable milestones.</div>
+                  <div className="pt-3 border-t border-hairline/60 space-y-2.5" data-testid="direction-refine">
+                    <div className="text-xs text-muted">Does this represent your business? Refine it, or approve to lock measurable milestones.</div>
                     <Textarea
                       data-testid="refine-input"
                       value={refineText}
@@ -735,9 +735,9 @@ export default function JourneyPage() {
 
             {/* Milestones tracker */}
             {journey.milestones && journey.milestones.length ? (
-              <div className="rounded-2xl border border-border/70 bg-card p-5 space-y-4" data-testid="milestones-card">
+              <div className="rounded-2xl border border-hairline/70 bg-surface p-5 space-y-4" data-testid="milestones-card">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted flex items-center gap-1.5">
                     <Flag size={13} /> Milestones
                   </span>
                   <span className="font-mono-plex text-xs" data-testid="milestones-progress">{journey.progress_pct}% done</span>
@@ -747,20 +747,20 @@ export default function JourneyPage() {
                 </div>
                 <ol className="space-y-2.5">
                   {journey.milestones.map((m) => (
-                    <li key={m.id} data-testid="milestone-row" className="flex items-start gap-3 rounded-xl border border-border/60 px-3 py-2.5">
+                    <li key={m.id} data-testid="milestone-row" className="flex items-start gap-3 rounded-xl border border-hairline/60 px-3 py-2.5">
                       <button onClick={() => cycleMilestone(m)} data-testid={`milestone-status-${m.order}`} className="mt-0.5 shrink-0" title="Click to update status">
                         {m.status === 'done'
                           ? <CheckCircle2 size={18} className="text-emerald-600" />
                           : m.status === 'in_progress'
                             ? <CircleDot size={18} className="text-amber-500" />
-                            : <Circle size={18} className="text-muted-foreground" />}
+                            : <Circle size={18} className="text-muted" />}
                       </button>
                       <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-medium ${m.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>{m.order}. {m.title}</div>
-                        {m.success_metric ? <div className="text-xs text-muted-foreground mt-0.5">{m.success_metric}</div> : null}
+                        <div className={`text-sm font-medium ${m.status === 'done' ? 'line-through text-muted' : ''}`}>{m.order}. {m.title}</div>
+                        {m.success_metric ? <div className="text-xs text-muted mt-0.5">{m.success_metric}</div> : null}
                         <div className="flex items-center gap-2 mt-1.5">
                           {m.target ? <span className="text-[11px] rounded-full bg-secondary px-2 py-0.5">{m.target}</span> : null}
-                          {m.deadline ? <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><Clock size={11} />{m.deadline}</span> : null}
+                          {m.deadline ? <span className="text-[11px] text-muted inline-flex items-center gap-1"><Clock size={11} />{m.deadline}</span> : null}
                         </div>
                         {m.status === 'done' && m.result ? (
                           <div className="text-xs text-emerald-700 mt-1.5" data-testid={`milestone-result-${m.order}`}>
@@ -775,7 +775,7 @@ export default function JourneyPage() {
                               onChange={(e) => setResultDrafts((d) => ({ ...d, [m.id]: e.target.value }))}
                               placeholder="What actually happened? (feeds your engine)"
                               maxLength={500}
-                              className="flex-1 text-xs rounded-lg border border-border/70 bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
+                              className="flex-1 text-xs rounded-lg border border-hairline/70 bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
                             />
                             <Button size="sm" variant="outline" className="h-7 rounded-lg text-xs px-2" onClick={() => saveMilestoneResult(m)} disabled={!(resultDrafts[m.id] || '').trim()} data-testid={`milestone-result-save-${m.order}`}>
                               Save
@@ -796,7 +796,7 @@ export default function JourneyPage() {
                   <Target size={18} className="mt-0.5 text-primary shrink-0" />
                   <div>
                     <div className="font-display text-base">Ready for daily check-ins?</div>
-                    <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
+                    <p className="text-sm text-muted mt-0.5 leading-relaxed">
                       Your direction and milestones are set. Now open a thread to get a daily next action, accountability tracking, and progress toward your goal.
                     </p>
                     <Button
@@ -818,7 +818,7 @@ export default function JourneyPage() {
                   <Users size={18} className="mt-0.5 text-primary shrink-0" />
                   <div>
                     <div className="font-display text-base">Would you like to involve your team?</div>
-                    <div className="text-sm text-muted-foreground mt-0.5">I can turn this plan into a daily, weekly and monthly operating rhythm for the people who will execute it.</div>
+                    <div className="text-sm text-muted mt-0.5">I can turn this plan into a daily, weekly and monthly operating rhythm for the people who will execute it.</div>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -837,15 +837,15 @@ export default function JourneyPage() {
             {team.started && !team.plan ? (
               <div className="space-y-5" data-testid="team-setup">
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5"><Users size={13} /> Team setup</span>
-                  <span className="text-[11px] text-muted-foreground font-mono-plex">{team.confidence}%</span>
+                  <span className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1.5"><Users size={13} /> Team setup</span>
+                  <span className="text-[11px] text-muted font-mono-plex">{team.confidence}%</span>
                   <div className="flex-1 h-px bg-border/60" />
                 </div>
                 {team.messages.map((m, i) => (
                   m.role === 'assistant' ? (
                     <div key={i} className="flex gap-3 items-start" data-testid="team-msg-assistant">
                       <span className="mt-0.5 inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary text-primary-foreground shrink-0"><Brain size={15} strokeWidth={1.75} /></span>
-                      <div className="rounded-2xl rounded-tl-sm bg-card border border-border/70 px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap max-w-[44rem]">{m.text}</div>
+                      <div className="rounded-2xl rounded-tl-sm bg-surface border border-hairline/70 px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap max-w-[44rem]">{m.text}</div>
                     </div>
                   ) : (
                     <div key={i} className="flex justify-end" data-testid="team-msg-user">
@@ -854,7 +854,7 @@ export default function JourneyPage() {
                   )
                 ))}
                 {busy && teamMode ? (
-                  <div className="flex gap-3 items-center text-muted-foreground" data-testid="team-thinking">
+                  <div className="flex gap-3 items-center text-muted" data-testid="team-thinking">
                     <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary/80 text-primary-foreground shrink-0"><Brain size={15} strokeWidth={1.75} /></span>
                     <Loader2 className="animate-spin" size={16} /> <span className="text-sm">Thinking…</span>
                   </div>
@@ -864,9 +864,9 @@ export default function JourneyPage() {
 
             {/* Team operating plan */}
             {team.plan ? (
-              <div className="rounded-2xl border border-border/70 bg-card p-5 space-y-4" data-testid="team-plan-card">
+              <div className="rounded-2xl border border-hairline/70 bg-surface p-5 space-y-4" data-testid="team-plan-card">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5"><Users size={13} /> Team operating plan</span>
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted flex items-center gap-1.5"><Users size={13} /> Team operating plan</span>
                   <Button size="sm" variant="outline" className="rounded-full h-8" onClick={() => navigate('/app/team')} data-testid="open-team-btn">
                     <UserPlus size={14} className="mr-1.5" /> Invite your team
                   </Button>
@@ -877,8 +877,8 @@ export default function JourneyPage() {
                   <DirList icon={Calendar} label="Monthly" items={team.plan.monthly} />
                 </div>
                 {team.plan.responsibilities && team.plan.responsibilities.length ? (
-                  <div className="pt-3 border-t border-border/60">
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5"><ListChecks size={12} /> Responsibilities</div>
+                  <div className="pt-3 border-t border-hairline/60">
+                    <div className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1 mb-1.5"><ListChecks size={12} /> Responsibilities</div>
                     <ul className="space-y-1.5">
                       {team.plan.responsibilities.map((r, i) => (
                         <li key={i} className="text-sm leading-snug">
@@ -888,7 +888,7 @@ export default function JourneyPage() {
                     </ul>
                   </div>
                 ) : null}
-                <div className="grid sm:grid-cols-3 gap-4 pt-3 border-t border-border/60">
+                <div className="grid sm:grid-cols-3 gap-4 pt-3 border-t border-hairline/60">
                   <DirList icon={ArrowRight} label="Dependencies" items={team.plan.dependencies} />
                   <DirList icon={Shield} label="Escalation" items={team.plan.escalation_rules} />
                   <DirList icon={Gauge} label="Success metrics" items={team.plan.success_metrics} />
@@ -902,13 +902,13 @@ export default function JourneyPage() {
           {/* understanding panel toggle (all sizes) */}
           <button
             onClick={() => setPanelOpen((o) => !o)}
-            className="flex items-center justify-between rounded-xl border border-border/70 px-3 py-2 text-sm text-muted-foreground mb-3 lg:sticky lg:top-0 lg:bg-background/80 lg:backdrop-blur"
+            className="flex items-center justify-between rounded-xl border border-hairline/70 px-3 py-2 text-sm text-muted mb-3 lg:sticky lg:top-0 lg:bg-background/80 lg:backdrop-blur"
             data-testid="journey-panel-toggle"
           >
             <span>Decision confidence · {conf}% · {panelOpen ? 'Hide details' : 'Show details'}</span>
             {panelOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
           </button>
-          {panelOpen ? <div className="lg:hidden rounded-2xl border border-border/70 bg-card/60 p-4 mb-3">{Panel}</div> : null}
+          {panelOpen ? <div className="lg:hidden rounded-2xl border border-hairline/70 bg-surface/60 p-4 mb-3">{Panel}</div> : null}
 
           {/* low-credit warning */}
           {user && user.credits !== undefined && user.credits < 20 && user.credits > 0 && (
@@ -950,7 +950,7 @@ export default function JourneyPage() {
           {/* understanding panel (desktop) */}
         {panelOpen ? (
         <aside className="hidden lg:block">
-          <div className="sticky top-4 rounded-2xl border border-border/70 bg-card/60 p-5" data-testid="journey-understanding-panel">
+          <div className="sticky top-4 rounded-2xl border border-hairline/70 bg-surface/60 p-5" data-testid="journey-understanding-panel">
             {Panel}
           </div>
         </aside>

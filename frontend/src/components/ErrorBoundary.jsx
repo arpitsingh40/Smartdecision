@@ -24,7 +24,7 @@ export default class ErrorBoundary extends Component {
               </svg>
             </div>
             <h1 className="font-display text-2xl text-foreground mb-2">Something went wrong</h1>
-            <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
+            <p className="text-sm text-muted mb-8 leading-relaxed">
               {this.props.fallback || 'An unexpected error occurred. Please try again.'}
             </p>
             <div className="flex items-center justify-center gap-3">
@@ -36,7 +36,7 @@ export default class ErrorBoundary extends Component {
               </Button>
             </div>
             {process.env.NODE_ENV === 'development' && this.state.error && (
-              <pre className="mt-8 text-xs text-left text-muted-foreground bg-muted/50 rounded-xl p-4 overflow-auto max-h-40">
+              <pre className="mt-8 text-xs text-left text-muted bg-muted/50 rounded-xl p-4 overflow-auto max-h-40">
                 {this.state.error.message}
                 {this.state.error.stack}
               </pre>

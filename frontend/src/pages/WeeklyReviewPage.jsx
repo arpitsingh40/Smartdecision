@@ -65,7 +65,7 @@ export default function WeeklyReviewPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="font-display text-2xl">Weekly Review</h1>
-            <p className="text-sm text-muted-foreground mt-1">Week of {review.week_key}</p>
+            <p className="text-sm text-muted mt-1">Week of {review.week_key}</p>
           </div>
           <Button variant="ghost" size="sm" onClick={reset} className="rounded-xl gap-1.5"><RotateCcw size={13} /> Reset</Button>
         </div>
@@ -76,7 +76,7 @@ export default function WeeklyReviewPage() {
             const done = i < stageIdx || (i === stageIdx && review.content?.[s]);
             const current = i === stageIdx;
             return (
-              <div key={s} className={`flex items-center gap-1.5 text-xs ${current ? STAGE_COLORS[s] + ' font-medium' : done ? 'text-muted-foreground' : 'text-muted-foreground/50'}`}>
+              <div key={s} className={`flex items-center gap-1.5 text-xs ${current ? STAGE_COLORS[s] + ' font-medium' : done ? 'text-muted' : 'text-muted/50'}`}>
                 <Icon size={12} />
                 <span className="hidden sm:inline capitalize">{s}</span>
                 {i < review.stages.length - 1 && <ChevronRightIcon />}
@@ -105,7 +105,7 @@ export default function WeeklyReviewPage() {
           />
 
           <div className="flex justify-between">
-            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" disabled>
+            <Button variant="ghost" size="sm" className="text-xs text-muted" disabled>
               {stageIdx + 1} of {review.stages.length}
             </Button>
             <Button onClick={save} disabled={!content.trim()} className="rounded-xl gap-1.5">
@@ -118,7 +118,7 @@ export default function WeeklyReviewPage() {
           <div className="mt-6 bg-accent/10 rounded-xl p-4 text-center">
             <CheckCircle size={24} className="mx-auto mb-2 text-accent" />
             <p className="font-medium text-sm">This week's review is complete</p>
-            <p className="text-xs text-muted-foreground mt-1">Come back next week for a fresh one.</p>
+            <p className="text-xs text-muted mt-1">Come back next week for a fresh one.</p>
           </div>
         )}
       </main>
@@ -126,4 +126,4 @@ export default function WeeklyReviewPage() {
   );
 }
 
-function ChevronRightIcon() { return <span className="text-muted-foreground/30 text-[10px]">▸</span>; }
+function ChevronRightIcon() { return <span className="text-muted/30 text-[10px]">▸</span>; }

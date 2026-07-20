@@ -130,11 +130,11 @@ export default function RecordRoomPage() {
       <div className="min-h-screen">
         <TopBar title="Record Room" backTo="/app" />
         <div data-testid="record-room-denied" className="max-w-md mx-auto text-center py-24 px-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted">
             <Lock size={20} />
           </div>
           <h2 className="font-display text-xl">Workspace required</h2>
-          <p className="text-sm text-muted-foreground mt-2">Record Room requires an organization workspace.</p>
+          <p className="text-sm text-muted mt-2">Record Room requires an organization workspace.</p>
           <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/app/team')}>
             Go to workspace
           </Button>
@@ -159,7 +159,7 @@ export default function RecordRoomPage() {
             <h1 className="font-display text-2xl flex items-center gap-2">
               <History size={22} strokeWidth={1.5} /> Record Room
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted mt-1">
               Every decision, execution, and event — audit trail for your organization.
             </p>
           </div>
@@ -168,7 +168,7 @@ export default function RecordRoomPage() {
         {/* Summary chips */}
         {summary && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-muted">
               Last 24h: <span className="font-medium text-foreground">{summary.total || 0} events</span>
             </span>
             {summary.by_severity?.error > 0 && (
@@ -187,7 +187,7 @@ export default function RecordRoomPage() {
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
             <Input
               data-testid="record-room-search"
               placeholder="Search events..."
@@ -212,7 +212,7 @@ export default function RecordRoomPage() {
               data-testid="record-room-type-filter"
               value={filter.type}
               onChange={(e) => setFilter(f => ({ ...f, type: e.target.value }))}
-              className="rounded-xl border bg-card px-3 py-1.5 text-xs"
+              className="rounded-xl border bg-surface px-3 py-1.5 text-xs"
             >
               <option value="">All event types</option>
               {types.map(t => (
@@ -223,7 +223,7 @@ export default function RecordRoomPage() {
               data-testid="record-room-severity-filter"
               value={filter.severity}
               onChange={(e) => setFilter(f => ({ ...f, severity: e.target.value }))}
-              className="rounded-xl border bg-card px-3 py-1.5 text-xs"
+              className="rounded-xl border bg-surface px-3 py-1.5 text-xs"
             >
               <option value="">All severities</option>
               <option value="info">Info</option>
@@ -239,7 +239,7 @@ export default function RecordRoomPage() {
         {/* Event list */}
         <div className="rounded-2xl border divide-y">
           {events.length === 0 && (
-            <div className="py-16 text-center text-sm text-muted-foreground">
+            <div className="py-16 text-center text-sm text-muted">
               <History size={24} className="mx-auto mb-2 opacity-30" />
               No events found. Events will appear here as your organization operates.
             </div>
@@ -249,12 +249,12 @@ export default function RecordRoomPage() {
             return (
               <div key={ev.id} data-testid="audit-event-row"
                 className="flex items-start gap-3 px-4 py-3 hover:bg-surface-2/50 transition-colors">
-                <div className={`mt-0.5 shrink-0 ${ev.severity === 'error' ? 'text-red-500' : ev.severity === 'warning' ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                <div className={`mt-0.5 shrink-0 ${ev.severity === 'error' ? 'text-red-500' : ev.severity === 'warning' ? 'text-amber-500' : 'text-muted'}`}>
                   {IconFor(ev.event_type)}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full border text-muted-foreground">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full border text-muted">
                       {typeLabels[ev.event_type] || ev.event_type}
                     </span>
                     {ev.severity !== 'info' && (
@@ -262,11 +262,11 @@ export default function RecordRoomPage() {
                         {ev.severity}
                       </span>
                     )}
-                    <span className="text-[10px] text-muted-foreground/70">{ts}</span>
+                    <span className="text-[10px] text-muted/70">{ts}</span>
                   </div>
                   <p className="text-sm mt-1 leading-relaxed">{ev.summary}</p>
                   {ev.actor_id && (
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                    <p className="text-[11px] text-muted mt-0.5">
                       by {ev.actor_type}:{ev.actor_id}
                     </p>
                   )}

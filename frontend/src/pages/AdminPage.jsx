@@ -15,7 +15,7 @@ const fmtDur = (s) => {
 };
 
 const SectionTitle = ({ icon: Icon, children }) => (
-  <h2 className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground mt-8 mb-3">
+  <h2 className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted mt-8 mb-3">
     {Icon && <Icon size={13} strokeWidth={1.75} />} {children}
   </h2>
 );
@@ -24,7 +24,7 @@ const SectionTitle = ({ icon: Icon, children }) => (
 function Overview() {
   const [d, setD] = useState(null);
   useEffect(() => { api.get('/admin/overview').then((r) => setD(r.data)).catch(() => {}); }, []);
-  if (!d) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
+  if (!d) return <p className="text-sm text-muted mt-8">Loading…</p>;
   return (
     <div data-testid="admin-overview">
       <SectionTitle icon={Users}>Users</SectionTitle>
@@ -62,19 +62,19 @@ function Overview() {
 function UserDetail({ userId, onBack }) {
   const [d, setD] = useState(null);
   useEffect(() => { api.get(`/admin/users/${userId}/activity`).then((r) => setD(r.data)).catch(() => {}); }, [userId]);
-  if (!d) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
+  if (!d) return <p className="text-sm text-muted mt-8">Loading…</p>;
   const u = d.user;
   return (
     <div data-testid="admin-user-detail" className="mt-6">
-      <button data-testid="user-detail-back" onClick={onBack} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+      <button data-testid="user-detail-back" onClick={onBack} className="flex items-center gap-1.5 text-xs text-muted hover:text-foreground">
         <ArrowLeft size={13} /> All users
       </button>
-      <div className="mt-4 bg-white border border-border/70 rounded-xl p-5">
+      <div className="mt-4 bg-white border border-hairline/70 rounded-xl p-5">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="font-display text-xl">{u.name || u.email}</h2>
-          <span className="text-xs text-muted-foreground">{u.email}</span>
+          <span className="text-xs text-muted">{u.email}</span>
         </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-1.5 mt-3 text-xs text-muted-foreground">
+        <div className="flex flex-wrap gap-x-6 gap-y-1.5 mt-3 text-xs text-muted">
           <span>Country: <span className="text-foreground">{u.country || 'Unknown'}{u.city && u.city !== u.country ? ` · ${u.city}` : ''}</span></span>
           <span>Questions: <span className="font-mono-plex text-foreground">{fmt(u.questions_asked)}</span></span>
           <span>Credits: <span className="font-mono-plex text-foreground">{fmt(u.credits)}</span></span>
@@ -84,39 +84,39 @@ function UserDetail({ userId, onBack }) {
         </div>
       </div>
       <SectionTitle>Questions & engine replies</SectionTitle>
-      {d.threads.length === 0 && <p className="text-sm text-muted-foreground">No goals opened yet.</p>}
+      {d.threads.length === 0 && <p className="text-sm text-muted">No goals opened yet.</p>}
       {d.threads.map((t) => (
-        <div key={t.thread_id} className="bg-white border border-border/70 rounded-xl p-4 mb-3">
+        <div key={t.thread_id} className="bg-white border border-hairline/70 rounded-xl p-4 mb-3">
           <div className="flex items-baseline justify-between gap-3">
             <p className="text-sm font-medium">{t.goal}</p>
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">{t.status}</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted shrink-0">{t.status}</span>
           </div>
           <div className="mt-2 space-y-3">
-            {t.qa.length === 0 && <p className="text-xs text-muted-foreground">No turns yet.</p>}
+            {t.qa.length === 0 && <p className="text-xs text-muted">No turns yet.</p>}
             {t.qa.map((m, i) => (
-              <div key={i} className="border-l-2 border-border pl-3">
-                <p className="text-[13px]"><span className="text-muted-foreground">Q · </span>{m.question}</p>
-                <p className="text-[13px] mt-1 text-muted-foreground"><span>A · </span>{m.reply}</p>
-                <p className="font-mono-plex text-[10px] text-muted-foreground/70 mt-1">{m.intent || ''} {m.at ? `· ${fmtDate(m.at)}` : ''}</p>
+              <div key={i} className="border-l-2 border-hairline pl-3">
+                <p className="text-[13px]"><span className="text-muted">Q · </span>{m.question}</p>
+                <p className="text-[13px] mt-1 text-muted"><span>A · </span>{m.reply}</p>
+                <p className="font-mono-plex text-[10px] text-muted/70 mt-1">{m.intent || ''} {m.at ? `· ${fmtDate(m.at)}` : ''}</p>
               </div>
             ))}
           </div>
         </div>
       ))}
       <SectionTitle>Credit ledger</SectionTitle>
-      <div className="bg-white border border-border/70 rounded-xl overflow-x-auto">
+      <div className="bg-white border border-hairline/70 rounded-xl overflow-x-auto">
         <table className="w-full">
-          <thead className="border-b border-border/70"><tr><Th>Type</Th><Th right>Credits</Th><Th>Detail</Th><Th>When</Th></tr></thead>
+          <thead className="border-b border-hairline/70"><tr><Th>Type</Th><Th right>Credits</Th><Th>Detail</Th><Th>When</Th></tr></thead>
           <tbody>
             {d.ledger.map((e) => (
-              <tr key={e.id} className="border-b border-border/40 last:border-0">
+              <tr key={e.id} className="border-b border-hairline/40 last:border-0">
                 <Td>{e.type.replace('_', ' ')}</Td>
                 <Td right mono className={e.credits > 0 ? 'text-[hsl(var(--success))]' : ''}>{e.credits > 0 ? `+${e.credits}` : e.credits}</Td>
                 <Td mono>{e.amount_inr ? `₹${e.amount_inr}` : e.mode || e.reason || '—'}</Td>
                 <Td mono>{fmtDate(e.at)}</Td>
               </tr>
             ))}
-            {d.ledger.length === 0 && <tr><Td className="text-muted-foreground" colSpan={4}>No movements yet.</Td></tr>}
+            {d.ledger.length === 0 && <tr><Td className="text-muted" colSpan={4}>No movements yet.</Td></tr>}
           </tbody>
         </table>
       </div>
@@ -138,19 +138,19 @@ function UsersTab() {
     <div data-testid="admin-users" className="mt-6">
       <input data-testid="admin-users-search" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }}
         placeholder="Search email, name or country…"
-        className="w-full sm:w-80 bg-white border border-border/70 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]" />
-      <div className="mt-4 bg-white border border-border/70 rounded-xl overflow-x-auto">
+        className="w-full sm:w-80 bg-white border border-hairline/70 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]" />
+      <div className="mt-4 bg-white border border-hairline/70 rounded-xl overflow-x-auto">
         <table className="w-full" data-testid="admin-users-table">
-          <thead className="border-b border-border/70">
+          <thead className="border-b border-hairline/70">
             <tr><Th>User</Th><Th>Country</Th><Th right>Questions</Th><Th right>Credits</Th><Th right>Tokens in/out</Th><Th>Joined</Th></tr>
           </thead>
           <tbody>
             {(data?.items || []).map((u) => (
               <tr key={u.id} data-testid="admin-user-row" onClick={() => setSelected(u.id)}
-                className="border-b border-border/40 last:border-0 cursor-pointer hover:bg-secondary/60 transition-colors">
+                className="border-b border-hairline/40 last:border-0 cursor-pointer hover:bg-secondary/60 transition-colors">
                 <Td>
                   <span className="font-medium">{u.name || '—'}</span>
-                  <span className="block text-[11px] text-muted-foreground">{u.email}{u.is_admin ? ' · founder' : ''}</span>
+                  <span className="block text-[11px] text-muted">{u.email}{u.is_admin ? ' · founder' : ''}</span>
                 </Td>
                 <Td>{u.country || 'Unknown'}</Td>
                 <Td right mono>{fmt(u.questions_asked)}</Td>
@@ -172,7 +172,7 @@ function TrafficTab() {
   const [data, setData] = useState(null);
   const [page, setPage] = useState(1);
   useEffect(() => { api.get('/admin/traffic', { params: { page, limit: 25 } }).then((r) => setData(r.data)).catch(() => {}); }, [page]);
-  if (!data) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
+  if (!data) return <p className="text-sm text-muted mt-8">Loading…</p>;
   const s = data.summary;
   return (
     <div data-testid="admin-traffic" className="mt-6">
@@ -182,23 +182,23 @@ function TrafficTab() {
         <Stat label="Avg time spent" value={fmtDur(s.avg_session_s)} />
         <Stat label="Active now" value={fmt(s.active_now)} />
       </div>
-      <div className="mt-4 bg-white border border-border/70 rounded-xl overflow-x-auto">
+      <div className="mt-4 bg-white border border-hairline/70 rounded-xl overflow-x-auto">
         <table className="w-full" data-testid="admin-traffic-table">
-          <thead className="border-b border-border/70">
+          <thead className="border-b border-hairline/70">
             <tr><Th>IP</Th><Th>City</Th><Th>Country</Th><Th>User</Th><Th right>Time spent</Th><Th>Started</Th></tr>
           </thead>
           <tbody>
             {data.items.map((t) => (
-              <tr key={t.session_id} className="border-b border-border/40 last:border-0">
+              <tr key={t.session_id} className="border-b border-hairline/40 last:border-0">
                 <Td mono>{t.ip || '—'}</Td>
                 <Td>{t.city}</Td>
                 <Td>{t.country}</Td>
-                <Td className="text-[12px]">{t.user_email || <span className="text-muted-foreground">visitor</span>}</Td>
+                <Td className="text-[12px]">{t.user_email || <span className="text-muted">visitor</span>}</Td>
                 <Td right mono>{fmtDur(t.duration_s)}</Td>
                 <Td mono>{fmtDate(t.started_at)}</Td>
               </tr>
             ))}
-            {data.items.length === 0 && <tr><Td className="text-muted-foreground" colSpan={6}>No sessions yet.</Td></tr>}
+            {data.items.length === 0 && <tr><Td className="text-muted" colSpan={6}>No sessions yet.</Td></tr>}
           </tbody>
         </table>
       </div>
@@ -214,7 +214,7 @@ function UsageTab() {
   const [page, setPage] = useState(1);
   useEffect(() => { api.get('/admin/usage', { params: { page, limit: 25 } }).then((r) => setData(r.data)).catch(() => {}); }, [page]);
   useEffect(() => { api.get('/admin/usage/models').then((r) => setModels(r.data)).catch(() => {}); }, []);
-  if (!data) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
+  if (!data) return <p className="text-sm text-muted mt-8">Loading…</p>;
   const s = data.summary;
   const inr = (n) => `₹${fmt(Math.round(n || 0))}`;
   return (
@@ -231,7 +231,7 @@ function UsageTab() {
         <div className="mt-6" data-testid="admin-usage-cost">
           <div className="flex items-baseline justify-between mb-2">
             <h3 className="text-sm font-semibold text-foreground">Cost &amp; margin · per model</h3>
-            <span className="text-[11px] text-muted-foreground">USD→INR @ {models.usd_to_inr} · estimates, not invoiced totals</span>
+            <span className="text-[11px] text-muted">USD→INR @ {models.usd_to_inr} · estimates, not invoiced totals</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Revenue earned" value={inr(models.totals.revenue_inr)} />
@@ -239,9 +239,9 @@ function UsageTab() {
             <Stat label="Margin" value={inr(models.totals.margin_inr)} sub={models.totals.margin_pct == null ? '—' : `${models.totals.margin_pct}% of revenue`} />
             <Stat label="Total LLM calls" value={fmt(models.totals.turns)} sub={`${fmt(models.totals.credits_spent)} credits charged`} />
           </div>
-          <div className="mt-3 bg-white border border-border/70 rounded-xl overflow-x-auto">
+          <div className="mt-3 bg-white border border-hairline/70 rounded-xl overflow-x-auto">
             <table className="w-full" data-testid="admin-usage-models-table">
-              <thead className="border-b border-border/70">
+              <thead className="border-b border-hairline/70">
                 <tr>
                   <Th>Model</Th>
                   <Th right>Turns</Th>
@@ -253,13 +253,13 @@ function UsageTab() {
               </thead>
               <tbody>
                 {models.items.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-3 text-[12px] text-muted-foreground">No LLM calls yet — once users start chatting, model usage will appear here.</td></tr>
+                  <tr><td colSpan={6} className="px-3 py-3 text-[12px] text-muted">No LLM calls yet — once users start chatting, model usage will appear here.</td></tr>
                 )}
                 {models.items.map((m) => (
-                  <tr key={m.model} className="border-b border-border/40 last:border-0">
+                  <tr key={m.model} className="border-b border-hairline/40 last:border-0">
                     <Td>
                       <div className="text-[12px] font-medium">{m.label}</div>
-                      <div className="text-[10px] text-muted-foreground font-mono">{m.model}</div>
+                      <div className="text-[10px] text-muted font-mono">{m.model}</div>
                     </Td>
                     <Td right mono>{fmt(m.turns)}</Td>
                     <Td right mono>{fmt(m.tokens_in)}</Td>
@@ -271,7 +271,7 @@ function UsageTab() {
               </tbody>
             </table>
           </div>
-          <div className="mt-2 text-[11px] text-muted-foreground">
+          <div className="mt-2 text-[11px] text-muted">
             Pricing assumed (USD per 1M tokens):{' '}
             {models.pricing.map((p, i) => (
               <span key={p.model}>
@@ -284,14 +284,14 @@ function UsageTab() {
         </div>
       )}
 
-      <div className="mt-6 bg-white border border-border/70 rounded-xl overflow-x-auto">
+      <div className="mt-6 bg-white border border-hairline/70 rounded-xl overflow-x-auto">
         <table className="w-full" data-testid="admin-usage-table">
-          <thead className="border-b border-border/70">
+          <thead className="border-b border-hairline/70">
             <tr><Th>User</Th><Th right>Questions</Th><Th right>Free issued</Th><Th right>Paid issued</Th><Th right>Balance</Th><Th right>Tokens in/out</Th></tr>
           </thead>
           <tbody>
             {data.items.map((u) => (
-              <tr key={u.id} className="border-b border-border/40 last:border-0">
+              <tr key={u.id} className="border-b border-hairline/40 last:border-0">
                 <Td><span className="text-[12px]">{u.email}</span></Td>
                 <Td right mono>{fmt(u.questions_asked)}</Td>
                 <Td right mono>{fmt(u.credits_issued_free)}</Td>
@@ -319,7 +319,7 @@ const CATEGORY_STYLE = {
   bug: 'bg-red-50 text-red-700 border-red-200',
   idea: 'bg-blue-50 text-blue-700 border-blue-200',
   praise: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  other: 'bg-secondary text-muted-foreground border-border/70',
+  other: 'bg-secondary text-muted border-hairline/70',
 };
 
 const Stars = ({ n }) => (
@@ -346,7 +346,7 @@ function FeedbackTab() {
     api.patch(`/admin/feedback/${id}`, { status: newStatus }).then(() => load()).catch(() => {});
   };
 
-  if (!data) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
+  if (!data) return <p className="text-sm text-muted mt-8">Loading…</p>;
   const s = data.summary;
   return (
     <div data-testid="admin-feedback" className="mt-6">
@@ -365,23 +365,23 @@ function FeedbackTab() {
             className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
               status === f.id
                 ? 'bg-[hsl(var(--accent))] border-transparent text-foreground'
-                : 'bg-white border-border/70 text-muted-foreground hover:text-foreground'}`}>
+                : 'bg-white border-hairline/70 text-muted hover:text-foreground'}`}>
             {f.label}
           </button>
         ))}
       </div>
-      <div className="mt-4 bg-white border border-border/70 rounded-xl overflow-x-auto">
+      <div className="mt-4 bg-white border border-hairline/70 rounded-xl overflow-x-auto">
         <table className="w-full" data-testid="admin-feedback-table">
-          <thead className="border-b border-border/70">
+          <thead className="border-b border-hairline/70">
             <tr><Th>User</Th><Th>Rating</Th><Th>Type</Th><Th>Message</Th><Th>When</Th><Th>Status</Th></tr>
           </thead>
           <tbody>
             {data.items.map((f) => (
               <tr key={f.id} data-testid="feedback-row"
-                className={`border-b border-border/40 last:border-0 align-top ${f.status === 'new' ? 'bg-amber-50/40' : ''}`}>
+                className={`border-b border-hairline/40 last:border-0 align-top ${f.status === 'new' ? 'bg-amber-50/40' : ''}`}>
                 <Td>
                   <span className="font-medium text-[12px]">{f.user_name || '—'}</span>
-                  <span className="block text-[11px] text-muted-foreground">{f.user_email}</span>
+                  <span className="block text-[11px] text-muted">{f.user_email}</span>
                 </Td>
                 <Td><Stars n={f.rating} /></Td>
                 <Td>
@@ -394,7 +394,7 @@ function FeedbackTab() {
                 <Td>
                   <select data-testid="feedback-status-select" value={f.status}
                     onChange={(e) => setRowStatus(f.id, e.target.value)}
-                    className="bg-white border border-border/70 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] cursor-pointer">
+                    className="bg-white border border-hairline/70 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] cursor-pointer">
                     <option value="new">New</option>
                     <option value="reviewed">Reviewed</option>
                     <option value="resolved">Resolved</option>
@@ -402,7 +402,7 @@ function FeedbackTab() {
                 </Td>
               </tr>
             ))}
-            {data.items.length === 0 && <tr><Td className="text-muted-foreground" colSpan={6}>No feedback yet.</Td></tr>}
+            {data.items.length === 0 && <tr><Td className="text-muted" colSpan={6}>No feedback yet.</Td></tr>}
           </tbody>
         </table>
       </div>
@@ -446,7 +446,7 @@ function LaunchTab() {
     } finally { setStarting(false); }
   };
 
-  if (!d) return <p className="text-sm text-muted-foreground mt-8">Loading…</p>;
+  if (!d) return <p className="text-sm text-muted mt-8">Loading…</p>;
   const cal = d.kpi4_outcome?.calibration || {};
   return (
     <div data-testid="admin-launch">
@@ -463,7 +463,7 @@ function LaunchTab() {
         <Stat testId="kpi5-card" label="5 · Return rate" value={pctOr(d.kpi5_return.return_pct)}
           sub={`${fmt(d.kpi5_return.active_7d)} active this week`} />
       </div>
-      <div className="mt-3 text-xs text-muted-foreground" data-testid="kpi-calibration">
+      <div className="mt-3 text-xs text-muted" data-testid="kpi-calibration">
         Prediction calibration: <span className="text-foreground">{cal.label || '—'}</span>
         {cal.n ? ` · predicted ${cal.avg_predicted_confidence}% vs actual ${cal.actual_win_rate}% (n=${cal.n})` : ''}
       </div>
@@ -484,7 +484,7 @@ function LaunchTab() {
               : latest.overall?.pass ? 'PASS — ready to ship' : `FAIL — ${latest.overall?.scenarios_passed ?? 0}/${latest.overall?.scenarios ?? 0} scenarios passed`}
           </span>
         )}
-        {latest?.started_at && <span className="text-[11px] text-muted-foreground">last run {fmtDate(latest.started_at)}</span>}
+        {latest?.started_at && <span className="text-[11px] text-muted">last run {fmtDate(latest.started_at)}</span>}
       </div>
 
       {latest?.overall?.gate_avgs && (
@@ -498,9 +498,9 @@ function LaunchTab() {
       )}
 
       {(latest?.scenarios || []).length > 0 && (
-        <div className="bg-white border border-border/70 rounded-xl overflow-x-auto mt-4">
+        <div className="bg-white border border-hairline/70 rounded-xl overflow-x-auto mt-4">
           <table className="w-full" data-testid="gate-scenarios-table">
-            <thead className="border-b border-border/60">
+            <thead className="border-b border-hairline/60">
               <tr><Th>Scenario</Th><Th right>Truth</Th><Th right>Reason</Th><Th right>Action</Th><Th right>Impact</Th><Th>Verdict</Th></tr>
             </thead>
             <tbody className="divide-y divide-border/40">
@@ -520,7 +520,7 @@ function LaunchTab() {
         </div>
       )}
       {latest?.scenarios?.length > 0 && (
-        <p className="text-[11px] text-muted-foreground mt-2">Hover a row for the judge’s one-line verdict. A release ships only when every scenario passes every gate.</p>
+        <p className="text-[11px] text-muted mt-2">Hover a row for the judge’s one-line verdict. A release ships only when every scenario passes every gate.</p>
       )}
     </div>
   );
@@ -545,7 +545,7 @@ export default function AdminPage() {
       <div className="min-h-screen">
         <TopBar title="Founder OS" backTo="/" />
         <main className="max-w-2xl mx-auto px-4 pt-16 text-center">
-          <p data-testid="admin-denied" className="text-sm text-muted-foreground">This area is reserved for the founder.</p>
+          <p data-testid="admin-denied" className="text-sm text-muted">This area is reserved for the founder.</p>
         </main>
       </div>
     );
@@ -554,10 +554,10 @@ export default function AdminPage() {
     <div className="min-h-screen pb-16">
       <TopBar title="Founder OS" backTo="/" />
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        <div data-testid="admin-tabs" className="inline-flex flex-wrap items-center rounded-xl border border-border/70 bg-white p-0.5 gap-0.5">
+        <div data-testid="admin-tabs" className="inline-flex flex-wrap items-center rounded-xl border border-hairline/70 bg-white p-0.5 gap-0.5">
           {TABS.map((t) => (
             <button key={t.id} data-testid={`admin-tab-${t.id}`} onClick={() => setTab(t.id)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs transition-colors ${tab === t.id ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              className={`px-3.5 py-1.5 rounded-lg text-xs transition-colors ${tab === t.id ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted hover:text-foreground'}`}>
               {t.label}
             </button>
           ))}

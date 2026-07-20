@@ -175,14 +175,14 @@ export default function BrainSection({ compact }) {
             <h2 className="font-display text-3xl sm:text-4xl tracking-[-0.02em] leading-[1.05]">
               Your company brain.
             </h2>
-            <p className="mt-3 text-sm md:text-base text-muted-foreground leading-6 max-w-xl">
+            <p className="mt-3 text-sm md:text-base text-muted  leading-6 max-w-xl">
               Upload your documents — PDFs, slides, spreadsheets, whatever. The brain reads and indexes them,
               then answers your questions grounded in what your team actually knows.
             </p>
           </>
         )}
 
-        <div className={`${compact ? 'mt-0' : 'mt-6'} rounded-2xl bg-card border border-border/70 shadow-[0_1px_0_rgba(17,24,39,0.06),0_12px_30px_rgba(17,24,39,0.06)] p-3`}>
+        <div className={`${compact ? 'mt-0' : 'mt-6'} rounded-2xl bg-surface border border-hairline/70 shadow-[0_1px_0_rgba(17,24,39,0.06),0_12px_30px_rgba(17,24,39,0.06)] p-3`}>
           <Textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
@@ -191,14 +191,14 @@ export default function BrainSection({ compact }) {
             className="min-h-[96px] border-0 bg-transparent focus-visible:ring-0 resize-none text-[15px] leading-6"
           />
           <div className="flex items-center justify-between px-1 pt-1 gap-2">
-            <span className="text-xs text-muted-foreground min-w-0 truncate">
+            <span className="text-xs text-muted  min-w-0 truncate">
               {readyCount > 0
                 ? `${readyCount} document${readyCount > 1 ? 's' : ''} in knowledge`
                 : (canTrain ? <span className="text-amber-600 font-medium">Upload documents on the right →</span> : 'Ask anything — backed by your team’s knowledge')}
             </span>
             <div className="flex items-center gap-2 shrink-0">
               {result && (
-                <Button variant="ghost" onClick={askNew} disabled={loading || !question.trim()} className="rounded-xl text-muted-foreground">
+                <Button variant="ghost" onClick={askNew} disabled={loading || !question.trim()} className="rounded-xl text-muted ">
                   New topic
                 </Button>
               )}
@@ -219,14 +219,14 @@ export default function BrainSection({ compact }) {
             <div>
               <p className="text-sm font-medium leading-snug">{reviewsDue[0].question}</p>
               {reviewsDue[0].predicted_outcome?.claim ? (
-                <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                <p className="text-xs text-muted  mt-1 leading-snug">
                   Predicted: “{reviewsDue[0].predicted_outcome.claim}” ({reviewsDue[0].predicted_outcome.confidence}% confident). How did it actually go?
                 </p>
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <input value={reviewImpact} onChange={(e) => setReviewImpact(e.target.value.replace(/[^0-9-]/g, ''))} placeholder="₹ impact (optional)" inputMode="numeric" className="w-36 rounded-xl border border-border/70 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring" />
-              <input value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="What actually happened? (optional)" className="flex-1 min-w-[180px] rounded-xl border border-border/70 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring" />
+              <input value={reviewImpact} onChange={(e) => setReviewImpact(e.target.value.replace(/[^0-9-]/g, ''))} placeholder="₹ impact (optional)" inputMode="numeric" className="w-36 rounded-xl border border-hairline/70 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring" />
+              <input value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="What actually happened? (optional)" className="flex-1 min-w-[180px] rounded-xl border border-hairline/70 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" disabled={reviewBusy} onClick={() => submitReview(reviewsDue[0].id, 'worked')} className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">It worked</Button>
@@ -237,16 +237,16 @@ export default function BrainSection({ compact }) {
         )}
 
         {loading && (
-          <div className="mt-6 text-sm text-muted-foreground flex items-center gap-2" aria-live="polite">
+          <div className="mt-6 text-sm text-muted  flex items-center gap-2" aria-live="polite">
             <Loader2 size={14} className="animate-spin" />
             Reading your documents and working it out…
           </div>
         )}
 
         {result && !loading && (
-          <article className="mt-6 rounded-2xl bg-card border border-border/70 shadow-[0_1px_0_rgba(17,24,39,0.06)] p-5 sm:p-6 space-y-4">
+          <article className="mt-6 rounded-2xl bg-surface border border-hairline/70 shadow-[0_1px_0_rgba(17,24,39,0.06)] p-5 sm:p-6 space-y-4">
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="rounded-lg border-border/70 text-foreground">{MODE_LABEL[result.mode] || 'Answer'}</Badge>
+              <Badge variant="outline" className="rounded-lg border-hairline/70 text-foreground">{MODE_LABEL[result.mode] || 'Answer'}</Badge>
               {result.mode === 'answer' && (
                 result.found_in_docs
                   ? <span className="flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 size={13} /> grounded in your documents</span>
@@ -254,31 +254,31 @@ export default function BrainSection({ compact }) {
               )}
             </div>
             {result.key_takeaway && <p className="text-lg md:text-xl font-display tracking-[-0.01em] leading-snug text-foreground">{result.key_takeaway}</p>}
-            {result.situation_read && <p className="text-sm text-muted-foreground italic border-l-2 border-border pl-3">{result.situation_read}</p>}
+            {result.situation_read && <p className="text-sm text-muted  italic border-l-2 border-hairline pl-3">{result.situation_read}</p>}
             <p className="text-[15px] md:text-base leading-7 whitespace-pre-wrap text-foreground">{result.answer}</p>
             {result.mode === 'decide' && result.recommendation && (
-              <div className="rounded-xl bg-secondary/60 border border-border/70 border-l-2 border-l-ring px-4 py-3">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-1">Recommended</div>
+              <div className="rounded-xl bg-secondary/60 border border-hairline/70 border-l-2 border-l-ring px-4 py-3">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-muted  mb-1">Recommended</div>
                 <p className="text-[15px] leading-6 font-display tracking-[-0.01em]">{result.recommendation}</p>
               </div>
             )}
             {result.mode === 'plan' && Array.isArray(result.plan) && result.plan.length > 0 && (
               <ol className="space-y-2">
                 {result.plan.map((step, i) => (
-                  <li key={i} className={`flex gap-3 rounded-xl px-4 py-3 border border-border/70 ${i === 0 ? 'bg-secondary/60' : 'bg-secondary/40'}`}>
-                    <span className={`shrink-0 font-mono-plex text-xs mt-0.5 ${i === 0 ? 'text-ring' : 'text-muted-foreground'}`}>{String(i + 1).padStart(2, '0')}</span>
+                  <li key={i} className={`flex gap-3 rounded-xl px-4 py-3 border border-hairline/70 ${i === 0 ? 'bg-secondary/60' : 'bg-secondary/40'}`}>
+                    <span className={`shrink-0 font-mono-plex text-xs mt-0.5 ${i === 0 ? 'text-ring' : 'text-muted '}`}>{String(i + 1).padStart(2, '0')}</span>
                     <span className={`text-[15px] leading-6 ${i === 0 ? 'font-medium' : ''}`}>{step}</span>
                   </li>
                 ))}
               </ol>
             )}
             {result.next_action && (
-              <div className="rounded-xl bg-secondary/60 border border-border/70 border-l-2 border-l-ring px-4 py-3">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-1 flex items-center gap-1.5">
+              <div className="rounded-xl bg-secondary/60 border border-hairline/70 border-l-2 border-l-ring px-4 py-3">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-muted  mb-1 flex items-center gap-1.5">
                   <Target size={12} /> Your next move (24-48h)
                 </div>
                 <p className="text-[15px] md:text-base leading-6 font-display tracking-[-0.01em]">{result.next_action}</p>
-                {result.hook && <p className="text-sm text-muted-foreground mt-1.5">{result.hook}</p>}
+                {result.hook && <p className="text-sm text-muted  mt-1.5">{result.hook}</p>}
               </div>
             )}
           </article>
@@ -287,38 +287,38 @@ export default function BrainSection({ compact }) {
 
       <aside className="hidden lg:block space-y-4">
         <div className="sticky top-4 space-y-4">
-          <div className="rounded-2xl border border-border/70 bg-card/60 p-5">
-            <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-3 flex items-center gap-1.5">
+          <div className="rounded-2xl border border-hairline/70 bg-surface/60 p-5">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-muted  mb-3 flex items-center gap-1.5">
               <FileText size={12} /> Knowledge
-              <button onClick={() => setTrainOpen(true)} className="ml-auto text-muted-foreground hover:text-foreground" title="Set company rules"><SlidersHorizontal size={13} /></button>
+              <button onClick={() => setTrainOpen(true)} className="ml-auto text-muted  hover:text-foreground" title="Set company rules"><SlidersHorizontal size={13} /></button>
             </div>
             {canTrain && (
               <>
-                <label className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border/70 p-4 cursor-pointer hover:border-ring/50 transition-colors text-xs text-muted-foreground">
+                <label className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-hairline/70 p-4 cursor-pointer hover:border-ring/50 transition-colors text-xs text-muted ">
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   {uploading ? 'Uploading…' : 'Upload document'}
                   <input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,image/png,image/jpeg" onChange={uploadFile} className="hidden" />
                 </label>
-                <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">PDF, Word, PowerPoint, Excel, CSV, text. Max 8 MB per file.</p>
+                <p className="text-[10px] text-muted  mt-1.5 leading-snug">PDF, Word, PowerPoint, Excel, CSV, text. Max 8 MB per file.</p>
               </>
             )}
             {!canTrain && (
-              <p className="text-xs text-muted-foreground leading-snug">This brain is trained by your workspace owner.</p>
+              <p className="text-xs text-muted  leading-snug">This brain is trained by your workspace owner.</p>
             )}
             <div className="mt-3 space-y-1">
               {docs.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-4">No documents yet.</p>
+                <p className="text-xs text-muted  text-center py-4">No documents yet.</p>
               )}
               {docs.map((d) => (
                 <div key={d.id} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-secondary/60 group">
                   <div className="flex items-center gap-2 min-w-0">
-                    <FileText size={13} className="shrink-0 text-muted-foreground" />
+                    <FileText size={13} className="shrink-0 text-muted " />
                     <span className="text-xs truncate">{d.filename}</span>
                     {d.status === 'processing' && <Loader2 size={10} className="animate-spin shrink-0" />}
                     {d.status === 'ready' && <span className="text-[10px] text-emerald-600 shrink-0">ready</span>}
                   </div>
                   {canTrain && (
-                    <button onClick={() => deleteDoc(d.id)} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><X size={12} className="text-muted-foreground hover:text-foreground" /></button>
+                    <button onClick={() => deleteDoc(d.id)} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><X size={12} className="text-muted  hover:text-foreground" /></button>
                   )}
                 </div>
               ))}
@@ -326,8 +326,8 @@ export default function BrainSection({ compact }) {
           </div>
 
           {result?.reasoning?.assumptions_detected?.length > 0 && (
-            <div className="rounded-2xl border border-border/70 bg-card/60 p-5">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-2">Assumptions detected</div>
+            <div className="rounded-2xl border border-hairline/70 bg-surface/60 p-5">
+              <div className="text-[11px] uppercase tracking-[0.12em] text-muted  mb-2">Assumptions detected</div>
               <ul className="space-y-1">
                 {result.reasoning.assumptions_detected.slice(0, 3).map((a, i) => (
                   <li key={i} className="text-xs text-foreground/85">• {a}</li>
@@ -341,7 +341,7 @@ export default function BrainSection({ compact }) {
           <DialogContent className="rounded-2xl sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="font-display text-xl">Train the brain</DialogTitle>
-              <DialogDescription className="text-sm text-muted-foreground mt-1">
+              <DialogDescription className="text-sm text-muted  mt-1">
                 Write the rules and priorities the brain must follow on every decision.
               </DialogDescription>
             </DialogHeader>

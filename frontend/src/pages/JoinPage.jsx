@@ -51,20 +51,20 @@ export default function JoinPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
-      <div data-testid="join-page" className="w-full max-w-md rounded-2xl border bg-card p-8 text-center">
+      <div data-testid="join-page" className="w-full max-w-md rounded-2xl border bg-surface p-8 text-center">
         {loading && (
-          <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground py-8">
+          <div className="flex items-center gap-2 justify-center text-sm text-muted py-8">
             <Loader2 className="animate-spin" size={16} /> Checking invite…
           </div>
         )}
 
         {!loading && (!info || !info.valid) && (
           <div data-testid="join-invalid" className="py-6">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted">
               <AlertCircle size={20} />
             </div>
             <h2 className="font-display text-xl">{"This invite link isn't valid"}</h2>
-            <p className="text-sm text-muted-foreground mt-2">It may have been revoked or already used. Ask the workspace owner for a fresh link.</p>
+            <p className="text-sm text-muted mt-2">It may have been revoked or already used. Ask the workspace owner for a fresh link.</p>
             <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/')}>Go home</Button>
           </div>
         )}
@@ -74,9 +74,9 @@ export default function JoinPage() {
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl border bg-background mb-4">
               <Users size={24} strokeWidth={1.5} />
             </div>
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">{"You've been invited to join"}</p>
+            <p className="text-xs uppercase tracking-widest text-muted">{"You've been invited to join"}</p>
             <h2 data-testid="join-org-name" className="font-display text-2xl sm:text-3xl mt-1">{info.org_name}</h2>
-            <p className="text-sm text-muted-foreground mt-3">
+            <p className="text-sm text-muted mt-3">
               {"Join the workspace to get decisions backed by the team's playbook."}
             </p>
 

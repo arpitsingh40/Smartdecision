@@ -13,7 +13,7 @@ const fmtNum = (n) => {
   if (n == null) return '—';
   try { return Number(n).toLocaleString('en-IN'); } catch { return String(n); }
 };
-const statusColor = (pct) => (pct == null ? 'text-muted-foreground' : pct >= 100 ? 'text-emerald-600' : pct >= 60 ? 'text-[hsl(var(--ring))]' : pct >= 25 ? 'text-amber-600' : 'text-muted-foreground');
+const statusColor = (pct) => (pct == null ? 'text-muted ' : pct >= 100 ? 'text-emerald-600' : pct >= 60 ? 'text-[hsl(var(--ring))]' : pct >= 25 ? 'text-amber-600' : 'text-muted ');
 
 const fmtLeft = (iso) => {
   if (!iso) return '';
@@ -25,16 +25,16 @@ const fmtLeft = (iso) => {
 };
 
 const Stat = ({ icon: Icon, label, value, sub }) => (
-  <div className="rounded-2xl border bg-card p-4">
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+  <div className="rounded-2xl border bg-surface p-4">
+    <div className="flex items-center gap-1.5 text-xs text-muted  mb-1">
       <Icon size={13} strokeWidth={1.75} /> {label}
     </div>
     <div className="font-display text-2xl leading-none">{value}</div>
-    {sub ? <div className="text-[11px] text-muted-foreground mt-1">{sub}</div> : null}
+    {sub ? <div className="text-[11px] text-muted  mt-1">{sub}</div> : null}
   </div>
 );
 
-const alignColor = (s) => (s == null ? 'text-muted-foreground' : s >= 70 ? 'text-emerald-600' : s >= 40 ? 'text-amber-600' : 'text-red-600');
+const alignColor = (s) => (s == null ? 'text-muted ' : s >= 70 ? 'text-emerald-600' : s >= 40 ? 'text-amber-600' : 'text-red-600');
 
 export default function CockpitPage() {
   const navigate = useNavigate();
@@ -178,9 +178,9 @@ export default function CockpitPage() {
       <div className="min-h-screen">
         <TopBar title="Founder Cockpit" backTo="/app" />
         <div data-testid="cockpit-denied" className="max-w-md mx-auto text-center py-24 px-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground"><Lock size={20} /></div>
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted "><Lock size={20} /></div>
           <h2 className="font-display text-xl">This is the founder&apos;s private view</h2>
-          <p className="text-sm text-muted-foreground mt-2">Only the workspace owner can open the cockpit.</p>
+          <p className="text-sm text-muted  mt-2">Only the workspace owner can open the cockpit.</p>
           <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/app/brain')}>Open Brain</Button>
         </div>
       </div>
@@ -211,7 +211,7 @@ export default function CockpitPage() {
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-[1px] transition-colors ${
                 activeTab === tab.id
                   ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  : 'border-transparent text-muted  hover:text-foreground'
               }`}>
               <tab.icon size={13} strokeWidth={1.75} />
               {tab.label}
@@ -223,39 +223,39 @@ export default function CockpitPage() {
       <main data-testid="cockpit-page" className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 pt-4 space-y-6">
 
         {/* North Star */}
-        <section className="rounded-2xl border bg-card p-6">
+        <section className="rounded-2xl border bg-surface p-6">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2"><Target size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">North Star</h3></div>
-            <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border bg-background text-muted-foreground"><Lock size={11} /> Private</span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border bg-background text-muted "><Lock size={11} /> Private</span>
           </div>
           {ns.north_star ? (
             <>
               <p data-testid="cockpit-northstar" className="font-display text-xl sm:text-2xl mt-1">{ns.north_star}</p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-xs text-muted  mt-1">
                 {ns.target ? ns.target : ''}{ns.target && ns.deadline ? ' · ' : ''}{ns.deadline ? `by ${ns.deadline}` : ''}
               </p>
             </>
           ) : (
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted  mt-1">
               No North Star set yet. <button className="underline" onClick={() => navigate('/app/goal-setup')}>Set up your goal</button> so every decision is steered toward it.
             </p>
           )}
         </section>
 
         {/* Goal -> Progress tracker */}
-        <section data-testid="cockpit-goal-progress" className="rounded-2xl border bg-card p-6">
+        <section data-testid="cockpit-goal-progress" className="rounded-2xl border bg-surface p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><Flag size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Goal → Progress</h3></div>
             {gp && !editingArr && (
               <button data-testid="cockpit-progress-edit" onClick={() => { setEditingArr(true); setArrInput(String(gp.current_arr ?? '')); }}
-                className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                className="text-xs text-muted  hover:text-foreground inline-flex items-center gap-1">
                 <Pencil size={12} /> Update
               </button>
             )}
           </div>
 
           {!gp ? (
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-muted ">
               Set a target number to track progress.{' '}
               <button data-testid="cockpit-progress-setup" className="underline" onClick={() => navigate('/app/goal-setup')}>
                 Set up your goal
@@ -269,13 +269,13 @@ export default function CockpitPage() {
                   <div data-testid="cockpit-progress-pct" className={`font-display text-3xl sm:text-4xl leading-none ${statusColor(gp.progress_pct)}`}>
                     {gp.progress_pct}%
                   </div>
-                  <div data-testid="cockpit-progress-status" className="text-xs text-muted-foreground mt-1.5">
+                  <div data-testid="cockpit-progress-status" className="text-xs text-muted  mt-1.5">
                     {gp.status}{gp.deadline ? ` · target by ${gp.deadline}` : ''}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xs text-muted-foreground">Now → Target</div>
-                  <div className="text-sm tabular-nums font-medium">{fmtNum(gp.current_arr)} <span className="text-muted-foreground">/ {fmtNum(gp.target_arr)}</span></div>
+                  <div className="text-xs text-muted ">Now → Target</div>
+                  <div className="text-sm tabular-nums font-medium">{fmtNum(gp.current_arr)} <span className="text-muted ">/ {fmtNum(gp.target_arr)}</span></div>
                 </div>
               </div>
 
@@ -284,7 +284,7 @@ export default function CockpitPage() {
                 <div className={`h-full transition-all duration-500 ${gp.progress_pct >= 100 ? 'bg-emerald-500' : 'bg-[hsl(var(--ring))]'}`}
                   style={{ width: `${Math.min(100, Math.max(2, gp.progress_pct))}%` }} />
               </div>
-              <div className="flex items-center justify-between mt-2 text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between mt-2 text-[11px] text-muted ">
                 <span>{fmtNum(gp.remaining)} to go</span>
                 <span>{gp.note}</span>
               </div>
@@ -292,7 +292,7 @@ export default function CockpitPage() {
               {/* inline update */}
               {editingArr && (
                 <div data-testid="cockpit-progress-editor" className="mt-4 rounded-xl border bg-background p-3 flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-muted-foreground">Where are you now?</span>
+                  <span className="text-xs text-muted ">Where are you now?</span>
                   <Input data-testid="cockpit-progress-input" inputMode="numeric" value={arrInput}
                     onChange={(e) => setArrInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') saveProgress(); }}
@@ -300,7 +300,7 @@ export default function CockpitPage() {
                   <Button data-testid="cockpit-progress-save" size="sm" onClick={saveProgress} disabled={savingArr} className="rounded-lg">
                     {savingArr ? <Loader2 className="animate-spin" size={14} /> : 'Save'}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setEditingArr(false)} className="rounded-lg text-muted-foreground">Cancel</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setEditingArr(false)} className="rounded-lg text-muted ">Cancel</Button>
                 </div>
               )}
 
@@ -321,10 +321,10 @@ export default function CockpitPage() {
         {/* top stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Stat icon={Activity} label="Decisions" value={t.decisions ?? 0} sub={`${t.last_7d ?? 0} in last 7 days`} />
-          <div className="rounded-2xl border bg-card p-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Gauge size={13} strokeWidth={1.75} /> Avg alignment</div>
+          <div className="rounded-2xl border bg-surface p-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted  mb-1"><Gauge size={13} strokeWidth={1.75} /> Avg alignment</div>
             <div className={`font-display text-2xl leading-none ${alignColor(a.avg)}`} data-testid="cockpit-avg-alignment">{a.avg == null ? '—' : a.avg}</div>
-            <div className="text-[11px] text-muted-foreground mt-1">{scored} scored</div>
+            <div className="text-[11px] text-muted  mt-1">{scored} scored</div>
           </div>
           <Stat icon={CheckCircle2} label="Follow-through" value={ex.follow_through_pct == null ? '—' : `${ex.follow_through_pct}%`} sub={`${ex.done ?? 0} done · ${ex.dropped ?? 0} dropped`} />
           <Stat icon={IndianRupee} label="Impact tracked" value={data.impact ? fmtNum(data.impact.total_inr) : '—'} sub={data.impact && data.impact.reviewed ? `${data.impact.reviewed} reviewed` : ''} />
@@ -332,15 +332,15 @@ export default function CockpitPage() {
         </div>
 
         {/* alignment distribution */}
-        <section className="rounded-2xl border bg-card p-6">
+        <section className="rounded-2xl border bg-surface p-6">
           <div className="flex items-center gap-2 mb-4"><TrendingUp size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">How on-strategy the team is deciding</h3></div>
           {scored === 0 ? (
-            <p className="text-xs text-muted-foreground">No scored decisions yet. As your team uses the brain, this fills in.</p>
+            <p className="text-xs text-muted ">No scored decisions yet. As your team uses the brain, this fills in.</p>
           ) : (
             <div className="space-y-3">
               {[['On strategy', a.high, 'bg-emerald-500'], ['Partly', a.medium, 'bg-amber-500'], ['Off strategy', a.low, 'bg-red-500']].map(([label, n, color]) => (
                 <div key={label} className="flex items-center gap-3">
-                  <span className="w-24 text-xs text-muted-foreground shrink-0">{label}</span>
+                  <span className="w-24 text-xs text-muted  shrink-0">{label}</span>
                   <div className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden">
                     <div className={`h-full ${color}`} style={{ width: `${pct(n || 0)}%` }} />
                   </div>
@@ -352,10 +352,10 @@ export default function CockpitPage() {
         </section>
 
         {/* momentum trend */}
-        <section data-testid="cockpit-momentum" className="rounded-2xl border bg-card p-6">
+        <section data-testid="cockpit-momentum" className="rounded-2xl border bg-surface p-6">
           <div className="flex items-center gap-2 mb-4"><TrendingUp size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Momentum — week over week</h3></div>
           {!trend || !trend.weeks || trend.weeks.length < 2 ? (
-            <p className="text-xs text-muted-foreground">Not enough history yet — momentum appears as the team makes decisions over weeks.</p>
+            <p className="text-xs text-muted ">Not enough history yet — momentum appears as the team makes decisions over weeks.</p>
           ) : (
             <>
               <div className="flex items-end gap-1.5 h-28 mb-3" data-testid="cockpit-trend-bar">
@@ -364,9 +364,9 @@ export default function CockpitPage() {
                   const isLast = i === trend.weeks.length - 1;
                   return (
                     <div key={w.week_start} className="flex-1 flex flex-col items-center gap-1" title={`${w.week_start}: ${w.decisions} decisions, avg alignment ${w.avg_alignment ?? '—'}`}>
-                      <span className="text-[10px] text-muted-foreground tabular-nums">{w.avg_alignment ?? '—'}</span>
+                      <span className="text-[10px] text-muted  tabular-nums">{w.avg_alignment ?? '—'}</span>
                       <div className={`w-full rounded-t-sm ${isLast ? 'bg-[hsl(var(--ring))]' : 'bg-muted-foreground/30'}`} style={{ height: `${h}%` }} />
-                      <span className="text-[9px] text-muted-foreground mt-0.5">{w.week_start.slice(5)}</span>
+                      <span className="text-[9px] text-muted  mt-0.5">{w.week_start.slice(5)}</span>
                     </div>
                   );
                 })}
@@ -377,7 +377,7 @@ export default function CockpitPage() {
                   ['Follow-through', trend.deltas.follow_through_pct],
                   ['Decisions', trend.deltas.decisions],
                 ].map(([label, d]) => (
-                  <span key={label} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${d == null ? 'text-muted-foreground' : d > 0 ? 'text-emerald-600 border-emerald-200' : d < 0 ? 'text-red-600 border-red-200' : 'text-muted-foreground'}`} data-testid={`cockpit-delta-${label.toLowerCase()}`}>
+                  <span key={label} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${d == null ? 'text-muted ' : d > 0 ? 'text-emerald-600 border-emerald-200' : d < 0 ? 'text-red-600 border-red-200' : 'text-muted '}`} data-testid={`cockpit-delta-${label.toLowerCase()}`}>
                     {label} {d != null ? (d > 0 ? `+${d}` : d) : '—'}{label === 'Follow-through' && d != null ? '%' : ''} vs last week
                   </span>
                 ))}
@@ -388,13 +388,13 @@ export default function CockpitPage() {
 
         {/* needs attention — confidently off OR unsure-but-impactful */}
         {data.needs_attention && data.needs_attention.length > 0 && (
-          <section data-testid="cockpit-needs-attention" className="rounded-2xl border bg-card p-6">
+          <section data-testid="cockpit-needs-attention" className="rounded-2xl border bg-surface p-6">
             <div className="flex items-center gap-2 mb-4"><AlertTriangle size={16} strokeWidth={1.75} className="text-amber-600" /><h3 className="font-medium text-sm">Needs your eyes</h3></div>
             <div className="space-y-3">
               {data.needs_attention.map((na) => (
                 <div key={na.id} data-testid="cockpit-needs-item" className="rounded-xl border bg-background px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-muted-foreground truncate">{na.user_name || 'Member'}</span>
+                    <span className="text-xs text-muted  truncate">{na.user_name || 'Member'}</span>
                     <div className="flex items-center gap-1.5">
                       <span className={`text-xs font-medium ${alignColor(na.score)}`}>{na.score ?? '—'}/100</span>
                       {na.confidence && (
@@ -405,8 +405,8 @@ export default function CockpitPage() {
                     </div>
                   </div>
                   <p className="text-sm mt-1 truncate" title={na.question}>{na.question}</p>
-                  {na.basis ? <p className="text-[11px] text-muted-foreground mt-0.5">{na.basis}</p> : null}
-                  {na.action ? <p className="text-[11px] text-muted-foreground mt-0.5">Action: {na.action}</p> : null}
+                  {na.basis ? <p className="text-[11px] text-muted  mt-0.5">{na.basis}</p> : null}
+                  {na.action ? <p className="text-[11px] text-muted  mt-0.5">Action: {na.action}</p> : null}
                 </div>
               ))}
             </div>
@@ -414,16 +414,16 @@ export default function CockpitPage() {
         )}
 
         {/* drift radar */}
-        <section className="rounded-2xl border bg-card p-6">
+        <section className="rounded-2xl border bg-surface p-6">
           <div className="flex items-center gap-2 mb-4"><AlertTriangle size={16} strokeWidth={1.75} className="text-amber-600" /><h3 className="font-medium text-sm">Drift radar — decisions pulling sideways</h3></div>
           {(!data.drift || data.drift.length === 0) ? (
-            <p className="text-xs text-muted-foreground">Nothing off-strategy. The team is pulling in your direction.</p>
+            <p className="text-xs text-muted ">Nothing off-strategy. The team is pulling in your direction.</p>
           ) : (
             <div className="space-y-3">
               {data.drift.map((d) => (
                 <div key={d.id} data-testid="cockpit-drift-item" className="rounded-xl border bg-background px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-muted-foreground truncate">{d.user_name || 'Member'}</span>
+                    <span className="text-xs text-muted  truncate">{d.user_name || 'Member'}</span>
                     <div className="flex items-center gap-1.5">
                       <span className={`text-xs font-medium ${alignColor(d.strategic_alignment?.score)}`}>{d.strategic_alignment?.score ?? '—'}/100</span>
                       {d.strategic_alignment?.confidence && (
@@ -434,7 +434,7 @@ export default function CockpitPage() {
                     </div>
                   </div>
                   <p className="text-sm mt-1 truncate" title={d.question}>{d.question}</p>
-                  {d.strategic_alignment?.reason ? <p className="text-xs text-muted-foreground mt-1">{d.strategic_alignment.reason}</p> : null}
+                  {d.strategic_alignment?.reason ? <p className="text-xs text-muted  mt-1">{d.strategic_alignment.reason}</p> : null}
                 </div>
               ))}
             </div>
@@ -442,7 +442,7 @@ export default function CockpitPage() {
         </section>
 
         {/* in-flight actions — live timers */}
-        <section className="rounded-2xl border bg-card p-6">
+        <section className="rounded-2xl border bg-surface p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><Clock size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">In flight — what the team is doing now</h3></div>
             {(ex.overdue ?? 0) > 0 && (
@@ -450,13 +450,13 @@ export default function CockpitPage() {
             )}
           </div>
           {(!data.active_actions || data.active_actions.length === 0) ? (
-            <p className="text-xs text-muted-foreground">No commitments in flight. When the team commits to a move, the countdown shows here.</p>
+            <p className="text-xs text-muted ">No commitments in flight. When the team commits to a move, the countdown shows here.</p>
           ) : (
             <div className="space-y-2">
               {data.active_actions.map((a) => (
                 <div key={a.id} data-testid="cockpit-active-action" className="flex items-center justify-between gap-3 rounded-xl border bg-background px-4 py-2.5">
                   <div className="min-w-0">
-                    <div className="text-xs text-muted-foreground truncate">{a.user_name}</div>
+                    <div className="text-xs text-muted  truncate">{a.user_name}</div>
                     <p className="text-sm truncate" title={a.action}>{a.action}</p>
                   </div>
                   <span className={`shrink-0 text-xs font-mono-plex inline-flex items-center gap-1 ${a.overdue ? 'text-amber-600' : 'text-[hsl(var(--ring))]'}`}>
@@ -469,15 +469,15 @@ export default function CockpitPage() {
         </section>
 
         {/* achieved — results feed */}
-        <section className="rounded-2xl border bg-card p-6">
+        <section className="rounded-2xl border bg-surface p-6">
           <div className="flex items-center gap-2 mb-4"><Award size={16} strokeWidth={1.75} className="text-emerald-600" /><h3 className="font-medium text-sm">Achieved — the dream coming true</h3></div>
           {(!data.results || data.results.length === 0) ? (
-            <p className="text-xs text-muted-foreground">No results logged yet. As the team finishes commitments and logs what happened, the wins land here.</p>
+            <p className="text-xs text-muted ">No results logged yet. As the team finishes commitments and logs what happened, the wins land here.</p>
           ) : (
             <div className="space-y-3">
               {data.results.map((r) => (
                 <div key={r.id} data-testid="cockpit-result-item" className="rounded-xl border bg-background px-4 py-3">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 text-xs text-muted ">
                     <CheckCircle2 size={13} className="text-emerald-600" /> {r.user_name}
                   </div>
                   {r.action ? <p className="text-sm mt-1 truncate" title={r.action}>{r.action}</p> : null}
@@ -489,10 +489,10 @@ export default function CockpitPage() {
         </section>
 
           {/* per-member */}
-          <section className="rounded-2xl border bg-card p-6">
+          <section className="rounded-2xl border bg-surface p-6">
             <div className="flex items-center gap-2 mb-4"><Users size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">By teammate</h3></div>
             <div className="divide-y">
-              <div className="flex items-center text-[11px] uppercase tracking-wide text-muted-foreground pb-2">
+              <div className="flex items-center text-[11px] uppercase tracking-wide text-muted  pb-2">
                 <span className="flex-1">Member</span>
                 <span className="hidden sm:inline sm:w-20 text-right">Decisions</span>
                 <span className="hidden sm:inline sm:w-20 text-right">Alignment</span>
@@ -502,7 +502,7 @@ export default function CockpitPage() {
                 <div key={m.user_id} data-testid="cockpit-member-row" className="flex items-center py-3">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{m.name || m.email}{m.role === 'owner' ? ' (you)' : ''}</div>
-                    <div className="text-xs text-muted-foreground truncate">{m.email}</div>
+                    <div className="text-xs text-muted  truncate">{m.email}</div>
                   </div>
                   <span className="hidden sm:inline sm:w-20 text-right text-sm tabular-nums">{m.decisions}</span>
                   <span className={`hidden sm:inline sm:w-20 text-right text-sm tabular-nums ${alignColor(m.avg_alignment)}`}>{m.avg_alignment == null ? '—' : m.avg_alignment}</span>
@@ -513,45 +513,45 @@ export default function CockpitPage() {
           </section>
 
           {/* weekly tasks — OKR execution layer */}
-          <section className="rounded-2xl border bg-card p-6">
+          <section className="rounded-2xl border bg-surface p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2"><ListChecks size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Weekly Tasks</h3></div>
               <Button size="sm" variant="secondary" onClick={generateWeek} disabled={generating}
-                className="rounded-lg h-8 px-3 text-xs border border-border/70 active:scale-[0.98]">
+                className="rounded-lg h-8 px-3 text-xs border border-hairline/70 active:scale-[0.98]">
                 {generating ? <Loader2 className="animate-spin" size={13} /> : <RefreshCw size={13} className="mr-1" />}
                 {generating ? 'Generating…' : 'Generate this week'}
               </Button>
             </div>
 
             {digestLoading ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground py-4"><Loader2 className="animate-spin" size={13} /> Loading tasks…</div>
+              <div className="flex items-center gap-2 text-xs text-muted  py-4"><Loader2 className="animate-spin" size={13} /> Loading tasks…</div>
             ) : !weeklyDigest || weeklyDigest.total_tasks === 0 ? (
-              <p className="text-xs text-muted-foreground">No tasks generated yet. Click "Generate this week" to create weekly tasks from your active plan.</p>
+              <p className="text-xs text-muted ">No tasks generated yet. Click "Generate this week" to create weekly tasks from your active plan.</p>
             ) : (
               <div className="space-y-4">
                 {/* summary row */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                   <div className="rounded-xl bg-[hsl(var(--accent))]/50 px-3 py-2">
                     <div className="text-lg font-display">{weeklyDigest.total_tasks}</div>
-                    <div className="text-[10px] text-muted-foreground">Total</div>
+                    <div className="text-[10px] text-muted ">Total</div>
                   </div>
                   <div className="rounded-xl bg-emerald-50 px-3 py-2">
                     <div className="text-lg font-display text-emerald-600">{weeklyDigest.done}</div>
-                    <div className="text-[10px] text-muted-foreground">Done</div>
+                    <div className="text-[10px] text-muted ">Done</div>
                   </div>
                   <div className="rounded-xl bg-amber-50 px-3 py-2">
                     <div className="text-lg font-display text-amber-600">{weeklyDigest.overdue}</div>
-                    <div className="text-[10px] text-muted-foreground">Overdue</div>
+                    <div className="text-[10px] text-muted ">Overdue</div>
                   </div>
                   <div className="rounded-xl bg-blue-50 px-3 py-2">
                     <div className="text-lg font-display text-blue-600">{weeklyDigest.in_progress || 0}</div>
-                    <div className="text-[10px] text-muted-foreground">In progress</div>
+                    <div className="text-[10px] text-muted ">In progress</div>
                   </div>
                 </div>
 
                 {/* per-department */}
                 <div>
-                  <p className="text-xs text-muted-foreground mb-2">By department</p>
+                  <p className="text-xs text-muted  mb-2">By department</p>
                   <div className="space-y-2">
                     {(weeklyDigest.by_department || []).map((d) => (
                       <div key={d.function} className="flex items-center gap-3">
@@ -559,7 +559,7 @@ export default function CockpitPage() {
                         <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
                           <div className="h-full bg-[hsl(var(--ring))] transition-all" style={{ width: `${d.total ? Math.round(100 * d.done / d.total) : 0}%` }} />
                         </div>
-                        <span className="w-24 text-[11px] text-right text-muted-foreground tabular-nums">{d.done}/{d.total}{d.overdue > 0 ? ` · ${d.overdue} overdue` : ''}</span>
+                        <span className="w-24 text-[11px] text-right text-muted  tabular-nums">{d.done}/{d.total}{d.overdue > 0 ? ` · ${d.overdue} overdue` : ''}</span>
                       </div>
                     ))}
                   </div>
@@ -567,9 +567,9 @@ export default function CockpitPage() {
 
                 {/* per-member workload */}
                 <div>
-                  <p className="text-xs text-muted-foreground mb-2">Member workload</p>
+                  <p className="text-xs text-muted  mb-2">Member workload</p>
                   <div className="divide-y">
-                    <div className="flex items-center text-[10px] uppercase tracking-wide text-muted-foreground pb-1.5">
+                    <div className="flex items-center text-[10px] uppercase tracking-wide text-muted  pb-1.5">
                       <span className="flex-1">Member</span>
                       <span className="hidden sm:inline sm:w-12 text-right">Tasks</span>
                       <span className="hidden sm:inline sm:w-12 text-right">Done</span>
@@ -580,7 +580,7 @@ export default function CockpitPage() {
                         <span className="flex-1 truncate text-xs">{m.name}</span>
                         <span className="hidden sm:inline sm:w-12 text-right tabular-nums text-xs">{m.total}</span>
                         <span className="hidden sm:inline sm:w-12 text-right tabular-nums text-xs text-emerald-600">{m.done}</span>
-                        <span className={`hidden sm:inline sm:w-12 text-right tabular-nums text-xs ${m.overdue > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{m.overdue || 0}</span>
+                        <span className={`hidden sm:inline sm:w-12 text-right tabular-nums text-xs ${m.overdue > 0 ? 'text-amber-600' : 'text-muted '}`}>{m.overdue || 0}</span>
                       </div>
                     ))}
                   </div>
@@ -595,9 +595,9 @@ export default function CockpitPage() {
                         <div key={t.id} className="rounded-xl border bg-background px-3 py-2">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-medium truncate">{t.title}</span>
-                            <span className="text-[10px] text-muted-foreground shrink-0">{t.assigned_to_name}</span>
+                            <span className="text-[10px] text-muted  shrink-0">{t.assigned_to_name}</span>
                           </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">{t.ai_review?.notes || t.status}</p>
+                          <p className="text-[11px] text-muted  mt-0.5">{t.ai_review?.notes || t.status}</p>
                         </div>
                       ))}
                     </div>
@@ -616,7 +616,7 @@ export default function CockpitPage() {
               <SystemHealthTab health={systemHealth} />
             </>
           ) : (
-            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted-foreground" /></div>
+            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted " /></div>
           )}
         </main>
       )}
@@ -626,7 +626,7 @@ export default function CockpitPage() {
           {executionStatus ? (
             <ExecutionTab status={executionStatus} setConnectingTool={setConnectingTool} connectingTool={connectingTool} />
           ) : (
-            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted-foreground" /></div>
+            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted " /></div>
           )}
         </main>
       )}
@@ -636,7 +636,7 @@ export default function CockpitPage() {
           {connections ? (
             <ConnectionsTab connections={connections} setConnectingTool={setConnectingTool} connectingTool={connectingTool} setConnections={setConnections} />
           ) : (
-            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted-foreground" /></div>
+            <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-muted " /></div>
           )}
         </main>
       )}
@@ -654,7 +654,7 @@ function SystemHealthTab({ health }) {
 
   return (
     <>
-      <section className="rounded-2xl border bg-card p-6">
+      <section className="rounded-2xl border bg-surface p-6">
         <div className="flex items-center gap-2 mb-4"><Activity size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">System Health</h3></div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <Stat icon={AlertTriangle} label="At Risk" value={signals?.at_risk_count || atRisk.length} />
@@ -662,13 +662,13 @@ function SystemHealthTab({ health }) {
           <Stat icon={CheckCircle2} label="Healthy" value={signals?.healthy_count || Object.keys(functions).length - atRisk.length - warnings.length} />
         </div>
         {signals?.brief && (
-          <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono leading-relaxed bg-muted/50 rounded-lg p-3 max-h-64 overflow-auto">
+          <pre className="text-xs text-muted  whitespace-pre-wrap font-mono leading-relaxed bg-muted/50 rounded-lg p-3 max-h-64 overflow-auto">
             {signals.brief}
           </pre>
         )}
       </section>
 
-      <section className="rounded-2xl border bg-card p-6">
+      <section className="rounded-2xl border bg-surface p-6">
         <div className="flex items-center gap-2 mb-3"><Target size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">16 Functions</h3></div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {Object.entries(functions).map(([func, state]) => {
@@ -676,7 +676,7 @@ function SystemHealthTab({ health }) {
             const textColor = state.status === 'at_risk' ? 'text-red-700' : state.status === 'warning' ? 'text-amber-700' : 'text-emerald-700';
             return (
               <div key={func} className={`rounded-lg border px-3 py-2 ${color}`}>
-                <div className="text-[11px] capitalize text-muted-foreground">{func.replace(/_/g, ' ')}</div>
+                <div className="text-[11px] capitalize text-muted ">{func.replace(/_/g, ' ')}</div>
                 <div className={`font-mono text-sm font-medium ${textColor}`}>{state.health}/100</div>
               </div>
             );
@@ -706,7 +706,7 @@ function ExecutionTab({ status, setConnectingTool, connectingTool }) {
 
   return (
     <>
-      <section className="rounded-2xl border bg-card p-6">
+      <section className="rounded-2xl border bg-surface p-6">
         <div className="flex items-center gap-2 mb-4"><Play size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Execution Status</h3></div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4 mb-4">
           <Stat icon={ListChecks} label="Proposed" value={status?.proposed || 0} />
@@ -719,8 +719,8 @@ function ExecutionTab({ status, setConnectingTool, connectingTool }) {
           <Stat icon={Wifi} label="Connected Tools" value={status?.active_connections || 0} />
           <Stat icon={IndianRupee} label="Total" value={totalTasks} />
           {status?.connected_tools?.length > 0 && (
-            <div className="rounded-2xl border bg-card p-4">
-              <div className="text-xs text-muted-foreground mb-1">Tools</div>
+            <div className="rounded-2xl border bg-surface p-4">
+              <div className="text-xs text-muted  mb-1">Tools</div>
               <div className="flex flex-wrap gap-1">
                 {status.connected_tools.slice(0, 6).map(t => (
                   <span key={t} className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{t}</span>
@@ -787,11 +787,11 @@ function ConnectionsTab({ connections, setConnectingTool, connectingTool, setCon
 
   return (
     <>
-      <section className="rounded-2xl border bg-card p-6">
+      <section className="rounded-2xl border bg-surface p-6">
         <div className="flex items-center gap-2 mb-1"><Wifi size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Connected Tools</h3></div>
-        <p className="text-xs text-muted-foreground mb-4">{connections?.connected || 0} connected · {connections?.available || 0} available · {connections?.total || 0} total</p>
+        <p className="text-xs text-muted  mb-4">{connections?.connected || 0} connected · {connections?.available || 0} available · {connections?.total || 0} total</p>
         {connected.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No tools connected yet. Connect your first tool below.</p>
+          <p className="text-sm text-muted ">No tools connected yet. Connect your first tool below.</p>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {connected.map(t => (
@@ -804,14 +804,14 @@ function ConnectionsTab({ connections, setConnectingTool, connectingTool, setCon
         )}
       </section>
 
-      <section className="rounded-2xl border bg-card p-6">
+      <section className="rounded-2xl border bg-surface p-6">
         <div className="flex items-center gap-2 mb-3"><WifiOff size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Available Tools</h3></div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {available.slice(0, 24).map(t => (
             <button key={t.toolkit} onClick={() => connect(t.toolkit)} disabled={!!connectingTool}
               className="rounded-lg border bg-white px-3 py-2 text-left hover:bg-muted/50">
               <div className="text-sm font-medium capitalize">{t.toolkit}</div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">{t.tool_count} tools</div>
+              <div className="text-[10px] text-muted  mt-0.5">{t.tool_count} tools</div>
               {connectingTool === t.toolkit && <Sparkles size={12} className="animate-spin text-primary mt-1" />}
             </button>
           ))}

@@ -120,11 +120,11 @@ export default function ConnectionsPage() {
       <div className="min-h-screen">
         <TopBar title="Connections" backTo="/app" />
         <div data-testid="connections-denied" className="max-w-md mx-auto text-center py-24 px-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted">
             <Lock size={20} />
           </div>
           <h2 className="font-display text-xl">Workspace owner only</h2>
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-sm text-muted mt-2">
             Only the workspace owner can connect tools.
           </p>
           <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/app')}>
@@ -150,7 +150,7 @@ export default function ConnectionsPage() {
                 <h3 className="text-sm font-medium flex items-center gap-1.5">
                   <Link2 size={14} /> Connect {authUrl.toolkit}
                 </h3>
-                <p className="text-xs text-muted-foreground mt-1.5">
+                <p className="text-xs text-muted mt-1.5">
                   A new window opened for OAuth. After authorizing, click "I've connected it" below.
                 </p>
               </div>
@@ -178,7 +178,7 @@ export default function ConnectionsPage() {
         {/* Header */}
         <div>
           <h1 className="font-display text-2xl">Tool Connections</h1>
-          <p className="text-sm text-muted-foreground mt-1.5">
+          <p className="text-sm text-muted mt-1.5">
             Connect tools your business uses. Once connected, agents can execute actions through them automatically.
           </p>
         </div>
@@ -199,7 +199,7 @@ export default function ConnectionsPage() {
                       <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
                       <span className="text-sm font-medium truncate capitalize">{t.name || t.toolkit}</span>
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-1">{t.tool_count || 0} tools available</p>
+                    <p className="text-[11px] text-muted mt-1">{t.tool_count || 0} tools available</p>
                   </div>
                   <Button
                     data-testid={`disconnect-${t.toolkit}`}
@@ -220,12 +220,12 @@ export default function ConnectionsPage() {
 
         {/* Quick-connect essentials */}
         {connected.length === 0 && (
-          <section className="rounded-2xl border bg-card p-5">
+          <section className="rounded-2xl border bg-surface p-5">
             <div className="flex items-center gap-2 mb-3">
               <Zap size={15} strokeWidth={1.75} />
               <h2 className="text-sm font-medium">Quick start — connect essentials</h2>
             </div>
-            <p className="text-xs text-muted-foreground mb-4">
+            <p className="text-xs text-muted mb-4">
               These are the most common tools founders connect first. Click to start OAuth.
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -245,7 +245,7 @@ export default function ConnectionsPage() {
                     {name[0]}
                   </div>
                   <span className="text-sm font-medium">{name}</span>
-                  <p className="text-[11px] text-muted-foreground leading-tight">{desc}</p>
+                  <p className="text-[11px] text-muted leading-tight">{desc}</p>
                   <Button
                     size="sm"
                     variant="secondary"
@@ -264,7 +264,7 @@ export default function ConnectionsPage() {
 
         {/* Search */}
         <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <Input
             data-testid="connections-search"
             placeholder="Search 1,403 integrations..."
@@ -278,22 +278,22 @@ export default function ConnectionsPage() {
         {search && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {filtered.length === 0 && (
-              <p className="text-sm text-muted-foreground col-span-full py-8 text-center">
+              <p className="text-sm text-muted col-span-full py-8 text-center">
                 No integrations match "{search}"
               </p>
             )}
             {filtered.map((t) => (
               <div key={t.toolkit} data-testid={`integration-${t.toolkit}`}
                 className={`rounded-2xl border p-4 flex flex-col justify-between ${
-                  t.connected ? 'border-emerald-200 bg-emerald-50/30' : 'bg-card'
+                  t.connected ? 'border-emerald-200 bg-emerald-50/30' : 'bg-surface'
                 }`}>
                 <div>
                   <div className="flex items-center gap-2">
                     {t.connected && <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />}
                     <span className="text-sm font-medium truncate capitalize">{t.name || t.toolkit}</span>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{t.description || ''}</p>
-                  <p className="text-[10px] text-muted-foreground/70 mt-1">{t.tool_count || 0} tools · {t.category || ''}</p>
+                  <p className="text-[11px] text-muted mt-1 line-clamp-2">{t.description || ''}</p>
+                  <p className="text-[10px] text-muted/70 mt-1">{t.tool_count || 0} tools · {t.category || ''}</p>
                 </div>
                 <Button
                   data-testid={`connect-btn-${t.toolkit}`}
@@ -320,7 +320,7 @@ export default function ConnectionsPage() {
               <Search size={15} strokeWidth={1.75} />
               Browse &amp; search 1,403 integrations
             </h2>
-            <p className="text-xs text-muted-foreground mb-3">
+            <p className="text-xs text-muted mb-3">
               Use search above to find any tool. Connect to enable autonomous execution.
             </p>
           </section>

@@ -12,7 +12,7 @@ import { Loader2, CheckCircle2, Clock, Upload, MessageCircle, AlertTriangle, Fil
 import { toast } from 'sonner';
 
 const STATUS_COLORS = {
-  pending: 'bg-muted text-muted-foreground border-border/60',
+  pending: 'bg-muted text-muted border-hairline/60',
   in_progress: 'bg-blue-50 text-blue-700 border-blue-200',
   awaiting_review: 'bg-amber-50 text-amber-700 border-amber-200',
   done: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -97,37 +97,37 @@ const TaskCard = ({ task, onUpdate, busy }) => {
 
   return (
     <>
-    <div className={`rounded-xl border bg-background px-4 py-3 ${overdue ? 'border-amber-200' : 'border-border/70'}`}>
+    <div className={`rounded-xl border bg-background px-4 py-3 ${overdue ? 'border-amber-200' : 'border-hairline/70'}`}>
       <div className="flex items-start justify-between gap-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLORS[task.status] || 'bg-muted text-muted-foreground'}`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLORS[task.status] || 'bg-muted text-muted'}`}>
               {task.status.replace(/_/g, ' ')}
             </span>
             {overdue && <span className="text-[10px] text-amber-600 flex items-center gap-1"><Clock size={10} /> Overdue</span>}
-            <span className="text-[10px] text-muted-foreground">{task.department_function}</span>
+            <span className="text-[10px] text-muted">{task.department_function}</span>
           </div>
           <p className="text-sm font-medium mt-1">{task.title}</p>
           {expanded && task.description && (
-            <p className="text-xs text-muted-foreground mt-1.5 leading-5">{task.description}</p>
+            <p className="text-xs text-muted mt-1.5 leading-5">{task.description}</p>
           )}
         </div>
-        {expanded ? <ChevronUp size={16} className="text-muted-foreground shrink-0 mt-1" /> : <ChevronDown size={16} className="text-muted-foreground shrink-0 mt-1" />}
+        {expanded ? <ChevronUp size={16} className="text-muted shrink-0 mt-1" /> : <ChevronDown size={16} className="text-muted shrink-0 mt-1" />}
       </div>
 
       {expanded && (
-        <div className="mt-3 pt-3 border-t border-border/60 space-y-3">
+        <div className="mt-3 pt-3 border-t border-hairline/60 space-y-3">
           {task.founder_context && (
-            <div className="rounded-lg border border-border/60 bg-[hsl(var(--accent))]/30 px-3 py-2 space-y-0.5">
+            <div className="rounded-lg border border-hairline/60 bg-[hsl(var(--accent))]/30 px-3 py-2 space-y-0.5">
               {task.founder_context.split('\n').map((line, i) => (
-                <p key={i} className={`text-[11px] leading-5 ${i === 0 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
+                <p key={i} className={`text-[11px] leading-5 ${i === 0 ? 'font-medium text-foreground' : 'text-muted'}`}>
                   {line}
                 </p>
               ))}
             </div>
           )}
 
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted">
             <Clock size={12} /> Due: {fmtDate(task.due_at)}
             {task.ai_review?.status !== 'pending' && (
               <Badge className={`rounded-lg text-[10px] font-normal ${task.ai_review?.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : task.ai_review?.status === 'flagged' ? 'bg-amber-50 text-amber-700' : ''}`}>
@@ -139,7 +139,7 @@ const TaskCard = ({ task, onUpdate, busy }) => {
           {task.status === 'pending' && (
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => changeStatus('in_progress')} className="rounded-lg h-8 px-3 text-xs">Start working</Button>
-              <Button size="sm" variant="secondary" onClick={askAboutTask} className="rounded-lg h-8 px-3 text-xs border border-border/70">
+              <Button size="sm" variant="secondary" onClick={askAboutTask} className="rounded-lg h-8 px-3 text-xs border border-hairline/70">
                 <MessageCircle size={12} className="mr-1" /> Ask about this
               </Button>
             </div>
@@ -149,27 +149,27 @@ const TaskCard = ({ task, onUpdate, busy }) => {
             <div className="space-y-3">
               {!file ? (
                 <div>
-                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/70 bg-background text-xs cursor-pointer hover:bg-[hsl(var(--accent))]/40 transition-colors">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-hairline/70 bg-background text-xs cursor-pointer hover:bg-[hsl(var(--accent))]/40 transition-colors">
                     <Upload size={12} /> Upload proof (image/file)
                     <input type="file" accept="image/*,.pdf,.docx,.xlsx,.csv,.txt" className="hidden" onChange={handleFile} />
                   </label>
                 </div>
               ) : (
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-[hsl(var(--accent))]/30 px-3 py-2">
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline/60 bg-[hsl(var(--accent))]/30 px-3 py-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <FileText size={13} className="text-muted-foreground shrink-0" />
+                    <FileText size={13} className="text-muted shrink-0" />
                     <span className="text-xs truncate">{file.name}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" onClick={submitProof} disabled={uploading} className="rounded-lg h-7 px-2.5 text-[11px]">
                       {uploading ? <Loader2 className="animate-spin" size={11} /> : 'Submit proof'}
                     </Button>
-                    <button onClick={() => setFile(null)} className="text-muted-foreground hover:text-foreground text-xs">Change</button>
+                    <button onClick={() => setFile(null)} className="text-muted hover:text-foreground text-xs">Change</button>
                   </div>
                 </div>
               )}
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onClick={askAboutTask} className="rounded-lg h-8 px-3 text-xs border border-border/70">
+                <Button size="sm" variant="secondary" onClick={askAboutTask} className="rounded-lg h-8 px-3 text-xs border border-hairline/70">
                   <MessageCircle size={12} className="mr-1" /> Ask about this
                 </Button>
               </div>
@@ -180,7 +180,7 @@ const TaskCard = ({ task, onUpdate, busy }) => {
             <div className="flex items-center gap-2 text-xs">
               <Loader2 className="animate-spin" size={12} />
               AI is reviewing your proof...
-              <Button size="sm" variant="secondary" onClick={askAboutTask} className="rounded-lg h-7 px-2.5 text-[11px] border border-border/70">
+              <Button size="sm" variant="secondary" onClick={askAboutTask} className="rounded-lg h-7 px-2.5 text-[11px] border border-hairline/70">
                 <MessageCircle size={11} className="mr-1" /> Ask
               </Button>
             </div>
@@ -194,7 +194,7 @@ const TaskCard = ({ task, onUpdate, busy }) => {
       <DialogContent className="sm:max-w-md rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-display text-lg font-normal">Ask about this task</DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
+          <DialogDescription className="text-sm text-muted">
             {task.title}
           </DialogDescription>
         </DialogHeader>
@@ -269,14 +269,14 @@ export default function MyTasksPage() {
       <TopBar title="My Tasks" backTo="/app" />
       <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-24 pt-4 space-y-4">
         {loading ? (
-          <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground py-24">
+          <div className="flex items-center gap-2 justify-center text-sm text-muted py-24">
             <Loader2 className="animate-spin" size={16} /> Loading your tasks...
           </div>
         ) : tasks.length === 0 ? (
           <div className="text-center py-24">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground"><CheckCircle2 size={20} /></div>
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted"><CheckCircle2 size={20} /></div>
             <h2 className="font-display text-xl">No tasks yet</h2>
-            <p className="text-sm text-muted-foreground mt-2">Your tasks will appear here once the founder generates the weekly plan.</p>
+            <p className="text-sm text-muted mt-2">Your tasks will appear here once the founder generates the weekly plan.</p>
             <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/app/brain')}>Open Brain</Button>
           </div>
         ) : (
@@ -285,25 +285,25 @@ export default function MyTasksPage() {
             <div className="grid grid-cols-4 gap-2 text-center">
               <div className="rounded-xl bg-[hsl(var(--accent))]/50 px-3 py-2">
                 <div className="text-lg font-display">{tasks.length}</div>
-                <div className="text-[10px] text-muted-foreground">Total</div>
+                <div className="text-[10px] text-muted">Total</div>
               </div>
               <div className="rounded-xl bg-blue-50 px-3 py-2">
                 <div className="text-lg font-display text-blue-600">{pending}</div>
-                <div className="text-[10px] text-muted-foreground">Pending</div>
+                <div className="text-[10px] text-muted">Pending</div>
               </div>
               <div className="rounded-xl bg-emerald-50 px-3 py-2">
                 <div className="text-lg font-display text-emerald-600">{inProgress}</div>
-                <div className="text-[10px] text-muted-foreground">Active</div>
+                <div className="text-[10px] text-muted">Active</div>
               </div>
               {overdue > 0 ? (
                 <div className="rounded-xl bg-amber-50 px-3 py-2">
                   <div className="text-lg font-display text-amber-600">{overdue}</div>
-                  <div className="text-[10px] text-muted-foreground">Overdue</div>
+                  <div className="text-[10px] text-muted">Overdue</div>
                 </div>
               ) : (
                 <div className="rounded-xl bg-[hsl(var(--accent))]/50 px-3 py-2">
-                  <div className="text-lg font-display text-muted-foreground">0</div>
-                  <div className="text-[10px] text-muted-foreground">Overdue</div>
+                  <div className="text-lg font-display text-muted">0</div>
+                  <div className="text-[10px] text-muted">Overdue</div>
                 </div>
               )}
             </div>
@@ -312,7 +312,7 @@ export default function MyTasksPage() {
             <div className="flex items-center gap-1.5 flex-wrap">
               {['all', 'pending', 'in_progress', 'awaiting_review'].map((f) => (
                 <button key={f} onClick={() => setFilter(f)}
-                  className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${filter === f ? 'bg-foreground text-background' : 'bg-[hsl(var(--accent))]/50 text-muted-foreground hover:text-foreground border border-border/60'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${filter === f ? 'bg-foreground text-background' : 'bg-[hsl(var(--accent))]/50 text-muted hover:text-foreground border border-hairline/60'}`}>
                   {f === 'all' ? 'All' : f.replace(/_/g, ' ')}
                   {f !== 'all' && <span className="ml-1 text-[10px] opacity-60">({tasks.filter((t) => t.status === f).length})</span>}
                 </button>

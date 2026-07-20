@@ -60,7 +60,7 @@ export function QuestionnaireNudge() {
     <Dialog open={open} onOpenChange={(v) => { if (!v) dismiss(); }}>
       <DialogContent
         data-testid="questionnaire-nudge-modal"
-        className="sm:max-w-md rounded-2xl border border-border/70 p-0 overflow-hidden"
+        className="sm:max-w-md rounded-2xl border border-hairline/70 p-0 overflow-hidden"
       >
         {/* a11y: Radix requires a DialogTitle inside DialogContent. Visually hidden — the
             real headline (the H3 below) carries the design weight. */}
@@ -74,7 +74,7 @@ export function QuestionnaireNudge() {
         <button
           data-testid="questionnaire-nudge-close"
           onClick={dismiss}
-          className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors z-10"
+          className="absolute top-3 right-3 text-muted hover:text-foreground transition-colors z-10"
           aria-label="Close"
         >
           <X size={16} strokeWidth={1.75} />
@@ -89,7 +89,7 @@ export function QuestionnaireNudge() {
           <h3 className="font-display text-[26px] leading-tight">
             Tell us about <span className="text-[#b89165]">your business</span> — free.
           </h3>
-          <p className="text-sm text-muted-foreground mt-3 leading-6">
+          <p className="text-sm text-muted mt-3 leading-6">
             Answer 4 short questions about your dream, capacity, advantage, and potential.
             We use them to ground every plan we draft for you.
           </p>
@@ -120,7 +120,7 @@ export function QuestionnaireNudge() {
               type="button"
               data-testid="questionnaire-nudge-later"
               onClick={dismiss}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors px-3"
+              className="text-xs text-muted hover:text-foreground transition-colors px-3"
             >
               Maybe later
             </button>

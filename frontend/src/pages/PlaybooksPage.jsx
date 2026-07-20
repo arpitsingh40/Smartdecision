@@ -63,16 +63,16 @@ export default function PlaybooksPage() {
       <TopBar />
       <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-8 pb-20">
         <h1 className="font-display text-2xl mb-1">Framework Playbooks</h1>
-        <p className="text-sm text-muted-foreground mb-6">Apply proven frameworks from the knowledge base to your business.</p>
+        <p className="text-sm text-muted mb-6">Apply proven frameworks from the knowledge base to your business.</p>
 
         {active && (
           <div className="bg-surface-2 rounded-2xl border border-hairline p-6 mb-8">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider">{active.book}</span>
+                <span className="text-xs text-muted uppercase tracking-wider">{active.book}</span>
                 <h2 className="font-display text-xl mt-0.5">{active.title}</h2>
               </div>
-              <span className="text-xs text-muted-foreground">{active.progress_pct}% complete</span>
+              <span className="text-xs text-muted">{active.progress_pct}% complete</span>
             </div>
             <div className="w-full bg-background rounded-full h-1.5 mb-6">
               <div className="bg-accent h-1.5 rounded-full transition-all" style={{ width: `${active.progress_pct}%` }} />
@@ -82,7 +82,7 @@ export default function PlaybooksPage() {
                 <h3 className="font-medium text-sm mb-2">{active.stage_info.label}</h3>
                 {active.stage_info.input_fields && active.stage_info.input_fields.map(f => (
                   <div key={f} className="mb-3">
-                    <label className="text-xs text-muted-foreground block mb-1">{f.replace(/_/g, ' ')}</label>
+                    <label className="text-xs text-muted block mb-1">{f.replace(/_/g, ' ')}</label>
                     <Textarea
                       className="rounded-xl text-sm min-h-[80px]"
                       value={active.inputs?.[f] || ''}
@@ -126,8 +126,8 @@ export default function PlaybooksPage() {
                       {a.title}
                       {inProgress && <span className="text-[10px] text-accent bg-accent/10 px-2 py-0.5 rounded-full">In progress</span>}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.description}</div>
-                    <div className="text-[10px] text-muted-foreground/60 mt-1">{a.book} · {a.stages.length} stages</div>
+                    <div className="text-xs text-muted mt-0.5 line-clamp-2">{a.description}</div>
+                    <div className="text-[10px] text-muted/60 mt-1">{a.book} · {a.stages.length} stages</div>
                   </div>
                 </div>
               </button>
@@ -142,7 +142,7 @@ export default function PlaybooksPage() {
               {completed.map(p => (
                 <div key={p.id} className="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 border border-hairline">
                   <CheckCircle size={16} className="text-accent shrink-0" />
-                  <div className="flex-1 min-w-0"><span className="font-medium text-sm">{p.title}</span> <span className="text-xs text-muted-foreground">({p.book})</span></div>
+                  <div className="flex-1 min-w-0"><span className="font-medium text-sm">{p.title}</span> <span className="text-xs text-muted">({p.book})</span></div>
                   <Button variant="ghost" size="sm" onClick={() => create(p.playbook_key)} className="rounded-xl text-xs">Redo</Button>
                 </div>
               ))}

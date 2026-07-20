@@ -140,22 +140,22 @@ export default function ProfilePage() {
       <TopBar title="Your profile" backTo="/app" />
       <main className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
         <div className="flex gap-1 mb-6 p-1 rounded-xl bg-muted/50">
-          <button onClick={() => setTab('baseline')} className={`flex-1 text-sm py-2 rounded-lg transition-colors ${tab === 'baseline' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}>Baseline</button>
-          <button onClick={() => setTab('operating')} className={`flex-1 text-sm py-2 rounded-lg transition-colors ${tab === 'operating' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}>Operating profile</button>
+          <button onClick={() => setTab('baseline')} className={`flex-1 text-sm py-2 rounded-lg transition-colors ${tab === 'baseline' ? 'bg-background shadow-sm font-medium' : 'text-muted'}`}>Baseline</button>
+          <button onClick={() => setTab('operating')} className={`flex-1 text-sm py-2 rounded-lg transition-colors ${tab === 'operating' ? 'bg-background shadow-sm font-medium' : 'text-muted'}`}>Operating profile</button>
         </div>
 
         {tab === 'baseline' && (
           <div>
             <div className="mb-6">
               <h1 className="font-display text-2xl">Your baseline</h1>
-              <p className="text-sm text-muted-foreground mt-1">4 questions so the engine knows your reality. {!qCompleted && `${qBonus} bonus credits when done.`}</p>
+              <p className="text-sm text-muted mt-1">4 questions so the engine knows your reality. {!qCompleted && `${qBonus} bonus credits when done.`}</p>
             </div>
 
             {qCompleted ? (
               <Card className="rounded-2xl">
                 <CardContent className="p-6 space-y-3">
                   {QUESTIONS.map((q) => (
-                    <div key={q.key}><div className="text-xs text-muted-foreground">{q.title}</div><div className="text-sm mt-0.5">{answers[q.key] || '(not set)'}</div></div>
+                    <div key={q.key}><div className="text-xs text-muted">{q.title}</div><div className="text-sm mt-0.5">{answers[q.key] || '(not set)'}</div></div>
                   ))}
                   <Button variant="secondary" size="sm" onClick={() => setQCompleted(false)} className="rounded-xl mt-2">Edit answers</Button>
                 </CardContent>
@@ -168,10 +168,10 @@ export default function ProfilePage() {
                   </div>
                   <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-accent font-semibold mb-2"><cq.icon size={14} /> {cq.eyebrow}</div>
                   <h2 className="font-display text-xl">{cq.title}</h2>
-                  <p className="text-sm text-muted-foreground mt-2">{cq.hint}</p>
+                  <p className="text-sm text-muted mt-2">{cq.hint}</p>
                   <Textarea value={qVal} onChange={(e) => setAnswers((a) => ({ ...a, [cq.key]: e.target.value }))} placeholder={cq.placeholder} className="rounded-xl mt-4 min-h-[120px]" autoFocus />
                   <div className="flex justify-between mt-4">
-                    <button onClick={() => setQStep((s) => Math.max(0, s - 1))} disabled={qStep === 0} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40">← Back</button>
+                    <button onClick={() => setQStep((s) => Math.max(0, s - 1))} disabled={qStep === 0} className="text-xs text-muted hover:text-foreground disabled:opacity-40">← Back</button>
                     <Button onClick={qStep < 3 ? () => setQStep((s) => s + 1) : submitQ} disabled={!qVal?.trim() || qBusy} className="rounded-xl">
                       {qBusy ? 'Saving...' : qStep < 3 ? 'Next' : `Unlock ${qBonus} credits`} <ArrowRight size={14} className="ml-1.5" />
                     </Button>
@@ -185,22 +185,22 @@ export default function ProfilePage() {
         {tab === 'operating' && (
           <div>
             {fpLoading ? (
-              <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground py-20"><Loader2 className="animate-spin" size={16} /> Loading…</div>
+              <div className="flex items-center gap-2 justify-center text-sm text-muted py-20"><Loader2 className="animate-spin" size={16} /> Loading…</div>
             ) : fpNoOrg || fpDenied ? (
               <div className="text-center py-16">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground">{fpNoOrg ? <Building2 size={20} /> : <Lock size={20} />}</div>
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted">{fpNoOrg ? <Building2 size={20} /> : <Lock size={20} />}</div>
                 <h2 className="font-display text-xl">{fpNoOrg ? 'Create your workspace first' : 'Only the founder sets this up'}</h2>
-                <p className="text-sm text-muted-foreground mt-2">{fpNoOrg ? 'The operating profile lives on your workspace.' : 'This is for the workspace owner.'}</p>
+                <p className="text-sm text-muted mt-2">{fpNoOrg ? 'The operating profile lives on your workspace.' : 'This is for the workspace owner.'}</p>
                 <Button className="rounded-xl mt-6" onClick={() => navigate(fpNoOrg ? '/app/team' : '/app')}>{fpNoOrg ? 'Go to Team' : 'Go to app'}</Button>
               </div>
             ) : profile ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-2"><UserCog size={16} /><h2 className="font-display text-xl">Your operating profile</h2></div>
-                <section className="rounded-2xl border bg-card p-6">
+                <section className="rounded-2xl border bg-surface p-6">
                   <div className="flex items-center gap-2 text-emerald-600 text-xs mb-2"><CheckCircle2 size={14} /> Profile active</div>
                   <p className="font-display text-lg leading-snug">{profile.summary}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-5">
-                    {Object.entries(PROFILE_FIELDS).map(([k, label]) => profile[k] ? (<div key={k}><div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div><div className="text-sm mt-0.5">{profile[k]}</div></div>) : null)}
+                    {Object.entries(PROFILE_FIELDS).map(([k, label]) => profile[k] ? (<div key={k}><div className="text-xs uppercase tracking-wider text-muted">{label}</div><div className="text-sm mt-0.5">{profile[k]}</div></div>) : null)}
                   </div>
                 </section>
                 <div className="flex gap-2"><Button variant="secondary" onClick={fpStart} disabled={fpBusy} className="rounded-xl"><RotateCcw size={14} className="mr-1.5" /> Start over</Button></div>
@@ -211,7 +211,7 @@ export default function ProfilePage() {
                 {transcript.map((t, i) => (<div key={i} className="space-y-2"><div className="flex gap-2"><span className="shrink-0 w-7 h-7 rounded-lg bg-accent flex items-center justify-center"><Brain size={14} /></span><div className="rounded-2xl bg-secondary/50 px-4 py-2.5 text-sm">{t.q}</div></div><div className="flex justify-end"><div className="rounded-2xl bg-primary text-primary-foreground px-4 py-2.5 text-sm max-w-[85%]">{t.a}</div></div></div>))}
                 <div className="flex gap-2"><span className="shrink-0 w-7 h-7 rounded-lg bg-accent flex items-center justify-center"><Brain size={14} /></span><div className="rounded-2xl bg-secondary/50 px-4 py-2.5 text-sm">{question}</div></div>
                 <div ref={endRef} />
-                <div className="rounded-2xl border bg-card p-3 sticky bottom-4 shadow-sm">
+                <div className="rounded-2xl border bg-surface p-3 sticky bottom-4 shadow-sm">
                   <Textarea value={fpAnswer} onChange={(e) => setFpAnswer(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) fpSend(); }} placeholder="Answer in your own words…" className="rounded-xl border-0 min-h-[70px] resize-none" />
                   <div className="flex items-center justify-between mt-2">
                     <Button variant="ghost" size="sm" onClick={fpFinish} disabled={fpBusy || !fpCanFinish} className="rounded-lg text-xs">{fpBusy ? <Loader2 className="animate-spin" size={13} /> : 'Finish & build my profile'}</Button>
@@ -220,10 +220,10 @@ export default function ProfilePage() {
                 </div>
               </div>
             ) : (
-              <section className="rounded-2xl border bg-card p-6 text-center">
+              <section className="rounded-2xl border bg-surface p-6 text-center">
                 <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-accent mb-4"><Sparkles size={22} /></div>
                 <h2 className="font-display text-2xl">A few minutes, once.</h2>
-                <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">The brain learns how you operate, so it never gives generic advice again.</p>
+                <p className="text-sm text-muted mt-2 max-w-md mx-auto">The brain learns how you operate, so it never gives generic advice again.</p>
                 <Button onClick={fpStart} disabled={fpBusy} className="rounded-xl mt-6">{fpBusy ? <Loader2 className="animate-spin" size={15} /> : <>Start the conversation <ArrowRight size={15} className="ml-1.5" /></>}</Button>
               </section>
             )}

@@ -128,11 +128,11 @@ export default function BusinessOSPage() {
       <div className="min-h-screen">
         <TopBar title="Business OS" backTo="/app" />
         <div data-testid="business-os-denied" className="max-w-md mx-auto text-center py-24 px-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted">
             <Lock size={20} />
           </div>
           <h2 className="font-display text-xl">Workspace required</h2>
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-sm text-muted mt-2">
             Business OS requires a workspace. Create one first.
           </p>
           <Button variant="secondary" className="rounded-xl mt-6" onClick={() => navigate('/app/team')}>
@@ -163,9 +163,9 @@ export default function BusinessOSPage() {
         {/* Hero */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <p className="text-xs text-muted-foreground tracking-wide uppercase">Autonomous Operations</p>
+            <p className="text-xs text-muted tracking-wide uppercase">Autonomous Operations</p>
             <h1 className="font-display text-2xl mt-1">Business OS</h1>
-            <p className="text-sm text-muted-foreground mt-1.5 max-w-xl">
+            <p className="text-sm text-muted mt-1.5 max-w-xl">
               Your company runs on autopilot. Agents detect issues, execute through connected tools, verify outcomes, and learn.
             </p>
           </div>
@@ -203,7 +203,7 @@ export default function BusinessOSPage() {
                     </div>
                     <p className="text-sm mt-1">{item.summary}</p>
                     {item.recommendation && (
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.recommendation}</p>
+                      <p className="text-xs text-muted mt-0.5">{item.recommendation}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -267,25 +267,25 @@ export default function BusinessOSPage() {
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-2xl border bg-card p-4">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Agents</p>
+          <div className="rounded-2xl border bg-surface p-4">
+            <p className="text-[11px] text-muted uppercase tracking-wide">Agents</p>
             <p className="font-display text-2xl mt-1">{activeAgents}/{agentTypes.length}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">active agents running</p>
+            <p className="text-[11px] text-muted mt-1">active agents running</p>
           </div>
-          <div className="rounded-2xl border bg-card p-4">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Decisions</p>
+          <div className="rounded-2xl border bg-surface p-4">
+            <p className="text-[11px] text-muted uppercase tracking-wide">Decisions</p>
             <p className="font-display text-2xl mt-1">{totalDecisions}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">autonomous decisions made</p>
+            <p className="text-[11px] text-muted mt-1">autonomous decisions made</p>
           </div>
-          <div className="rounded-2xl border bg-card p-4">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Actions</p>
+          <div className="rounded-2xl border bg-surface p-4">
+            <p className="text-[11px] text-muted uppercase tracking-wide">Actions</p>
             <p className="font-display text-2xl mt-1">{totalActions}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">actions taken through tools</p>
+            <p className="text-[11px] text-muted mt-1">actions taken through tools</p>
           </div>
-          <div className="rounded-2xl border bg-card p-4">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Learning</p>
+          <div className="rounded-2xl border bg-surface p-4">
+            <p className="text-[11px] text-muted uppercase tracking-wide">Learning</p>
             <p className="font-display text-2xl mt-1">{learning.total_learning_events || 0}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">patterns learned</p>
+            <p className="text-[11px] text-muted mt-1">patterns learned</p>
           </div>
         </div>
 
@@ -299,15 +299,15 @@ export default function BusinessOSPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.entries(processList).slice(0, 6).map(([pid, proc]) => (
-              <div key={pid} data-testid={`business-os-process-${pid}`} className="rounded-2xl border bg-card p-4 flex flex-col justify-between">
+              <div key={pid} data-testid={`business-os-process-${pid}`} className="rounded-2xl border bg-surface p-4 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-medium">{proc.label}</h3>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full border text-muted-foreground">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full border text-muted">
                       {proc.schedule}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{proc.description}</p>
+                  <p className="text-xs text-muted mt-1.5 leading-relaxed">{proc.description}</p>
                 </div>
                 <Button
                   data-testid={`business-os-run-${pid}`}
@@ -346,11 +346,11 @@ export default function BusinessOSPage() {
                         {a?.status || 'inactive'}
                       </span>
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                    <p className="text-[11px] text-muted mt-0.5">
                       {a?.decisions || 0} decisions · {a?.actions || 0} actions · {a?.alerts || 0} alerts · Last: {lastRun}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0 ml-3">
+                  <div className="flex items-center gap-3 text-xs text-muted shrink-0 ml-3">
                     <span>{a?.schedule || 'daily'}</span>
                     {a?.status === 'active' && <CheckCircle2 size={14} className="text-emerald-500" />}
                   </div>
@@ -381,7 +381,7 @@ export default function BusinessOSPage() {
                         : <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />}
                       <span className="text-sm truncate">{label}</span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0 ml-3">
+                    <div className="flex items-center gap-3 text-xs text-muted shrink-0 ml-3">
                       <span>{executed}/{total} executed</span>
                       <span>{run.elapsed_s}s</span>
                       <span className="hidden sm:inline">{ts}</span>
@@ -410,11 +410,11 @@ export default function BusinessOSPage() {
                 { label: 'Verified', key: 'verified', color: 'bg-violet-100 text-violet-700' },
                 { label: 'Rejected', key: 'rejected', color: 'bg-slate-100 text-slate-500' },
               ].map(({ label, key, color }) => (
-                <div key={key} className="rounded-xl border bg-card px-3 py-2 text-center">
+                <div key={key} className="rounded-xl border bg-surface px-3 py-2 text-center">
                   <p className={`text-[11px] tracking-wide ${color.split(' ')[0]} inline-block px-1.5 py-0.5 rounded`}>
                     {(tasks[key] || 0)}
                   </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">{label}</p>
+                  <p className="text-[10px] text-muted mt-1">{label}</p>
                 </div>
               ))}
             </div>

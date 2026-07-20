@@ -66,7 +66,7 @@ export default function HabitsPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="font-display text-2xl">Habit Tracker</h1>
-            <p className="text-sm text-muted-foreground mt-1">Identity-based habits. Never miss twice.</p>
+            <p className="text-sm text-muted mt-1">Identity-based habits. Never miss twice.</p>
           </div>
           <Button onClick={() => setShowForm(!showForm)} className="rounded-xl gap-1.5">
             <Plus size={15} /> New habit
@@ -85,7 +85,7 @@ export default function HabitsPage() {
         )}
 
         {active.length === 0 && (
-          <div className="text-center py-16 text-muted-foreground">
+          <div className="text-center py-16 text-muted">
             <Target size={40} className="mx-auto mb-3 opacity-30" />
             <p className="text-sm">No habits yet. Create one to start tracking.</p>
           </div>
@@ -99,7 +99,7 @@ export default function HabitsPage() {
               </button>
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm truncate">{h.title}</div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                <div className="flex items-center gap-3 text-xs text-muted mt-0.5">
                   <span className="flex items-center gap-1"><Flame size={12} className="text-orange-400" /> {h.streak} day streak</span>
                   <span>Best: {h.longest_streak}</span>
                   <span>Done: {h.total_done}x</span>
@@ -116,13 +116,13 @@ export default function HabitsPage() {
 
         {archived.length > 0 && (
           <>
-            <h2 className="font-display text-lg mt-8 mb-3 text-muted-foreground">Archived</h2>
+            <h2 className="font-display text-lg mt-8 mb-3 text-muted">Archived</h2>
             <div className="space-y-2 opacity-60">
               {archived.map(h => (
                 <div key={h.id} className="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 border border-hairline">
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate">{h.title}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">Streak: {h.streak} · Best: {h.longest_streak} · Done: {h.total_done}x</div>
+                    <div className="text-xs text-muted mt-0.5">Streak: {h.streak} · Best: {h.longest_streak} · Done: {h.total_done}x</div>
                   </div>
                   <Button variant="ghost" size="icon" className="w-7 h-7 rounded-lg" onClick={() => toggleArchive(h.id, h.archived)} title="Restore"><RotateCcw size={13} /></Button>
                 </div>

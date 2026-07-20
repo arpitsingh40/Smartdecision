@@ -81,16 +81,16 @@ export default function PaymentResultPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md bg-white border border-border/70 rounded-xl p-8 text-center">
-        {missingRef && <p data-testid="payment-error" className="text-sm text-muted-foreground">Missing order reference.</p>}
-        {!missingRef && error && <p data-testid="payment-error" className="text-sm text-muted-foreground">{error}</p>}
+      <div className="w-full max-w-md bg-white border border-hairline/70 rounded-xl p-8 text-center">
+        {missingRef && <p data-testid="payment-error" className="text-sm text-muted">Missing order reference.</p>}
+        {!missingRef && error && <p data-testid="payment-error" className="text-sm text-muted">{error}</p>}
         {!missingRef && !error && !result && (
           <div data-testid="payment-verifying">
-            <Loader2 size={28} strokeWidth={1.5} className="mx-auto animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground mt-4">Confirming your payment with the bank…</p>
-            <p className="text-[11px] text-muted-foreground mt-2 font-mono-plex">This can take up to a minute. Please don&apos;t close this tab.</p>
+            <Loader2 size={28} strokeWidth={1.5} className="mx-auto animate-spin text-muted" />
+            <p className="text-sm text-muted mt-4">Confirming your payment with the bank…</p>
+            <p className="text-[11px] text-muted mt-2 font-mono-plex">This can take up to a minute. Please don&apos;t close this tab.</p>
             {attempts > 3 && (
-              <p data-testid="payment-attempt" className="text-[11px] text-muted-foreground/70 mt-1">Still checking… ({attempts}/{MAX_ATTEMPTS})</p>
+              <p data-testid="payment-attempt" className="text-[11px] text-muted/70 mt-1">Still checking… ({attempts}/{MAX_ATTEMPTS})</p>
             )}
           </div>
         )}
@@ -98,13 +98,13 @@ export default function PaymentResultPage() {
           <div data-testid="payment-success">
             <CheckCircle2 size={32} strokeWidth={1.5} className="mx-auto text-[hsl(var(--success))]" />
             <h1 className="font-display text-2xl mt-4">You&apos;re all set</h1>
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-sm text-muted mt-2">
               <span className="font-mono-plex text-foreground">+{result.credits_added}</span> credits added to <span className="font-mono-plex text-foreground">{result.user_email_masked || 'your account'}</span>.
             </p>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted mt-1">
               New balance: <span data-testid="payment-new-balance" className="font-mono-plex text-foreground">{result.balance}</span>
             </p>
-            <p className="text-[11px] text-muted-foreground/70 mt-4">{isLoggedIn ? 'Taking you back to your goal…' : 'Sign in to continue from where you left off.'}</p>
+            <p className="text-[11px] text-muted/70 mt-4">{isLoggedIn ? 'Taking you back to your goal…' : 'Sign in to continue from where you left off.'}</p>
             <Button asChild className="mt-5 rounded-xl w-full">
               <Link to={isLoggedIn ? (localStorage.getItem('sdg_last_thread') ? `/app/thread/${localStorage.getItem('sdg_last_thread')}` : '/app') : '/auth'} data-testid="payment-continue-now">
                 {isLoggedIn ? 'Continue now' : 'Sign in'}
@@ -116,7 +116,7 @@ export default function PaymentResultPage() {
           <div data-testid="payment-failed">
             <XCircle size={32} strokeWidth={1.5} className="mx-auto text-[hsl(var(--destructive))]" />
             <h1 className="font-display text-2xl mt-4">Payment didn&apos;t go through</h1>
-            <p className="text-sm text-muted-foreground mt-2">You weren&apos;t charged. No credits added.</p>
+            <p className="text-sm text-muted mt-2">You weren&apos;t charged. No credits added.</p>
             <Button asChild variant="outline" className="mt-6 rounded-xl w-full">
               <Link to="/app/billing" data-testid="payment-retry">Try again</Link>
             </Button>
@@ -124,9 +124,9 @@ export default function PaymentResultPage() {
         )}
         {result && result.status === 'created' && (
           <div data-testid="payment-pending">
-            <Loader2 size={28} strokeWidth={1.5} className="mx-auto text-muted-foreground" />
+            <Loader2 size={28} strokeWidth={1.5} className="mx-auto text-muted" />
             <h1 className="font-display text-2xl mt-4">Still verifying</h1>
-            <p className="text-sm text-muted-foreground mt-2">The bank is taking longer than usual. Your credits will appear once it confirms — check the billing page in a minute.</p>
+            <p className="text-sm text-muted mt-2">The bank is taking longer than usual. Your credits will appear once it confirms — check the billing page in a minute.</p>
             <Button asChild variant="outline" className="mt-6 rounded-xl w-full">
               <Link to="/app/billing" data-testid="payment-check-history">See order history</Link>
             </Button>

@@ -47,10 +47,10 @@ export function SystemHealthDetail({ journey }) {
   return (
     <div id="system-health-detail"
          className="hidden mx-2 mb-2 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm space-y-3">
-      <div className="font-medium text-xs uppercase tracking-wide text-muted-foreground">Weekly Business Health</div>
+      <div className="font-medium text-xs uppercase tracking-wide text-muted">Weekly Business Health</div>
 
       {health.brief && (
-        <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono leading-relaxed bg-muted/50 rounded-lg p-2 max-h-48 overflow-auto">
+        <pre className="text-xs text-muted whitespace-pre-wrap font-mono leading-relaxed bg-muted/50 rounded-lg p-2 max-h-48 overflow-auto">
           {health.brief}
         </pre>
       )}
@@ -61,7 +61,7 @@ export function SystemHealthDetail({ journey }) {
           <div className="space-y-1">
             {health.at_risk.map(f => (
               <div key={f.function} className="flex items-center justify-between text-xs">
-                <span className="capitalize text-muted-foreground">{f.function.replace(/_/g, ' ')}</span>
+                <span className="capitalize text-muted">{f.function.replace(/_/g, ' ')}</span>
                 <span className="font-mono text-red-600">{f.health}/100</span>
               </div>
             ))}
@@ -75,7 +75,7 @@ export function SystemHealthDetail({ journey }) {
           <div className="space-y-1">
             {health.warnings.map(f => (
               <div key={f.function} className="flex items-center justify-between text-xs">
-                <span className="capitalize text-muted-foreground">{f.function.replace(/_/g, ' ')}</span>
+                <span className="capitalize text-muted">{f.function.replace(/_/g, ' ')}</span>
                 <span className="font-mono text-amber-600">{f.health}/100</span>
               </div>
             ))}
@@ -136,7 +136,7 @@ function TreeView({ node, depth }) {
         <span className={`font-mono ml-auto ${color}`}>{node.health}/100</span>
       </div>
       {open && node.failure_modes?.slice(0, 2).map((fm, i) => (
-        <div key={i} className="text-[10px] text-muted-foreground ml-6 mt-0.5">· {fm.slice(0, 80)}</div>
+        <div key={i} className="text-[10px] text-muted ml-6 mt-0.5">· {fm.slice(0, 80)}</div>
       ))}
       {open && hasChildren && node.children.map((child, i) => (
         <TreeView key={i} node={child} depth={depth + 1} />
@@ -167,7 +167,7 @@ function OpportunityButton({ journey }) {
       {result?.adjacent_leverage?.length > 0 && (
         <div className="mt-2 rounded-lg border bg-white p-2 text-xs space-y-1">
           {result.adjacent_leverage.slice(0, 3).map((opp, i) => (
-            <div key={i} className="text-muted-foreground">
+            <div key={i} className="text-muted">
               <span className="font-medium text-emerald-700">{opp.source}</span> → {opp.target}: {opp.pattern?.slice(0, 80)}
             </div>
           ))}
@@ -301,12 +301,12 @@ export function CapabilityPanel() {
   const TypeIcon = CAPABILITY_ICONS[capType] || Sparkles;
 
   return (
-    <div className="mx-2 mb-2 rounded-xl border bg-card px-4 py-3 animate-in fade-in">
+    <div className="mx-2 mb-2 rounded-xl border bg-surface px-4 py-3 animate-in fade-in">
       <button onClick={() => setOpen(!open)}
         className="flex items-center gap-2 w-full text-left">
         <Sparkles size={14} className="text-primary" />
         <span className="text-sm font-medium">Build Anything</span>
-        <span className="text-[10px] text-muted-foreground ml-2">websites · reports · decks · campaigns · docs</span>
+        <span className="text-[10px] text-muted ml-2">websites · reports · decks · campaigns · docs</span>
         <span className="ml-auto">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
       </button>
 
@@ -319,10 +319,10 @@ export function CapabilityPanel() {
                 className="w-full rounded-lg border bg-background px-3 py-2 text-sm min-h-[80px] resize-none"
                 rows={3} />
               {capType && (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-xs text-muted">
                   <TypeIcon size={12} />
                   <span>Detected: <span className="font-medium text-foreground">{capabilities?.[capType]?.label || capType.replace(/_/g, ' ')}</span></span>
-                  {capabilities?.[capType]?.label && <span className="text-muted-foreground">— {capabilities[capType].label}</span>}
+                  {capabilities?.[capType]?.label && <span className="text-muted">— {capabilities[capType].label}</span>}
                 </div>
               )}
               <button onClick={doBuild} disabled={building || !description.trim()}
@@ -340,7 +340,7 @@ export function CapabilityPanel() {
                 <span className="text-emerald-700 font-medium">{build.label}: </span>
                 <a href={build.url} target="_blank" rel="noopener"
                   className="text-primary underline truncate">{build.url}</a>
-                <ExternalLink size={12} className="text-muted-foreground" />
+                <ExternalLink size={12} className="text-muted" />
               </div>
               {build.type === 'website' && (
                 <div className="rounded-lg border bg-muted/50 max-h-48 overflow-auto">
@@ -365,7 +365,7 @@ export function CapabilityPanel() {
             <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg p-3">
               <CapIcon size={14} className="mb-1 text-emerald-600" />
               <span className="font-medium">{build.label} ready!</span>
-              <span className="text-muted-foreground ml-2">{build.deploy_note || 'Deployed to ' + build.deploy_platform}</span>
+              <span className="text-muted ml-2">{build.deploy_note || 'Deployed to ' + build.deploy_platform}</span>
             </div>
           )}
 

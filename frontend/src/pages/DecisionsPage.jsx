@@ -32,8 +32,8 @@ const fmtLeft = (iso) => {
 };
 
 const Stat = ({ label, value, accent }) => (
-  <div className="rounded-2xl border bg-card p-4">
-    <div className="text-xs text-muted-foreground mb-1">{label}</div>
+  <div className="rounded-2xl border bg-surface p-4">
+    <div className="text-xs text-muted mb-1">{label}</div>
     <div className={`font-display text-2xl leading-none ${accent || ''}`}>{value}</div>
   </div>
 );
@@ -112,7 +112,7 @@ export default function DecisionsPage() {
       <main data-testid="decisions-page" className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-6">
         <div>
           <h2 className="font-display text-3xl sm:text-4xl tracking-[-0.02em] leading-[1.05]">My decisions</h2>
-          <p className="mt-2 text-sm text-muted-foreground">Every move you committed to, the clock on it, and what came of it.</p>
+          <p className="mt-2 text-sm text-muted">Every move you committed to, the clock on it, and what came of it.</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="decisions-stats">
@@ -124,7 +124,7 @@ export default function DecisionsPage() {
         <div className="flex items-center gap-2">
           {[['open', 'Open'], ['done', 'Achieved'], ['all', 'All']].map(([k, label]) => (
             <button key={k} data-testid={`decisions-filter-${k}`} onClick={() => setFilter(k)}
-              className={`text-xs rounded-full px-3 py-1 border transition-colors ${filter === k ? 'bg-primary text-primary-foreground border-primary' : 'border-border/70 text-muted-foreground hover:text-foreground'}`}>
+              className={`text-xs rounded-full px-3 py-1 border transition-colors ${filter === k ? 'bg-primary text-primary-foreground border-primary' : 'border-hairline/70 text-muted hover:text-foreground'}`}>
               {label}
             </button>
           ))}
@@ -137,9 +137,9 @@ export default function DecisionsPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border bg-card p-10 text-center">
-            <ListChecks size={22} className="mx-auto text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">Nothing here yet.</p>
+          <div className="rounded-2xl border bg-surface p-10 text-center">
+            <ListChecks size={22} className="mx-auto text-muted mb-3" />
+            <p className="text-sm text-muted">Nothing here yet.</p>
             <Button className="rounded-xl mt-4" onClick={() => navigate('/app')}>Go to your Workspace</Button>
           </div>
         ) : (
@@ -147,21 +147,21 @@ export default function DecisionsPage() {
             {filtered.map((d) => {
               const committed = d.committed_action && d.status !== 'dropped';
               return (
-                <div key={d.id} data-testid="decision-row" className="rounded-2xl border bg-card p-5 space-y-3">
+                <div key={d.id} data-testid="decision-row" className="rounded-2xl border bg-surface p-5 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <button onClick={() => navigate(`/app/brain/${d.id}`)}
                       className="text-sm text-foreground/90 min-w-0 text-left hover:text-[hsl(var(--ring))] transition-colors cursor-pointer" title={d.question}>
                       {d.question}
                     </button>
-                    <Badge variant="outline" className="rounded-lg border-border/70 shrink-0 text-xs">{MODE_LABEL[d.mode] || 'Answer'}</Badge>
+                    <Badge variant="outline" className="rounded-lg border-hairline/70 shrink-0 text-xs">{MODE_LABEL[d.mode] || 'Answer'}</Badge>
                   </div>
 
                   {committed ? (
-                    <div className="rounded-xl border border-border/70 bg-secondary/30 px-4 py-3">
+                    <div className="rounded-xl border border-hairline/70 bg-secondary/30 px-4 py-3">
                       <div className="flex items-center justify-between gap-3 flex-wrap">
                         <div className="min-w-0">
-                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Target size={12} /> Your move</div>
-                          <p className={`text-sm ${d.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>{d.committed_action}</p>
+                          <div className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1"><Target size={12} /> Your move</div>
+                          <p className={`text-sm ${d.status === 'done' ? 'line-through text-muted' : ''}`}>{d.committed_action}</p>
                         </div>
                         {d.status === 'open' && d.due_at && (
                           <span className="text-xs font-mono-plex inline-flex items-center gap-1 text-[hsl(var(--ring))] shrink-0"><Clock size={12} /> {fmtLeft(d.due_at)}</span>
@@ -181,16 +181,16 @@ export default function DecisionsPage() {
                         <div className="mt-3 space-y-2">
                           <textarea data-testid="decision-result-input" value={resultText} onChange={(e) => setResultText(e.target.value)}
                             placeholder="What happened? The outcome in a line or two…"
-                            className="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-1 focus:ring-ring" />
+                            className="w-full rounded-lg border border-hairline/70 bg-background px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-1 focus:ring-ring" />
                           <div className="flex gap-2 justify-end">
-                            <Button size="sm" variant="ghost" onClick={() => setResultFor(null)} className="rounded-xl text-muted-foreground">Cancel</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setResultFor(null)} className="rounded-xl text-muted">Cancel</Button>
                             <Button data-testid="decision-result-save" size="sm" disabled={busy === d.id} onClick={() => setStatus(d.id, 'done', resultText)} className="rounded-xl">Log result</Button>
                           </div>
                         </div>
                       ) : (
                         <div className="mt-3 flex gap-2">
                           <Button data-testid="decision-mark-done" size="sm" disabled={busy === d.id} onClick={() => { setResultFor(d.id); setResultText(''); }} className="rounded-xl">I did it</Button>
-                          <Button size="sm" variant="ghost" disabled={busy === d.id} onClick={() => setStatus(d.id, 'dropped')} className="rounded-xl text-muted-foreground">Dropped it</Button>
+                          <Button size="sm" variant="ghost" disabled={busy === d.id} onClick={() => setStatus(d.id, 'dropped')} className="rounded-xl text-muted">Dropped it</Button>
                         </div>
                       )}
                     </div>
@@ -198,13 +198,13 @@ export default function DecisionsPage() {
                     d.status !== 'dropped' && (
                       <div>
                         {dueFor === d.id ? (
-                          <div className="rounded-xl border border-border/70 bg-background px-4 py-3 space-y-2">
+                          <div className="rounded-xl border border-hairline/70 bg-background px-4 py-3 space-y-2">
                             <p className="text-sm">{d.next_action || 'Commit your next move'}</p>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Clock size={12} /> Done by</span>
+                              <span className="text-[11px] uppercase tracking-wide text-muted flex items-center gap-1"><Clock size={12} /> Done by</span>
                               {DUE_OPTIONS.map((o) => (
                                 <button key={o.hours} onClick={() => setDueHours(o.hours)}
-                                  className={`text-xs rounded-full px-3 py-1 border transition-colors ${dueHours === o.hours ? 'bg-primary text-primary-foreground border-primary' : 'border-border/70 text-muted-foreground hover:text-foreground'}`}>
+                                  className={`text-xs rounded-full px-3 py-1 border transition-colors ${dueHours === o.hours ? 'bg-primary text-primary-foreground border-primary' : 'border-hairline/70 text-muted hover:text-foreground'}`}>
                                   {o.label}
                                 </button>
                               ))}
@@ -212,7 +212,7 @@ export default function DecisionsPage() {
                             </div>
                           </div>
                         ) : (
-                          <Button data-testid="decision-commit-open" size="sm" variant="secondary" onClick={() => { setDueFor(d.id); setDueHours(48); }} className="rounded-xl border border-border/70">
+                          <Button data-testid="decision-commit-open" size="sm" variant="secondary" onClick={() => { setDueFor(d.id); setDueHours(48); }} className="rounded-xl border border-hairline/70">
                             Commit a move
                           </Button>
                         )}

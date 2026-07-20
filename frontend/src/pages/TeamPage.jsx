@@ -178,12 +178,12 @@ export default function TeamPage() {
           <div className="space-y-6 pt-6">
             <div className="text-center max-w-lg mx-auto">
               <h2 className="font-display text-2xl sm:text-3xl">Bring your team into one room.</h2>
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="text-sm text-muted mt-2">
                 Create a workspace to train it once, then invite your team. Or join an existing one with a link.
               </p>
             </div>
 
-            <div className="rounded-2xl border bg-card p-6">
+            <div className="rounded-2xl border bg-surface p-6">
               <div className="flex items-center gap-2 mb-3">
                 <Building2 size={16} strokeWidth={1.75} />
                 <h3 className="font-medium text-sm">Create a workspace</h3>
@@ -197,10 +197,10 @@ export default function TeamPage() {
                   {busy ? <Loader2 className="animate-spin" size={15} /> : 'Create workspace'}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">You become the owner. You can invite teammates next.</p>
+              <p className="text-xs text-muted mt-2">You become the owner. You can invite teammates next.</p>
             </div>
 
-            <div className="rounded-2xl border bg-card p-6">
+            <div className="rounded-2xl border bg-surface p-6">
               <div className="flex items-center gap-2 mb-3">
                 <Link2 size={16} strokeWidth={1.75} />
                 <h3 className="font-medium text-sm">Join with an invite code</h3>
@@ -221,11 +221,11 @@ export default function TeamPage() {
         {/* ---------------- MEMBER VIEW ---------------- */}
         {!loading && org && !org.is_owner && (
           <div data-testid="member-view" className="pt-10 text-center max-w-lg mx-auto">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl border bg-card mb-4">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl border bg-surface mb-4">
               <Users size={22} strokeWidth={1.5} />
             </div>
             <h2 className="font-display text-2xl">{org.name}</h2>
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-sm text-muted mt-2">
               {"You're part of this workspace. Your decisions here are backed by the team's playbook."}
             </p>
             <div className="mt-6">
@@ -239,15 +239,15 @@ export default function TeamPage() {
           <div className="space-y-8 pt-4">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-11 h-11 rounded-2xl border bg-card flex items-center justify-center shrink-0">
+                <div className="w-11 h-11 rounded-2xl border bg-surface flex items-center justify-center shrink-0">
                   <Building2 size={20} strokeWidth={1.5} />
                 </div>
                 <div className="min-w-0">
                   <h2 data-testid="org-name" className="font-display text-2xl truncate">{org.name}</h2>
-                  <p className="text-xs text-muted-foreground">{org.member_count} {org.member_count === 1 ? 'member' : 'members'}</p>
+                  <p className="text-xs text-muted">{org.member_count} {org.member_count === 1 ? 'member' : 'members'}</p>
                 </div>
               </div>
-              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border bg-card">
+              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border bg-surface">
                 <Crown size={12} /> Owner
               </span>
             </div>
@@ -263,32 +263,32 @@ export default function TeamPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="font-medium text-sm">{org.strategy_set ? 'Revisit your goal setup' : 'Set up your goal — guided'}</div>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="text-xs text-muted mt-0.5">
                   {org.strategy_set
                     ? 'Walk through your North Star, the number, and your priorities step by step.'
                     : 'A few friendly steps: your dream, the number to hit, where you are now, and your non-negotiables. Takes about two minutes.'}
                 </p>
               </div>
-              <ArrowRight size={18} className="shrink-0 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+              <ArrowRight size={18} className="shrink-0 text-muted group-hover:translate-x-0.5 transition-transform" />
             </button>
 
             {/* North Star — the hidden moat (founder-only) */}
-            <section className="rounded-2xl border bg-card p-6">
+            <section className="rounded-2xl border bg-surface p-6">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Target size={16} strokeWidth={1.75} />
                   <h3 className="font-medium text-sm">Your North Star</h3>
                 </div>
-                <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border bg-background text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border bg-background text-muted">
                   <Lock size={11} /> Private to you
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground mb-4">
+              <p className="text-xs text-muted mb-4">
                 Only you can see this. Your team never sees it, yet every decision the brain gives them is quietly steered toward it.
               </p>
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-muted-foreground">The dream</label>
+                  <label className="text-xs text-muted">The dream</label>
                   <Textarea data-testid="strategy-northstar" value={strategy.north_star}
                     onChange={(e) => setStrategy((s) => ({ ...s, north_star: e.target.value }))}
                     placeholder="e.g. Reach 100 crore annual revenue and become the top C&I solar EPC in North India."
@@ -296,27 +296,27 @@ export default function TeamPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-muted-foreground">Target</label>
+                    <label className="text-xs text-muted">Target</label>
                     <Input data-testid="strategy-target" value={strategy.target}
                       onChange={(e) => setStrategy((s) => ({ ...s, target: e.target.value }))}
                       placeholder="100 Cr ARR" className="rounded-xl mt-1" />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground">By when</label>
+                    <label className="text-xs text-muted">By when</label>
                     <Input data-testid="strategy-deadline" value={strategy.deadline}
                       onChange={(e) => setStrategy((s) => ({ ...s, deadline: e.target.value }))}
                       placeholder="Mar 2027" className="rounded-xl mt-1" />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">Strategic priorities (one per line)</label>
+                  <label className="text-xs text-muted">Strategic priorities (one per line)</label>
                   <Textarea data-testid="strategy-priorities" value={strategy.priorities}
                     onChange={(e) => setStrategy((s) => ({ ...s, priorities: e.target.value }))}
                     placeholder={"Win commercial & industrial rooftop deals\nPush EPC ticket sizes above 50L\nProtect 18% margins"}
                     className="rounded-xl mt-1 min-h-[80px]" />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">Decision rules</label>
+                  <label className="text-xs text-muted">Decision rules</label>
                   <Textarea data-testid="strategy-rules" value={strategy.decision_rules}
                     onChange={(e) => setStrategy((s) => ({ ...s, decision_rules: e.target.value }))}
                     placeholder="Never quote below 18% margin. Prefer C&I over residential."
@@ -331,7 +331,7 @@ export default function TeamPage() {
             </section>
 
             {/* Invite */}
-            <section className="rounded-2xl border bg-card p-6">
+            <section className="rounded-2xl border bg-surface p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <UserPlus size={16} strokeWidth={1.75} />
@@ -342,7 +342,7 @@ export default function TeamPage() {
                 </Button>
               </div>
               {invites.length === 0 && (
-                <p className="text-xs text-muted-foreground">No invite links yet. Create one to share with a teammate.</p>
+                <p className="text-xs text-muted">No invite links yet. Create one to share with a teammate.</p>
               )}
               <div className="space-y-2">
                 {invites.map((inv) => (
@@ -351,7 +351,7 @@ export default function TeamPage() {
                       className={`flex-1 truncate font-mono-plex px-3 py-2 rounded-lg border bg-background ${inv.status !== 'pending' ? 'opacity-40 line-through' : ''}`}>
                       {inv.join_url}
                     </code>
-                    <span className={`px-2 py-0.5 rounded-full border ${inv.status === 'pending' ? '' : 'text-muted-foreground'}`}>{inv.status}</span>
+                    <span className={`px-2 py-0.5 rounded-full border ${inv.status === 'pending' ? '' : 'text-muted'}`}>{inv.status}</span>
                     {inv.status === 'pending' && (
                       <>
                         <button data-testid="invite-copy" onClick={() => copyLink(inv.join_url)}
@@ -359,7 +359,7 @@ export default function TeamPage() {
                           <Copy size={13} />
                         </button>
                         <button data-testid="invite-revoke" onClick={() => revokeInvite(inv.code)}
-                          className="p-2.5 sm:p-1.5 rounded-lg border hover:bg-muted transition-colors text-muted-foreground" title="Revoke">
+                          className="p-2.5 sm:p-1.5 rounded-lg border hover:bg-muted transition-colors text-muted" title="Revoke">
                           <Trash2 size={13} />
                         </button>
                       </>
@@ -370,7 +370,7 @@ export default function TeamPage() {
             </section>
 
             {/* Members */}
-            <section className="rounded-2xl border bg-card p-6">
+            <section className="rounded-2xl border bg-surface p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Users size={16} strokeWidth={1.75} />
                 <h3 className="font-medium text-sm">Members</h3>
@@ -381,24 +381,24 @@ export default function TeamPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{m.name || m.email}</p>
-                        {m.role === 'owner' && <Crown size={12} className="text-muted-foreground shrink-0" />}
+                        {m.role === 'owner' && <Crown size={12} className="text-muted shrink-0" />}
                       </div>
-                      <p className="text-xs text-muted-foreground truncate">{m.email}</p>
+                      <p className="text-xs text-muted truncate">{m.email}</p>
                     </div>
                     {m.role !== 'owner' ? (
                       <button data-testid="member-remove" onClick={() => removeMember(m.user_id, m.name)}
-                        className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
+                        className="text-xs text-muted hover:text-destructive transition-colors flex items-center gap-1">
                         <Trash2 size={12} /> Remove
                       </button>
                     ) : (
-                      <span className="text-xs text-muted-foreground">You</span>
+                      <span className="text-xs text-muted">You</span>
                     )}
                   </div>
                 ))}
               </div>
             </section>
 
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted">
               <ShieldCheck size={13} />
               Next: train this workspace with your playbook so every member makes on-strategy decisions.
             </div>

@@ -11,7 +11,7 @@ function UsageBar({ used, budget }) {
   const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
   return (
     <div className="mt-2">
-      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+      <div className="flex items-center justify-between text-xs text-muted mb-1">
         <span>{used.toLocaleString()} / {budget.toLocaleString()} tokens used</span>
         <span className="font-mono-plex">{pct}%</span>
       </div>
@@ -125,25 +125,25 @@ export default function BillingPage() {
       <TopBar title="Plans & tokens" backTo="/" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
         <div className="max-w-2xl">
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground mb-3">Pricing</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-muted mb-3">Pricing</p>
           <h1 data-testid="billing-title" className="font-display text-3xl sm:text-4xl leading-tight">
             Pick the plan that matches how seriously you&apos;re pursuing this.
           </h1>
-          <p className="mt-4 text-sm md:text-base text-muted-foreground leading-6">
+          <p className="mt-4 text-sm md:text-base text-muted leading-6">
             Monthly subscription via UPI autopay. Each plan includes <strong>10 million tokens</strong> per month. Unused tokens expire at the end of each billing period.
           </p>
         </div>
 
         {subscription && tokenUsage && (
-          <div className="mt-8 rounded-2xl border border-border/70 bg-card p-5 max-w-xl">
+          <div className="mt-8 rounded-2xl border border-hairline/70 bg-surface p-5 max-w-xl">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Current plan</span>
+                <span className="text-[11px] uppercase tracking-[0.16em] text-muted">Current plan</span>
                 <p className="font-display text-lg mt-0.5">{subscription.label || subscription.plan_id}
                   <span className={`ml-2 text-[10px] uppercase tracking-[0.14em] px-2 py-0.5 rounded-full border ${
                     subscription.status === 'active' ? 'border-emerald-400/40 text-emerald-700 bg-emerald-50'
                     : subscription.status === 'trial' ? 'border-amber-400/40 text-amber-700 bg-amber-50'
-                    : 'border-border/70 text-muted-foreground'
+                    : 'border-hairline/70 text-muted'
                   }`}>{subscription.status}</span>
                 </p>
               </div>
@@ -167,7 +167,7 @@ export default function BillingPage() {
               <Sparkles size={16} className="mr-2" />
               {busy === 'trial' ? 'Starting\u2026' : `Start with ₹99 trial for 3 days`}
             </Button>
-            <p className="text-xs text-muted-foreground">Pay ₹99, set up UPI autopay, get 1M tokens for 3 days. After trial, choose Standard or Pro.</p>
+            <p className="text-xs text-muted">Pay ₹99, set up UPI autopay, get 1M tokens for 3 days. After trial, choose Standard or Pro.</p>
           </div>
         )}
 
@@ -179,7 +179,7 @@ export default function BillingPage() {
               <div key={p.id} data-testid={`plan-card-${p.id}`}
                 className={`relative bg-white border rounded-2xl p-7 flex flex-col transition-all ${
                   best ? 'border-foreground/40 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.25)] md:scale-[1.03]'
-                  : 'border-border/70'
+                  : 'border-hairline/70'
                 } ${active ? 'ring-2 ring-primary/40' : ''}`}>
                 {best && !active && (
                   <span data-testid={`plan-tag-${p.id}`}
@@ -187,15 +187,15 @@ export default function BillingPage() {
                     <Sparkles size={11} /> Best Value
                   </span>
                 )}
-                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{p.label}</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted">{p.label}</p>
                 <div className="mt-5 flex items-baseline gap-1.5">
                   <span className="font-display text-4xl">₹{p.price_inr}</span>
-                  <span className="text-xs text-muted-foreground">/month</span>
+                  <span className="text-xs text-muted">/month</span>
                 </div>
                 <p className="font-mono-plex text-sm mt-1 text-foreground/80">
                   {(p.tokens_per_month / 1_000_000).toLocaleString()}M tokens / mo
                 </p>
-                <p className="mt-1.5 text-[11px] font-mono-plex text-muted-foreground">
+                <p className="mt-1.5 text-[11px] font-mono-plex text-muted">
                   {p.id === 'pro' ? 'deepseek-v4' : 'deepseek-flash'}
                 </p>
 
@@ -203,7 +203,7 @@ export default function BillingPage() {
                   {(p.features || []).map((f, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <Check size={14} strokeWidth={2}
-                        className={`mt-0.5 shrink-0 ${best ? 'text-foreground' : 'text-muted-foreground'}`} />
+                        className={`mt-0.5 shrink-0 ${best ? 'text-foreground' : 'text-muted'}`} />
                       <span>{f}</span>
                     </li>
                   ))}
@@ -212,8 +212,8 @@ export default function BillingPage() {
                 <Button onClick={() => subscribe(p.id)} disabled={busy === p.id || active}
                   data-testid={`plan-subscribe-${p.id}`}
                   className={`mt-6 rounded-xl w-full active:scale-[0.98] ${
-                    active ? 'bg-muted text-muted-foreground cursor-default'
-                    : best ? '' : 'bg-white text-foreground border border-border/70 hover:bg-[hsl(var(--accent))]'
+                    active ? 'bg-muted text-muted cursor-default'
+                    : best ? '' : 'bg-white text-foreground border border-hairline/70 hover:bg-[hsl(var(--accent))]'
                   }`}>
                   {busy === p.id ? 'Redirecting\u2026' : active ? 'Current plan' : `Subscribe — ₹${p.price_inr}/mo`}
                 </Button>
@@ -222,7 +222,7 @@ export default function BillingPage() {
           })}
         </div>
 
-        <p className="mt-6 text-[11px] text-muted-foreground/80 max-w-3xl">
+        <p className="mt-6 text-[11px] text-muted/80 max-w-3xl">
           All plans include <strong>UPI autopay</strong> billing. Your mandate is set up once and charges recur monthly. Cancel anytime from your UPI app or here.
         </p>
 
@@ -234,7 +234,7 @@ export default function BillingPage() {
               </span>
               <div>
                 <div className="font-display text-lg">Give {referral.bonus}, get {referral.bonus}.</div>
-                <p className="text-sm text-muted-foreground mt-0.5">
+                <p className="text-sm text-muted mt-0.5">
                   Invite a founder. When they sign up with your link, you both get {referral.bonus} credits.
                   {referral.invited_count > 0 ? ` You've invited ${referral.invited_count} and earned ${referral.credits_earned} credits.` : ''}
                 </p>
@@ -246,7 +246,7 @@ export default function BillingPage() {
           </div>
         ) : null}
 
-        <div className="mt-12 rounded-xl border border-border/60 bg-card/50 p-5 text-sm text-muted-foreground leading-6">
+        <div className="mt-12 rounded-xl border border-hairline/60 bg-surface/50 p-5 text-sm text-muted leading-6">
           <p className="font-medium text-foreground mb-1">How token billing works</p>
           <p>Every AI response consumes tokens based on the length of the conversation context and the generated reply. A typical turn uses <strong>2,000–6,000 tokens</strong> (normal mode) or <strong>8,000–15,000 tokens</strong> (ultra mode with extended thinking). At 10M tokens per month, you can have roughly <strong>1,500–3,000 normal turns</strong> or <strong>600–1,000 ultra turns</strong>. Additional tokens can be purchased any time.</p>
         </div>

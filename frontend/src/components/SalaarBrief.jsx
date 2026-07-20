@@ -19,7 +19,7 @@ export function SalaarBrief() {
   if (!brief || (!brief.threats_active && !brief.actions_pending)) return null;
 
   return (
-    <div className="border-b border-border/60 bg-secondary/30">
+    <div className="border-b border-hairline/60 bg-secondary/30">
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 py-2 text-sm"
@@ -38,7 +38,7 @@ export function SalaarBrief() {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-3 text-xs text-muted">
           <span>{brief.shadow_summary}</span>
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </div>
@@ -49,14 +49,14 @@ export function SalaarBrief() {
           {/* Top alerts */}
           {brief.top_alerts && brief.top_alerts.length > 0 && (
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Alerts</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted mb-2">Alerts</div>
               <div className="space-y-1.5">
                 {brief.top_alerts.map((a, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs rounded-lg bg-background/80 border border-border/50 px-3 py-2">
-                    <AlertTriangle size={12} className={`mt-0.5 shrink-0 ${a.severity === 'critical' ? 'text-destructive' : a.severity === 'high' ? 'text-amber-500' : 'text-muted-foreground'}`} />
+                  <div key={i} className="flex items-start gap-2 text-xs rounded-lg bg-background/80 border border-hairline/50 px-3 py-2">
+                    <AlertTriangle size={12} className={`mt-0.5 shrink-0 ${a.severity === 'critical' ? 'text-destructive' : a.severity === 'high' ? 'text-amber-500' : 'text-muted'}`} />
                     <div>
                       <span className="font-medium text-foreground/90">{a.threat_key.replace(/_/g, ' ')}</span>
-                      <span className="text-muted-foreground ml-1">{a.diagnosis}</span>
+                      <span className="text-muted ml-1">{a.diagnosis}</span>
                       {a.repeat && <span className="text-[10px] text-destructive ml-1">(repeating)</span>}
                     </div>
                   </div>
@@ -68,12 +68,12 @@ export function SalaarBrief() {
           {/* People of concern */}
           {brief.people_of_concern && brief.people_of_concern.length > 0 && (
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">People</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted mb-2">People</div>
               <div className="space-y-1.5">
                 {brief.people_of_concern.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs rounded-lg bg-background/80 border border-border/50 px-3 py-2">
+                  <div key={i} className="flex items-center justify-between text-xs rounded-lg bg-background/80 border border-hairline/50 px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <Users size={12} className="text-muted-foreground" />
+                      <Users size={12} className="text-muted" />
                       <span className="font-medium">{p.person_key}</span>
                       {p.red_flags && p.red_flags.length > 0 && (
                         <span className="text-[10px] text-destructive">
@@ -81,7 +81,7 @@ export function SalaarBrief() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
+                    <div className="flex items-center gap-3 text-muted">
                       <span>trust: {p.trust_score?.toFixed(0)}</span>
                       <span>{p.negative_pct}% negative</span>
                     </div>
@@ -92,7 +92,7 @@ export function SalaarBrief() {
           )}
 
           {/* Stats */}
-          <div className="flex gap-3 text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+          <div className="flex gap-3 text-[10px] text-muted pt-1 border-t border-hairline/40">
             <span>{brief.actions_auto_executed} auto-executed</span>
             <span>{brief.actions_pending} pending approval</span>
             <span>{brief.threats_active} signals tracked</span>

@@ -129,11 +129,11 @@ export default function GoalSetupPage() {
       <div className="min-h-screen">
         <TopBar />
         <div data-testid="goal-setup-blocked" className="max-w-md mx-auto text-center py-24 px-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted-foreground">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl border mb-4 text-muted">
             {noOrg ? <Building2 size={20} /> : <Lock size={20} />}
           </div>
           <h2 className="font-display text-xl">{noOrg ? 'Create your workspace first' : 'Only the founder sets the goal'}</h2>
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-sm text-muted mt-2">
             {noOrg
               ? 'A goal lives on your company workspace. Create one, then come back to set the goal.'
               : 'This guided setup is for the workspace owner. Your decisions are already steered by it.'}
@@ -157,10 +157,10 @@ export default function GoalSetupPage() {
       <main data-testid="goal-setup-page" className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 pt-4">
         {/* header + private badge */}
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+          <span className="text-[11px] uppercase tracking-[0.14em] text-muted">
             {hasGoal ? 'Edit your goal' : 'Set up your goal'} · Step {step + 1} of {STEPS.length}
           </span>
-          <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border bg-card text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border bg-surface text-muted">
             <Lock size={11} /> Private to you
           </span>
         </div>
@@ -170,12 +170,12 @@ export default function GoalSetupPage() {
           <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progressPct}%` }} />
         </div>
 
-        <section className="rounded-2xl border bg-card p-6 sm:p-8">
+        <section className="rounded-2xl border bg-surface p-6 sm:p-8">
           <div className="w-11 h-11 rounded-2xl bg-[hsl(var(--accent))] flex items-center justify-center mb-4 text-[hsl(var(--ring))]">
             <Icon size={20} strokeWidth={1.75} />
           </div>
           <h1 data-testid="goal-setup-step-title" className="font-display text-2xl sm:text-3xl tracking-[-0.01em]">{Cur.title}</h1>
-          <p className="text-sm text-muted-foreground mt-2 leading-6">{Cur.subtitle}</p>
+          <p className="text-sm text-muted mt-2 leading-6">{Cur.subtitle}</p>
 
           <div className="mt-6 space-y-4">
             {Cur.key === 'dream' && (
@@ -188,21 +188,21 @@ export default function GoalSetupPage() {
             {Cur.key === 'number' && (
               <>
                 <div>
-                  <label className="text-xs text-muted-foreground">Headline target (what you say out loud)</label>
+                  <label className="text-xs text-muted">Headline target (what you say out loud)</label>
                   <Input data-testid="goal-setup-input-target" value={f.target}
                     onChange={(e) => set('target', e.target.value)}
                     placeholder="100 Cr ARR" className="rounded-xl mt-1" />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-muted-foreground">Target figure (number only)</label>
+                    <label className="text-xs text-muted">Target figure (number only)</label>
                     <Input data-testid="goal-setup-input-targetarr" inputMode="numeric" value={f.target_arr}
                       onChange={(e) => set('target_arr', e.target.value)}
                       placeholder="1000000000" className="rounded-xl mt-1" />
-                    <p className="text-[11px] text-muted-foreground mt-1">Used for the progress bar. Pick any unit, just be consistent.</p>
+                    <p className="text-[11px] text-muted mt-1">Used for the progress bar. Pick any unit, just be consistent.</p>
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground">By when</label>
+                    <label className="text-xs text-muted">By when</label>
                     <Input data-testid="goal-setup-input-deadline" value={f.deadline}
                       onChange={(e) => set('deadline', e.target.value)}
                       placeholder="Mar 2027" className="rounded-xl mt-1" />
@@ -213,11 +213,11 @@ export default function GoalSetupPage() {
 
             {Cur.key === 'current' && (
               <div>
-                <label className="text-xs text-muted-foreground">Where you are now (same unit as the target)</label>
+                <label className="text-xs text-muted">Where you are now (same unit as the target)</label>
                 <Input data-testid="goal-setup-input-current" inputMode="numeric" value={f.current_arr}
                   onChange={(e) => set('current_arr', e.target.value)}
                   placeholder="120000000" className="rounded-xl mt-1" />
-                <p className="text-[11px] text-muted-foreground mt-1">You can update this anytime from the Cockpit as you make progress.</p>
+                <p className="text-[11px] text-muted mt-1">You can update this anytime from the Cockpit as you make progress.</p>
               </div>
             )}
 
@@ -238,7 +238,7 @@ export default function GoalSetupPage() {
 
           <div className="flex items-center justify-between mt-8">
             <Button data-testid="goal-setup-back" variant="ghost" onClick={back} disabled={step === 0}
-              className="rounded-xl text-muted-foreground">
+              className="rounded-xl text-muted">
               <ArrowLeft size={15} className="mr-1.5" /> Back
             </Button>
             {lastStep ? (
@@ -256,7 +256,7 @@ export default function GoalSetupPage() {
         {!lastStep && (
           <div className="text-center mt-4">
             <button data-testid="goal-setup-skip" onClick={save} disabled={saving}
-              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              className="text-xs text-muted underline underline-offset-2 hover:text-foreground">
               Save what I have so far
             </button>
           </div>

@@ -68,11 +68,11 @@ export default function AuthPage() {
           <div className="hidden md:block">
             <div className="flex items-center gap-2 mb-6">
               <BrandMark size={32} />
-              <span className="font-display text-xl text-text">SmartDeciGen</span>
+              <span className="font-display text-xl text-text">SmartDecigen</span>
             </div>
-            <h1 className="font-display text-3xl lg:text-4xl text-text leading-[1.15] tracking-tight">
-              For founders who are<br />
-              tired of guessing.
+              <h1 className="font-display text-3xl lg:text-4xl text-text leading-[1.15] tracking-tight">
+              Your company.<br />
+              <span className="text-accent">Running on autopilot</span>.
             </h1>
             <p className="mt-4 text-sm text-muted leading-relaxed max-w-sm">
               One conversation. One direction. Daily action. Your company starts running itself.
@@ -99,7 +99,7 @@ export default function AuthPage() {
           <div className="w-full max-w-sm mx-auto md:mx-0">
             <div className="md:hidden text-center mb-6">
               <BrandMark size={36} />
-              <h1 className="font-display text-2xl text-text mt-3">SmartDeciGen</h1>
+              <h1 className="font-display text-2xl text-text mt-3">SmartDecigen</h1>
             </div>
 
             {refCode && (
@@ -114,7 +114,7 @@ export default function AuthPage() {
                 <button
                   onClick={() => setEmailMode('signup')}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${emailMode === 'signup' ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text'}`}>
-                  Start free
+                  Start your company
                 </button>
                 <button
                   onClick={() => setEmailMode('login')}
@@ -162,7 +162,7 @@ export default function AuthPage() {
 
                 <Button type="submit" disabled={busy}
                   className="w-full rounded-xl h-10 text-sm bg-accent hover:bg-accent/90 text-white">
-                  {busy ? 'Please wait...' : emailMode === 'signup' ? 'Start free' : 'Sign in'}
+                  {busy ? 'Please wait...' : emailMode === 'signup' ? 'Start your company' : 'Sign in'}
                   {!busy && <ArrowRight size={14} className="ml-1.5" />}
                 </Button>
               </form>
@@ -197,7 +197,7 @@ export default function AuthPage() {
                 : "Don't have an account? "}
               {emailMode === 'login' && (
                 <button type="button" onClick={() => setEmailMode('signup')}
-                  className="text-accent hover:underline">Start free</button>
+                  className="text-accent hover:underline">Create account</button>
               )}
             </p>
 

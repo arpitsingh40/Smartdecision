@@ -85,7 +85,7 @@ export default function PricingSection() {
                     : 'border border-hairline bg-surface hover:bg-surface-2 text-text'
                 }`}>
                 {p.id === 'starter' ? (
-                  <><Zap size={14} className="mr-2" /> Get started</>
+                  <><Zap size={14} className="mr-2" /> Start your company</>
                 ) : (
                   `Buy — ${p.price}`
                 )}

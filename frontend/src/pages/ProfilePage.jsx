@@ -166,7 +166,7 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-2 mb-4">
                     {QUESTIONS.map((q, i) => (<div key={q.key} className={`h-1 flex-1 rounded-full ${i <= qStep ? 'bg-foreground' : 'bg-foreground/10'}`} />))}
                   </div>
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[#b89165] font-semibold mb-2"><cq.icon size={14} /> {cq.eyebrow}</div>
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-accent font-semibold mb-2"><cq.icon size={14} /> {cq.eyebrow}</div>
                   <h2 className="font-display text-xl">{cq.title}</h2>
                   <p className="text-sm text-muted-foreground mt-2">{cq.hint}</p>
                   <Textarea value={qVal} onChange={(e) => setAnswers((a) => ({ ...a, [cq.key]: e.target.value }))} placeholder={cq.placeholder} className="rounded-xl mt-4 min-h-[120px]" autoFocus />

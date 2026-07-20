@@ -77,7 +77,7 @@ export default function DecisionCardPage() {
             </span>
             SmartDecigen
           </Link>
-          <span className="text-[11px] text-muted-foreground hidden sm:inline">Decision Intelligence for founders</span>
+          <span className="text-[11px] text-muted-foreground hidden sm:inline">Your company. Running on autopilot.</span>
         </div>
       </header>
 

@@ -105,7 +105,7 @@ export const TopBar = () => {
       <div className="flex items-center justify-between gap-3">
         <button onClick={() => navigate('/app')} data-testid="brand-home" className="flex items-center gap-2 shrink-0">
           <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-text text-background font-display text-sm">S</span>
-          <span className="font-display text-lg sm:text-xl hidden sm:inline">SmartDeciGen</span>
+          <span className="font-display text-lg sm:text-xl hidden sm:inline">SmartDecigen</span>
         </button>
 
         <nav className="hidden lg:flex items-center gap-1 ml-3 mr-auto">

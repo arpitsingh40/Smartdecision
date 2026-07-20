@@ -16,7 +16,7 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto px-6 sm:px-10 lg:px-14 flex items-center justify-between h-16">
         <button onClick={() => navigate('/')} className="flex items-center gap-2">
           <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-text text-background font-display text-sm">S</span>
-          <span className="font-display text-lg text-text hidden sm:inline">SmartDeciGen</span>
+          <span className="font-display text-lg text-text hidden sm:inline">SmartDecigen</span>
         </button>
         <nav className="hidden md:flex items-center gap-6 text-sm text-muted">
           <a href="#how-it-works" className="hover:text-text transition-colors">How it works</a>
@@ -26,7 +26,7 @@ export default function Navbar() {
         </nav>
         <div className="flex items-center gap-3">
           <Button variant="ghost" className="rounded-xl text-sm" onClick={() => navigate('/auth')}>Sign in</Button>
-          <Button className="rounded-xl text-sm" onClick={() => navigate('/auth')}>Get started</Button>
+          <Button className="rounded-xl text-sm" onClick={() => navigate('/auth')}>Start your company</Button>
         </div>
       </div>
     </header>

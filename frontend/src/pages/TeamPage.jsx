@@ -355,11 +355,11 @@ export default function TeamPage() {
                     {inv.status === 'pending' && (
                       <>
                         <button data-testid="invite-copy" onClick={() => copyLink(inv.join_url)}
-                          className="p-1.5 rounded-lg border hover:bg-muted transition-colors" title="Copy link">
+                          className="p-2.5 sm:p-1.5 rounded-lg border hover:bg-muted transition-colors" title="Copy link">
                           <Copy size={13} />
                         </button>
                         <button data-testid="invite-revoke" onClick={() => revokeInvite(inv.code)}
-                          className="p-1.5 rounded-lg border hover:bg-muted transition-colors text-muted-foreground" title="Revoke">
+                          className="p-2.5 sm:p-1.5 rounded-lg border hover:bg-muted transition-colors text-muted-foreground" title="Revoke">
                           <Trash2 size={13} />
                         </button>
                       </>

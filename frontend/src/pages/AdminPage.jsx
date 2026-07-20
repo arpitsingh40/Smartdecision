@@ -554,7 +554,7 @@ export default function AdminPage() {
     <div className="min-h-screen pb-16">
       <TopBar title="Founder OS" backTo="/" />
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        <div data-testid="admin-tabs" className="inline-flex items-center rounded-xl border border-border/70 bg-white p-0.5">
+        <div data-testid="admin-tabs" className="inline-flex flex-wrap items-center rounded-xl border border-border/70 bg-white p-0.5 gap-0.5">
           {TABS.map((t) => (
             <button key={t.id} data-testid={`admin-tab-${t.id}`} onClick={() => setTab(t.id)}
               className={`px-3.5 py-1.5 rounded-lg text-xs transition-colors ${tab === t.id ? 'bg-[hsl(var(--accent))] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>

@@ -186,7 +186,7 @@ export default function RecordRoomPage() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px]">
+          <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               data-testid="record-room-search"

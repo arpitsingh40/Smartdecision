@@ -504,7 +504,7 @@ export default function ThreadPage() {
                   value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={onKeyDown}
                   disabled={thinking || inactive}
                   placeholder={inactive ? `This thread is ${thread.status}. Reactivate it to continue.` : 'Say where things actually are. Attach a file if it helps. Enter to send \u00B7 Shift+Enter for a new line.'}
-                  className="min-h-[120px] rounded-xl bg-surface border-hairline text-[15px] leading-6 focus-visible:ring-2 focus-visible:ring-accent" />
+                  className="min-h-[80px] sm:min-h-[120px] rounded-xl bg-surface border-hairline text-[15px] leading-6 focus-visible:ring-2 focus-visible:ring-accent" />
                 {attachment && (
                   <div data-testid="attachment-preview"
                     className="mt-2 flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-surface-2 border border-hairline">
@@ -537,9 +537,9 @@ export default function ThreadPage() {
                     <div data-testid="mode-toggle"
                       className="flex items-center rounded-xl border border-hairline bg-surface p-0.5">
                       <button type="button" data-testid="mode-normal-button" onClick={() => setMode('normal')} disabled={thinking}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'normal' ? 'bg-accent-wash text-text' : 'text-muted hover:text-text'}`}>Normal</button>
+                        className={`px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] transition-colors ${mode === 'normal' ? 'bg-accent-wash text-text' : 'text-muted hover:text-text'}`}>Normal</button>
                       <button type="button" data-testid="mode-ultra-button" onClick={() => setMode('ultra')} disabled={thinking}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${mode === 'ultra' ? 'bg-accent-wash text-text' : 'text-muted hover:text-text'}`}>Ultra thinking</button>
+                        className={`px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] transition-colors ${mode === 'ultra' ? 'bg-accent-wash text-text' : 'text-muted hover:text-text'}`}>Ultra thinking</button>
                     </div>
                   </div>
                   <Button onClick={send} disabled={thinking || inactive || !message.trim()} data-testid="composer-send-button"

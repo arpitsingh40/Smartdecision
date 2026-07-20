@@ -400,7 +400,7 @@ export default function BusinessOSPage() {
               <BarChart3 size={15} strokeWidth={1.75} />
               <h2 className="text-sm font-medium">Task Pipeline</h2>
             </div>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
               {[
                 { label: 'Proposed', key: 'proposed', color: 'bg-slate-100 text-slate-700' },
                 { label: 'Approved', key: 'approved', color: 'bg-blue-100 text-blue-700' },

@@ -266,7 +266,7 @@ export default function CockpitPage() {
               {/* big progress number + status */}
               <div className="flex items-end justify-between gap-3 flex-wrap">
                 <div>
-                  <div data-testid="cockpit-progress-pct" className={`font-display text-4xl leading-none ${statusColor(gp.progress_pct)}`}>
+                  <div data-testid="cockpit-progress-pct" className={`font-display text-3xl sm:text-4xl leading-none ${statusColor(gp.progress_pct)}`}>
                     {gp.progress_pct}%
                   </div>
                   <div data-testid="cockpit-progress-status" className="text-xs text-muted-foreground mt-1.5">
@@ -296,7 +296,7 @@ export default function CockpitPage() {
                   <Input data-testid="cockpit-progress-input" inputMode="numeric" value={arrInput}
                     onChange={(e) => setArrInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') saveProgress(); }}
-                    placeholder={String(gp.target_arr)} className="rounded-lg h-9 w-40" />
+                    placeholder={String(gp.target_arr)} className="rounded-lg h-9 w-full sm:w-40" />
                   <Button data-testid="cockpit-progress-save" size="sm" onClick={saveProgress} disabled={savingArr} className="rounded-lg">
                     {savingArr ? <Loader2 className="animate-spin" size={14} /> : 'Save'}
                   </Button>
@@ -494,9 +494,9 @@ export default function CockpitPage() {
             <div className="divide-y">
               <div className="flex items-center text-[11px] uppercase tracking-wide text-muted-foreground pb-2">
                 <span className="flex-1">Member</span>
-                <span className="w-20 text-right">Decisions</span>
-                <span className="w-20 text-right">Alignment</span>
-                <span className="w-16 text-right">Done</span>
+                <span className="hidden sm:inline sm:w-20 text-right">Decisions</span>
+                <span className="hidden sm:inline sm:w-20 text-right">Alignment</span>
+                <span className="hidden sm:inline sm:w-16 text-right">Done</span>
               </div>
               {(data.per_member || []).map((m) => (
                 <div key={m.user_id} data-testid="cockpit-member-row" className="flex items-center py-3">
@@ -504,9 +504,9 @@ export default function CockpitPage() {
                     <div className="text-sm font-medium truncate">{m.name || m.email}{m.role === 'owner' ? ' (you)' : ''}</div>
                     <div className="text-xs text-muted-foreground truncate">{m.email}</div>
                   </div>
-                  <span className="w-20 text-right text-sm tabular-nums">{m.decisions}</span>
-                  <span className={`w-20 text-right text-sm tabular-nums ${alignColor(m.avg_alignment)}`}>{m.avg_alignment == null ? '—' : m.avg_alignment}</span>
-                  <span className="w-16 text-right text-sm tabular-nums">{m.done}</span>
+                  <span className="hidden sm:inline sm:w-20 text-right text-sm tabular-nums">{m.decisions}</span>
+                  <span className={`hidden sm:inline sm:w-20 text-right text-sm tabular-nums ${alignColor(m.avg_alignment)}`}>{m.avg_alignment == null ? '—' : m.avg_alignment}</span>
+                  <span className="hidden sm:inline sm:w-16 text-right text-sm tabular-nums">{m.done}</span>
                 </div>
               ))}
             </div>
@@ -530,7 +530,7 @@ export default function CockpitPage() {
             ) : (
               <div className="space-y-4">
                 {/* summary row */}
-                <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                   <div className="rounded-xl bg-[hsl(var(--accent))]/50 px-3 py-2">
                     <div className="text-lg font-display">{weeklyDigest.total_tasks}</div>
                     <div className="text-[10px] text-muted-foreground">Total</div>
@@ -571,16 +571,16 @@ export default function CockpitPage() {
                   <div className="divide-y">
                     <div className="flex items-center text-[10px] uppercase tracking-wide text-muted-foreground pb-1.5">
                       <span className="flex-1">Member</span>
-                      <span className="w-12 text-right">Tasks</span>
-                      <span className="w-12 text-right">Done</span>
-                      <span className="w-12 text-right">Overdue</span>
+                      <span className="hidden sm:inline sm:w-12 text-right">Tasks</span>
+                      <span className="hidden sm:inline sm:w-12 text-right">Done</span>
+                      <span className="hidden sm:inline sm:w-12 text-right">Overdue</span>
                     </div>
                     {(weeklyDigest.by_member || []).map((m) => (
                       <div key={m.user_id} className="flex items-center py-2 text-sm">
                         <span className="flex-1 truncate text-xs">{m.name}</span>
-                        <span className="w-12 text-right tabular-nums text-xs">{m.total}</span>
-                        <span className="w-12 text-right tabular-nums text-xs text-emerald-600">{m.done}</span>
-                        <span className={`w-12 text-right tabular-nums text-xs ${m.overdue > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{m.overdue || 0}</span>
+                        <span className="hidden sm:inline sm:w-12 text-right tabular-nums text-xs">{m.total}</span>
+                        <span className="hidden sm:inline sm:w-12 text-right tabular-nums text-xs text-emerald-600">{m.done}</span>
+                        <span className={`hidden sm:inline sm:w-12 text-right tabular-nums text-xs ${m.overdue > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{m.overdue || 0}</span>
                       </div>
                     ))}
                   </div>
@@ -656,7 +656,7 @@ function SystemHealthTab({ health }) {
     <>
       <section className="rounded-2xl border bg-card p-6">
         <div className="flex items-center gap-2 mb-4"><Activity size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">System Health</h3></div>
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <Stat icon={AlertTriangle} label="At Risk" value={signals?.at_risk_count || atRisk.length} />
           <Stat icon={Activity} label="Warnings" value={signals?.warning_count || warnings.length} />
           <Stat icon={CheckCircle2} label="Healthy" value={signals?.healthy_count || Object.keys(functions).length - atRisk.length - warnings.length} />
@@ -708,7 +708,7 @@ function ExecutionTab({ status, setConnectingTool, connectingTool }) {
     <>
       <section className="rounded-2xl border bg-card p-6">
         <div className="flex items-center gap-2 mb-4"><Play size={16} strokeWidth={1.75} /><h3 className="font-medium text-sm">Execution Status</h3></div>
-        <div className="grid grid-cols-5 gap-4 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4 mb-4">
           <Stat icon={ListChecks} label="Proposed" value={status?.proposed || 0} />
           <Stat icon={CheckCircle2} label="Approved" value={status?.approved || 0} />
           <Stat icon={Play} label="Executed" value={status?.executed || 0} />

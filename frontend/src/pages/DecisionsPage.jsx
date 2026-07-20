@@ -115,7 +115,7 @@ export default function DecisionsPage() {
           <p className="mt-2 text-sm text-muted-foreground">Every move you committed to, the clock on it, and what came of it.</p>
         </div>
 
-        <div className="grid grid-cols-3 gap-3" data-testid="decisions-stats">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="decisions-stats">
           <Stat label="Open commitments" value={stats.open} accent="text-[hsl(var(--ring))]" />
           <Stat label="Achieved" value={stats.done} accent="text-emerald-600" />
           <Stat label="Total decisions" value={stats.total} />

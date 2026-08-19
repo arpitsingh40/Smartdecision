@@ -56,6 +56,13 @@ from business_os_router import router as business_os_router
 from audit_router import router as audit_router
 from business_os import ensure_business_os_startup
 from audit import ensure_audit_startup
+from metrics_router import router as metrics_router
+from metrics import ensure_metrics_startup
+from loop_router import router as loop_router
+from loop import ensure_loop_startup
+from automation_router import router as automation_router
+from automation_loops import ensure_automation_startup
+from governance_router import router as governance_router
 from salaar import generate_salaar_brief
 from salaar.causal import build_actor_map, simulate_causal_chain, execute_chain_step
 
@@ -114,6 +121,9 @@ async def _lifespan(app: FastAPI):
             ensure_salaar_startup()
             ensure_business_os_startup()
             ensure_audit_startup()
+            ensure_metrics_startup()
+            ensure_loop_startup()
+            ensure_automation_startup()
             # Sync connections from Composio on startup for all orgs
             try:
                 from execution.connections import refresh_connections_from_composio
@@ -870,6 +880,10 @@ app.include_router(capabilities_router)
 app.include_router(agent_router)
 app.include_router(business_os_router)
 app.include_router(audit_router)
+app.include_router(metrics_router)
+app.include_router(loop_router)
+app.include_router(automation_router)
+app.include_router(governance_router)
 
 scheduler = BackgroundScheduler(daemon=True)
 

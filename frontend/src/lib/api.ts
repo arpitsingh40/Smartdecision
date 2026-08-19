@@ -77,3 +77,52 @@ export const weeklyReviewApi = {
   reset: () => api.post('/v1/weekly-review/reset'),
   history: () => api.get('/v1/weekly-review/history'),
 };
+
+// Severity level used by KPI flags and alerts
+type FlagLevel = 'info' | 'warn' | 'crit';
+
+// KPI flag attached to a snapshot metric
+interface MetricFlag { key: string; level: FlagLevel; message: string }
+
+// KPI snapshot payload from /metrics/snapshot
+interface MetricsSnapshot {
+  org_id: string;
+  snapshot: {
+    cash: number;
+    runway_days: number;
+    mrr: number;
+    churn_pct: number;
+    cac: number;
+    payback_months: number;
+    receivables: number;
+    payables: number;
+    as_of: string;
+    flags: MetricFlag[];
+  };
+}
+
+// Metric alert record from /metrics/alerts
+interface MetricAlert {
+  _id: string;
+  org_id: string;
+  metric: string;
+  level: FlagLevel;
+  message: string;
+  ts: string;
+  status: string;
+}
+
+// Fetch current KPI snapshot with flags
+export const fetchMetricsSnapshot = () => api.get<MetricsSnapshot>('/metrics/snapshot');
+// Fetch outstanding metric alerts
+export const fetchMetricsAlerts = () => api.get<{ alerts: MetricAlert[] }>('/metrics/alerts');
+// Push a single metric value into the ingest pipeline
+export const ingestMetric = (body: { name: string; value: number; source?: string }) => api.post<{ ok: boolean }>('/metrics/ingest', body);
+// Fetch the latest weekly review with variances
+export const fetchWeeklyReview = () => api.get('/loop/weekly-review');
+// Run an automation loop (cash | customer | team | all)
+export const runAutomationLoop = (loop: 'cash' | 'customer' | 'team' | 'all') => api.post(`/automation/run/${loop}`);
+// Fetch automation status and last runs
+export const fetchAutomationStatus = () => api.get('/automation/status');
+// Fetch governance controls (kill switch, dry run, spend cap)
+export const fetchGovernanceStatus = () => api.get('/governance/status');

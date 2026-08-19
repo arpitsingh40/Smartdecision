@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, fetchMetricsSnapshot, fetchMetricsAlerts, fetchWeeklyReview, fetchAutomationStatus, fetchGovernanceStatus, runAutomationLoop } from '../lib/api';
 import { TopBar } from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import {
   Loader2, Lock, Zap, Activity, Clock, CheckCircle2,
   XCircle, Play, Inbox, ThumbsUp, ThumbsDown, BarChart3,
   Target, Shield, History, Wifi, Plus, ArrowRight, Gauge,
+  Coins, Timer, TrendingUp, Percent, Wallet, AlertTriangle, ShieldCheck,
 } from 'lucide-react';
 
 // Business OS tab definitions
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'cockpit', label: 'Cockpit', icon: Gauge },
   { id: 'records', label: 'Records', icon: History },
   { id: 'tools', label: 'Tools', icon: Wifi },
+  { id: 'kpis', label: 'KPIs', icon: BarChart3 },
 ];
 
 // Labels for scheduled process runs
@@ -24,6 +26,14 @@ const processScheduleLabels = {
   weekly_strategy: 'Monday', weekly_people: 'Friday',
   pipeline_health: 'Every 4h', tech_health: 'Every 6h',
 };
+
+// Automation loop definitions for the KPIs tab
+const LOOPS = [
+  { id: 'cash', label: 'Run Cash Loop' },
+  { id: 'customer', label: 'Run Customer Loop' },
+  { id: 'team', label: 'Run Team Loop' },
+  { id: 'all', label: 'Run All' },
+];
 
 // Business OS dashboard with tabbed views
 export default function BusinessOSPage() {
@@ -47,6 +57,15 @@ export default function BusinessOSPage() {
   // Tools tab data
   const [tools, setTools] = useState(null);
   const [toolsLoading, setToolsLoading] = useState(false);
+
+  // KPIs tab data
+  const [kpis, setKpis] = useState(null);
+  const [kpisLoading, setKpisLoading] = useState(false);
+  const [kpisError, setKpisError] = useState('');
+
+  // Automation run result for the KPIs tab
+  const [runResult, setRunResult] = useState(null);
+  const [runningLoop, setRunningLoop] = useState(null);
 
   // Fetch status, processes, and approvals
   const load = useCallback(async () => {
@@ -99,7 +118,32 @@ export default function BusinessOSPage() {
         .catch(() => {})
         .finally(() => setToolsLoading(false));
     }
-  }, [tab, cockpit, records, tools, cockpitLoading, recordsLoading, toolsLoading]);
+    // Lazy load KPI, automation, and governance data on first visit
+    if (tab === 'kpis' && !kpis && !kpisLoading) {
+      setKpisLoading(true);
+      Promise.all([
+        fetchMetricsSnapshot(),
+        fetchMetricsAlerts(),
+        fetchWeeklyReview(),
+        fetchAutomationStatus(),
+        fetchGovernanceStatus(),
+      ]).then(([snapR, alertsR, reviewR, autoR, govR]) => {
+        setKpis({
+          snapshot: snapR.data?.snapshot || null,
+          flags: snapR.data?.snapshot?.flags || [],
+          alerts: alertsR.data?.alerts || [],
+          review: reviewR.data || null,
+          automation: autoR.data || null,
+          governance: govR.data || null,
+        });
+        setKpisError('');
+      }).catch((e) => {
+        setKpisError(e?.response?.status === 401
+          ? 'Your session has expired. Please sign in again.'
+          : 'Could not load KPI data. Please try again.');
+      }).finally(() => setKpisLoading(false));
+    }
+  }, [tab, cockpit, records, tools, kpis, cockpitLoading, recordsLoading, toolsLoading, kpisLoading]);
 
   // Trigger a full business OS cycle
   const runCycle = async () => { setRunning(true); try { await api.post('/business-os/run'); await load(); } catch (_) {} finally { setRunning(false); } };
@@ -114,6 +158,19 @@ export default function BusinessOSPage() {
       if (r.data?.auth_url) window.open(r.data.auth_url, '_blank');
       setTimeout(async () => { setTools(null); setToolsLoading(false); }, 5000);
     } catch (_) {}
+  };
+
+  // Trigger an automation loop and surface its step results
+  const runLoop = async (loop) => {
+    setRunningLoop(loop);
+    setRunResult(null);
+    try {
+      const r = await runAutomationLoop(loop);
+      setRunResult(r.data);
+      toast.success(`Ran ${loop === 'all' ? 'all loops' : `${loop} loop`}`);
+    } catch (e) {
+      toast.error(e?.response?.status === 401 ? 'Session expired. Please sign in again.' : 'Automation run failed.');
+    } finally { setRunningLoop(null); }
   };
 
   if (loading && !data) {
@@ -148,6 +205,19 @@ export default function BusinessOSPage() {
   const recentRuns = data?.recent_runs || [];
   const taskCounts = data?.tasks || {};
   const processList = processes?.processes || {};
+
+  // Derived KPI view data
+  const snap = kpis?.snapshot || {};
+  const gov = kpis?.governance || {};
+  const review = kpis?.review;
+  const automation = kpis?.automation;
+  const allAlerts = [...(kpis?.flags || []), ...(kpis?.alerts || [])];
+  // Format a numeric value as compact USD
+  const fmtMoney = (v) => v == null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v);
+  // Weekly spend as a percentage of the cap
+  const spendPct = gov.cap > 0 ? Math.min(100, Math.round(((gov.spend_this_week || 0) / gov.cap) * 100)) : 0;
+  // Find the flag attached to a metric key
+  const flagFor = (key) => kpis?.flags?.find(f => f.key === key) || null;
 
   return (
     <div className="min-h-screen">
@@ -410,6 +480,146 @@ export default function BusinessOSPage() {
                 )}
               </>
             ) : <div className="text-center py-16 text-sm text-muted">No integrations — check your Composio connection.</div>}
+          </div>
+        )}
+
+        {/* ============ KPIS TAB ============ */}
+        {tab === 'kpis' && (
+          <div className="space-y-6">
+            {kpisLoading ? (
+              <div className="space-y-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 rounded-2xl animate-pulse bg-surface-2" />)}</div>
+            ) : !kpis ? (
+              <div className="text-center py-16 px-6">
+                <BarChart3 size={28} className="mx-auto mb-3 text-muted/40" />
+                <p className="text-sm font-medium text-text">No KPI data available</p>
+                <p className="text-xs text-muted mt-1.5 max-w-xs mx-auto">{kpisError || 'KPIs and automation data will appear here.'}</p>
+              </div>
+            ) : (
+              <>
+                {/* Inline error banner */}
+                {kpisError && <div className="rounded-xl border border-red-200 bg-red-50/60 px-4 py-2.5 text-xs text-red-700">{kpisError}</div>}
+
+                {/* Governance strip */}
+                <div className="rounded-2xl border border-hairline bg-surface p-5 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ShieldCheck size={15} className="text-accent" />
+                    <h2 className="text-sm font-medium">Governance</h2>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full border font-medium ${gov.kill_switch ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                      {gov.kill_switch ? 'Kill switch ON' : 'Kill switch OFF'}
+                    </span>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${gov.dry_run ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-muted'}`}>
+                      {gov.dry_run ? 'Dry run' : 'Live'}
+                    </span>
+                    {gov.locked && <span className="text-[11px] px-2 py-0.5 rounded-full border bg-slate-50 text-muted">Locked</span>}
+                  </div>
+                  {/* Weekly spend vs cap bar */}
+                  <div>
+                    <div className="flex items-center justify-between text-[11px] text-muted mb-1">
+                      <span>Weekly spend</span>
+                      <span>{fmtMoney(gov.spend_this_week)} / {fmtMoney(gov.cap)}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${spendPct >= 90 ? 'bg-red-500' : spendPct >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${spendPct}%` }} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* KPI cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {[
+                    { key: 'cash', label: 'Cash', value: fmtMoney(snap.cash), icon: Coins },
+                    { key: 'runway', label: 'Runway', value: snap.runway_days != null ? `${snap.runway_days}d` : '—', icon: Timer },
+                    { key: 'mrr', label: 'MRR', value: fmtMoney(snap.mrr), icon: TrendingUp },
+                    { key: 'churn', label: 'Churn', value: snap.churn_pct != null ? `${snap.churn_pct}%` : '—', icon: Percent },
+                    { key: 'receivables', label: 'Receivables', value: fmtMoney(snap.receivables), icon: Wallet },
+                  ].map(c => {
+                    const f = flagFor(c.key);
+                    return (
+                      <div key={c.key} className={`rounded-2xl border p-4 ${f ? (f.level === 'crit' ? 'border-red-300 bg-red-50/40' : 'border-amber-200 bg-amber-50/40') : 'border-hairline bg-surface'}`}>
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted uppercase tracking-wide"><c.icon size={12} /> {c.label}</div>
+                        <p className={`font-display text-2xl mt-1 ${f?.level === 'crit' ? 'text-red-700' : f?.level === 'warn' ? 'text-amber-700' : ''}`}>{c.value}</p>
+                        {f && <p className="text-[10px] mt-0.5 text-muted truncate">{f.message}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Flags & alerts list */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3"><AlertTriangle size={14} /><h2 className="text-sm font-medium">Flags & Alerts</h2></div>
+                  {allAlerts.length === 0 ? (
+                    <div className="rounded-2xl border border-hairline px-4 py-6 text-center text-sm text-muted">No flags or alerts.</div>
+                  ) : (
+                    <div className="rounded-2xl border border-hairline divide-y">
+                      {allAlerts.slice(0, 8).map((a, i) => (
+                        <div key={i} className="flex items-start gap-3 px-4 py-2.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 mt-0.5 ${a.level === 'crit' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{a.level}</span>
+                          <p className="text-sm">{a.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Automation loop buttons */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap size={14} /><h2 className="text-sm font-medium">Automation</h2>
+                    {automation?.governance?.dry_run && <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">dry run</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {LOOPS.map(l => (
+                      <Button key={l.id} size="sm" variant="secondary" className="rounded-lg" disabled={!!runningLoop} onClick={() => runLoop(l.id)}>
+                        {runningLoop === l.id ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Play size={12} className="mr-1.5" />}
+                        {l.label}
+                      </Button>
+                    ))}
+                  </div>
+                  {/* Automation run steps result */}
+                  {runResult && (
+                    <div className="mt-3 rounded-2xl border border-hairline overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-hairline bg-surface-2">
+                        <span className="text-sm font-medium capitalize">{runResult.loop}</span>
+                        {runResult.dry_run && <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">dry run</span>}
+                        <span className="text-[11px] text-muted ml-auto">{runResult.started ? new Date(runResult.started).toLocaleTimeString() : ''}</span>
+                      </div>
+                      <div className="divide-y">
+                        {(runResult.steps || []).map((s, i) => (
+                          <div key={i} className="flex items-center gap-2.5 px-4 py-2">
+                            {s.status === 'failed' || s.status === 'error' ? <XCircle size={13} className="text-red-500 shrink-0" /> : <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />}
+                            <span className="text-sm">{s.step}</span>
+                            {s.detail && <span className="text-xs text-muted truncate ml-auto">{s.detail}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Weekly review */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <BarChart3 size={14} /><h2 className="text-sm font-medium">Weekly Review</h2>
+                    {review?.week_start && <span className="text-[11px] text-muted ml-auto">Week of {review.week_start}</span>}
+                  </div>
+                  {review ? (
+                    <div className="rounded-2xl border border-hairline divide-y">
+                      <p className="px-4 py-3 text-sm">{review.summary || 'No summary available.'}</p>
+                      {(review.variances || []).map((v, i) => (
+                        <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                          <span className="text-sm min-w-0 truncate">{v.item}</span>
+                          <span className="text-xs text-muted shrink-0">{v.predicted} → <span className="font-medium text-text">{v.actual}</span></span>
+                          <span className={`text-xs font-medium shrink-0 ${v.flag === 'crit' ? 'text-red-600' : v.flag === 'warn' ? 'text-amber-600' : 'text-emerald-600'}`}>{v.delta}</span>
+                        </div>
+                      ))}
+                      {(review.variances || []).length === 0 && <p className="px-4 py-3 text-xs text-muted">No variances this week.</p>}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-hairline px-4 py-8 text-center text-sm text-muted">No weekly review yet.</div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 

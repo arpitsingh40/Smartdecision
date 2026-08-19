@@ -8,6 +8,7 @@ load_dotenv("/app/backend/.env")
 from pymongo import MongoClient
 from passlib.context import CryptContext
 
+# Wire up password hashing and demo DB connection
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 db = MongoClient(os.environ["MONGO_URL"])[os.environ.get("DB_NAME", "test_database")]
 
@@ -15,6 +16,7 @@ EMAIL = "demo@smartdecigen.com"
 PASSWORD = "Demo1234!"
 now = datetime.now(timezone.utc)
 
+# Wipe any previously seeded demo user data
 old = db.users.find_one({"email": EMAIL})
 if old:
     db.goal_threads.delete_many({"user_id": old["id"]})
@@ -22,12 +24,14 @@ if old:
     db.telemetry_events.delete_many({"user_id": old["id"]})
     db.users.delete_one({"id": old["id"]})
 
+# Insert the fresh demo user
 user_id = str(uuid.uuid4())
 db.users.insert_one({
     "id": user_id, "email": EMAIL, "name": "Demo",
     "password_hash": pwd.hash(PASSWORD), "credits": 85, "created_at": now - timedelta(days=12),
 })
 
+# Insert the demo thread with a full value-layer state
 thread_id = str(uuid.uuid4())
 t0 = now - timedelta(days=12)
 t1 = now - timedelta(days=5)
@@ -60,6 +64,7 @@ db.goal_threads.insert_one({
     "rolling": {"emotional_temperature": 0.62, "execution_consistency": 0.5, "pace_calibration": "on-track"},
 })
 
+# Seed substrate events for the demo thread
 for at, done, temp in [(t0, True, 0.5), (t1, True, 0.55), (t2, False, 0.62)]:
     db.substrate_events.insert_one({
         "id": str(uuid.uuid4()), "thread_id": thread_id, "user_id": user_id, "at": at,

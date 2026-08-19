@@ -1,11 +1,13 @@
 import json, http.client, ssl, base64, os, time, sys
 
+# GitHub repo config constants
 TOKEN = "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"
 OWNER = "arpitsingh40"
 REPO = "Smartdecision"
 BASE = f"/repos/{OWNER}/{REPO}"
 WORKSPACE = "/Users/pareekshitsingh/Documents/Smartdecision"
 
+# Build TLS context for API connections
 def make_ctx():
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -14,6 +16,7 @@ def make_ctx():
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
+# Perform a single GitHub API request
 def api(method, path, data=None):
     body = json.dumps(data).encode() if data else None
     conn = http.client.HTTPSConnection("api.github.com", context=make_ctx(), timeout=60)
@@ -27,6 +30,7 @@ def api(method, path, data=None):
         raise Exception(f"HTTP {resp.status}: {text[:300]}")
     return json.loads(text) if text else {}
 
+# Retry API request with backoff
 def api_retry(method, path, data=None, max_attempts=15):
     last_err = None
     for attempt in range(max_attempts):

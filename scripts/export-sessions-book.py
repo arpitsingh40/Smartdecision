@@ -4,9 +4,11 @@ import os
 import re
 from datetime import datetime, timezone
 
+# Paths to the OpenCode SQLite DB and output markdown
 DB_PATH = os.path.expanduser("~/.local/share/opencode/opencode.db")
 OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "..", "book-of-sessions.md")
 
+# Display labels for each agent type
 AGENT_LABELS = {
     "build": "Build",
     "explore": "Explore",
@@ -17,6 +19,7 @@ AGENT_LABELS = {
 AGENT_ORDER = ["build", "explore", "plan", "general"]
 
 
+# Open the OpenCode database read-only
 def connect_db():
     if not os.path.exists(DB_PATH):
         raise FileNotFoundError(f"OpenCode database not found at {DB_PATH}")
@@ -25,6 +28,7 @@ def connect_db():
     return conn
 
 
+# Fetch all sessions ordered by creation time
 def fetch_sessions(cursor):
     rows = cursor.execute("""
         SELECT
@@ -39,6 +43,7 @@ def fetch_sessions(cursor):
     return [dict(r) for r in rows]
 
 
+# Fetch messages for a single session
 def fetch_messages(cursor, session_id):
     rows = cursor.execute("""
         SELECT id, session_id, time_created, data
@@ -49,6 +54,7 @@ def fetch_messages(cursor, session_id):
     return [dict(r) for r in rows]
 
 
+# Fetch message parts for a single message
 def fetch_parts(cursor, message_id):
     rows = cursor.execute("""
         SELECT id, message_id, time_created, data
@@ -59,6 +65,7 @@ def fetch_parts(cursor, message_id):
     return [dict(r) for r in rows]
 
 
+# Split sessions into roots and parent-to-children map
 def build_tree(sessions):
     children_map = {}
     root_sessions = []
@@ -71,6 +78,7 @@ def build_tree(sessions):
     return root_sessions, children_map
 
 
+# Format millisecond timestamp as UTC date
 def fmt_date(ts_ms):
     if not ts_ms:
         return "N/A"
@@ -78,6 +86,7 @@ def fmt_date(ts_ms):
     return dt.strftime("%Y-%m-%d %H:%M UTC")
 
 
+# Parse model JSON into a display name
 def fmt_model(model_json):
     if not model_json:
         return "Unknown"
@@ -88,6 +97,7 @@ def fmt_model(model_json):
         return str(model_json)[:40]
 
 
+# Build a markdown anchor slug from text
 def anchor(text):
     slug = text.lower().strip()
     slug = re.sub(r'[^a-z0-9\s-]', '', slug)
@@ -108,6 +118,7 @@ def escape_headings(text):
     return "\n".join(result)
 
 
+# Render one message part to markdown
 def render_part(part, heading_level=6):
     data = json.loads(part["data"])
     typ = data.get("type")
@@ -160,6 +171,7 @@ def render_part(part, heading_level=6):
     return "\n".join(lines)
 
 
+# Render a message with its parts
 def render_message(msg, session_level):
     data = json.loads(msg["data"])
     role = data.get("role", "unknown")
@@ -199,6 +211,7 @@ def render_message(msg, session_level):
     return "\n".join(lines)
 
 
+# Render a session and recurse into children
 def render_session(session, children_map, level):
     lines = []
     heading = "#" * level
@@ -239,6 +252,7 @@ def render_session(session, children_map, level):
     return "\n".join(lines)
 
 
+# Build the table of contents by agent
 def build_toc(root_sessions, children_map):
     lines = []
     lines.append("## Table of Contents\n")
@@ -267,6 +281,7 @@ def build_toc(root_sessions, children_map):
     return "".join(lines)
 
 
+# Build chapter sections grouped by agent
 def build_chapters(root_sessions, children_map):
     lines = []
 
@@ -287,6 +302,7 @@ def build_chapters(root_sessions, children_map):
     return "\n".join(lines)
 
 
+# Entry point that assembles and writes the book
 def main():
     global db_cursor
     conn = connect_db()

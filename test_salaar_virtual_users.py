@@ -166,6 +166,7 @@ PERSONAS = [
 ]
 
 
+# Log and record a persona test result
 def log_result(persona, step, status, detail=""):
     ts = datetime.now().strftime("%H:%M:%S")
     line = f"[{ts}] {persona['name']} | {step}: {status}"
@@ -278,6 +279,7 @@ def test_persona(persona):
         log_result(persona, "goal_create", f"FAILED ({r.status_code})")
 
 
+# Print aggregate test summary statistics
 def print_summary():
     print("\n" + "=" * 70)
     print("SALAAR VIRTUAL USER TEST — SUMMARY")

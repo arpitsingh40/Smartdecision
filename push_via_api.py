@@ -2,6 +2,7 @@
 """Push current commit to GitHub via Git Data API (blob by blob, tree, commit, ref)."""
 import base64, json, os, sys, time, subprocess, urllib.request, urllib.error
 
+# GitHub auth and repo config constants
 TOKEN = os.environ.get("GH_PAT") or input("GH_PAT: ").strip()
 if not TOKEN:
     sys.exit("Need GH_PAT")
@@ -9,6 +10,7 @@ OWNER, REPO = "arpitsingh40", "Smartdecision"
 API = "https://api.github.com"
 H = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/vnd.github+json"}
 
+# Send API request with retry loop
 def req(method, url, **kw):
     h = dict(H); data = None
     if "json" in kw:

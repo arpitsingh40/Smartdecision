@@ -17,6 +17,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 log = logging.getLogger("execution.mcp")
 
+# Env flag to disable all MCP execution
 DISABLE_MCP = os.environ.get("DISABLE_MCP", "").strip() in ("1", "true", "yes")
 
 # ── Composio v3 SDK (cloud backend) ──
@@ -25,6 +26,7 @@ _composio_session = None
 _mcp_url = None
 _mcp_headers = None
 
+# Lazily init Composio cloud client
 def _composio_init():
     global _composio_client, _composio_session, _mcp_url, _mcp_headers
     if _composio_client is not None:
@@ -48,6 +50,7 @@ def _composio_init():
         _composio_session = None
 
 
+# Low-level MCP JSON-RPC call helper
 def _mcp_call(method: str, params: dict = None) -> dict:
     if _mcp_url is None:
         return {"error": "No MCP session", "successful": False}
@@ -81,6 +84,7 @@ def _mcp_call(method: str, params: dict = None) -> dict:
         return {"error": str(e)[:300], "successful": False}
 
 
+# Check whether MCP execution is available
 def mcp_enabled() -> bool:
     if DISABLE_MCP:
         return False
@@ -103,6 +107,7 @@ def _native_call(tool_name: str, arguments: dict) -> Optional[dict]:
     return None
 
 
+# Execute tool via native handler or Composio
 def call_tool(tool_name: str, arguments: dict, org_id: str = None) -> dict:
     if not mcp_enabled():
         return {"error": "MCP disabled", "successful": False, "execution_time_ms": 0}
@@ -153,6 +158,7 @@ def call_tool(tool_name: str, arguments: dict, org_id: str = None) -> dict:
     return {"error": f"No handler or cloud access for {tool_name}", "successful": False, "execution_time_ms": elapsed}
 
 
+# Check for any connected service credentials
 def is_connected(org_id: str = None) -> bool:
     if not mcp_enabled():
         return False
@@ -167,6 +173,7 @@ def is_connected(org_id: str = None) -> bool:
     return False
 
 
+# Merge native and catalog tools into one list
 def list_tools(refresh: bool = False, toolkit: str = None, org_id: str = None) -> list:
     if not mcp_enabled():
         return []
@@ -230,6 +237,7 @@ def list_tools(refresh: bool = False, toolkit: str = None, org_id: str = None) -
     return result
 
 
+# Department to allowed toolkit prefixes map
 DEPARTMENT_TOOL_SCOPE = {
     "sales": ["gmail", "hubspot", "linkedin", "calendar", "stripe"],
     "marketing": ["gmail", "linkedin", "twitter", "youtube", "notion"],
@@ -242,6 +250,7 @@ DEPARTMENT_TOOL_SCOPE = {
 }
 
 
+# Filter tools by department scope
 def tools_for_department(function: str, org_id: str = None) -> list:
     scope = DEPARTMENT_TOOL_SCOPE.get(function, [])
     if not scope:
@@ -250,10 +259,12 @@ def tools_for_department(function: str, org_id: str = None) -> list:
     return [t for t in all_tools if any(t["name"].lower().startswith(prefix) for prefix in scope)]
 
 
+# All tools for the founder
 def tools_for_founder(org_id: str = None) -> list:
     return list_tools()
 
 
+# List toolkits with active credentials
 def linked_toolkits() -> list:
     linked = []
     seen = set()
@@ -288,6 +299,7 @@ def linked_toolkits() -> list:
     return linked
 
 
+# Search catalog tools by query
 def search_tools(query: str, limit: int = 10, org_id: str = None) -> list:
     if not mcp_enabled():
         return []

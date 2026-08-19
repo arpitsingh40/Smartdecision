@@ -34,6 +34,7 @@ log = logging.getLogger("org")
 
 router = APIRouter(prefix="/api/org", tags=["organizations"])
 
+# Base URL used to build join links
 FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "").rstrip("/")
 
 
@@ -60,11 +61,13 @@ class CreateOrgIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
 
 
+# Payload for creating an invite
 class InviteIn(BaseModel):
     email: Optional[EmailStr] = None
     role: str = "member"
 
 
+# Payload for accepting an invite code
 class JoinIn(BaseModel):
     code: str = Field(min_length=4, max_length=80)
 
@@ -88,10 +91,12 @@ class ProgressIn(BaseModel):
 
 
 # ----------------------------------------------------------------- helpers
+# Find the caller's active membership row
 def _active_membership(user: dict) -> Optional[dict]:
     return members_col.find_one({"user_id": user["id"], "status": "active"})
 
 
+# Ensure caller is workspace owner
 def _require_owner(user: dict) -> dict:
     m = members_col.find_one({"user_id": user["id"], "status": "active", "role": "owner"})
     if not m:
@@ -113,11 +118,13 @@ def _org_view(org: dict, role: str) -> dict:
     }
 
 
+# Build the shareable join link
 def _join_url(code: str) -> str:
     base = FRONTEND_BASE_URL or ""
     return f"{base}/join/{code}"
 
 
+# Sanitized invite payload for clients
 def _invite_view(inv: dict) -> dict:
     return {
         "id": inv["id"],
@@ -374,6 +381,7 @@ def _append_arr_snapshot(org_id: str, arr) -> None:
     orgs_col.update_one({"id": org_id}, {"$set": {"arr_history": hist[-PROGRESS_HISTORY_CAP:]}})
 
 
+# Label progress percentage in words
 def _progress_status(pct):
     if pct is None:
         return "Not started yet"
@@ -444,6 +452,7 @@ def set_progress(body: ProgressIn, user: dict = Depends(current_user)):
 
 
 # ----------------------------------------------------------------- founder cockpit (private clarity)
+# Collect alignment scores from rows
 def _scores_of(rows):
     out = []
     for r in rows:
@@ -733,11 +742,13 @@ def cockpit_trend(weeks: int = 8, user: dict = Depends(current_user)):
 DEP_FUNCTIONS = ("sales", "marketing", "product", "engineering", "operations", "finance", "leadership", "general")
 
 
+# Normalize a department function label
 def norm_dep_function(f):
     f = (f or "general").strip().lower()
     return f if f in DEP_FUNCTIONS else "general"
 
 
+# LLM system prompt for objective-cascade drafts
 PLAN_SYSTEM = (
     "You are a strategy operator. Given a company's North Star, priorities, and what has historically "
     "worked per function, draft an objective cascade: ONE company objective, then a short objective plus "
@@ -750,10 +761,12 @@ PLAN_SYSTEM = (
 )
 
 
+# Payload to request a plan draft
 class PlanDraftIn(BaseModel):
     target: str = Field(min_length=2, max_length=300)
 
 
+# Compute per-department plan adherence
 def _plan_adherence(org_id, plan):
     since = plan.get("activated_at") or plan.get("created_at")
     q = {"org_id": org_id}
@@ -783,6 +796,7 @@ def _plan_adherence(org_id, plan):
     return depts, total_dec
 
 
+# Build client-safe plan payload
 def _plan_view(plan, org_id):
     out = {k: plan.get(k) for k in ("id", "target", "status", "company_objective", "created_at", "activated_at")}
     if plan.get("status") == "active":
@@ -903,6 +917,7 @@ TASK_GENERATION_SYSTEM = (
     '"description": "...", "linked_kr_index": 0, "suggested_role": "sales"}]}'
 )
 
+# LLM prompt for proof-of-work review
 TASK_REVIEW_SYSTEM = (
     "You are a task reviewer. Given a task description and the proof files a team member uploaded, "
     "determine if the task is genuinely complete.\n\n"
@@ -913,6 +928,7 @@ TASK_REVIEW_SYSTEM = (
     "Return ONLY JSON: {\"approved\": bool, \"confidence\": 0.0-1.0, \"notes\": \"...\"}"
 )
 
+# LLM prompt for task stage detection
 TASK_STAGE_SYSTEM = (
     "You are a task stage detector. Given a task description, its current status, and the member's "
     "recent chat messages, determine what stage the task is at.\n\n"
@@ -929,10 +945,12 @@ VERIFICATION_THRESHOLDS = {
 }
 
 
+# Payload for weekly task generation
 class TaskGenerateIn(BaseModel):
     week_start: Optional[str] = None
 
 
+# Payload for task status updates
 class TaskUpdateIn(BaseModel):
     status: Optional[str] = None
     proof_files: Optional[list[dict]] = None
@@ -940,6 +958,7 @@ class TaskUpdateIn(BaseModel):
     due_at: Optional[str] = None
 
 
+# Compute the coming Monday's date
 def _get_next_monday() -> datetime:
     today = now_utc()
     days_ahead = (7 - today.weekday()) % 7
@@ -948,6 +967,7 @@ def _get_next_monday() -> datetime:
     return (today + timedelta(days=days_ahead)).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+# Pick best-fit member for a function
 def _best_member_for_function(org_id: str, function: str) -> dict:
     members = list(members_col.find({"org_id": org_id, "status": "active"}))
     exact = [m for m in members if users_col.find_one({"id": m["user_id"]}, {"_id": 0, "function": 1}).get("function") == function]
@@ -1575,6 +1595,7 @@ def get_org_structure(user: dict = Depends(current_user)):
     }
 
 
+# Payload for org structure generation
 class GenerateOrgIn(BaseModel):
     stage: str = Field(default="startup")  # startup | growth | enterprise
     team_size: int = Field(default=5, ge=1, le=10000)
@@ -1960,6 +1981,7 @@ def list_templates(department_function: Optional[str] = None, user: dict = Depen
     return {"templates": rows, "count": len(rows)}
 
 
+# Remove a recurring task template
 @router.delete("/automation/templates/{template_id}")
 def delete_template(template_id: str, user: dict = Depends(current_user)):
     m = _require_owner(user)
@@ -2074,6 +2096,7 @@ Return ONLY JSON:
  "recommendation": "one line: ship, modify, or abandon this change"}"""
 
 
+# Payload for what-if simulation
 class SimulateIn(BaseModel):
     change_description: str = Field(min_length=5, max_length=1000)
     scenario_type: str = Field(default="reorg")  # reorg | budget | hiring | strategy
@@ -2179,6 +2202,7 @@ Return ONLY JSON:
  "try": {"what": "one bold experiment", "rationale": "why it could work", "cost_to_test": "one line"},
  "overall_assessment": "one honest line on how the org is doing"}"""
 
+# LLM prompt for org health diagnosis
 HEALTH_SYSTEM = """You are an organization health diagnostician. Given department performance data,
 diagnose the health of the organization along these dimensions and score each 0-100:
 - Capacity: workload vs headcount per department

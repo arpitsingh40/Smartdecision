@@ -6,9 +6,11 @@ from typing import Optional
 from security import current_user
 from db import members_col
 
+# Business OS control plane routes
 router = APIRouter(prefix="/api/business-os", tags=["business-os"])
 
 
+# Resolve caller's active org id
 def _get_org_id(user: dict) -> str:
     m = members_col.find_one({"user_id": user["id"], "status": "active"})
     if not m:
@@ -16,6 +18,7 @@ def _get_org_id(user: dict) -> str:
     return m["org_id"]
 
 
+# Restrict access to workspace owners
 def _require_owner(user: dict) -> str:
     m = members_col.find_one({"user_id": user["id"], "status": "active", "role": "owner"})
     if not m:
@@ -23,6 +26,7 @@ def _require_owner(user: dict) -> str:
     return m["org_id"]
 
 
+# Live autonomous operations dashboard
 @router.get("/status")
 def get_os_status(user: dict = Depends(current_user)):
     """Live dashboard: what the Business OS is running autonomously."""
@@ -31,6 +35,7 @@ def get_os_status(user: dict = Depends(current_user)):
     return os_status(org_id)
 
 
+# Enumerate available business processes
 @router.get("/processes")
 def list_processes(user: dict = Depends(current_user)):
     """List available autonomous business processes."""
@@ -54,6 +59,7 @@ class RunAllIn(BaseModel):
     process_ids: Optional[list[str]] = None
 
 
+# Trigger full autonomous business cycle now
 @router.post("/run")
 def run_os_now(body: RunAllIn, user: dict = Depends(current_user)):
     """Owner: trigger a full autonomous business cycle now."""
@@ -62,6 +68,7 @@ def run_os_now(body: RunAllIn, user: dict = Depends(current_user)):
     return business_cycle(org_id)
 
 
+# Run a single business process now
 @router.post("/processes/run")
 def run_process(body: RunProcessIn, user: dict = Depends(current_user)):
     """Owner: run a specific business process now."""
@@ -72,6 +79,7 @@ def run_process(body: RunProcessIn, user: dict = Depends(current_user)):
     return run_business_process(org_id, body.process_id)
 
 
+# Run all or selected business processes now
 @router.post("/processes/run-all")
 def run_all_processes(body: RunAllIn, user: dict = Depends(current_user)):
     """Owner: run all (or specified) business processes now."""
@@ -80,6 +88,7 @@ def run_all_processes(body: RunAllIn, user: dict = Depends(current_user)):
     return run_all_processes(org_id, body.process_ids)
 
 
+# Autonomous decision history
 @router.get("/decisions")
 def get_decisions(limit: int = 20, user: dict = Depends(current_user)):
     """History of autonomous decisions and their outcomes."""
@@ -88,6 +97,7 @@ def get_decisions(limit: int = 20, user: dict = Depends(current_user)):
     return {"decisions": os_decisions(org_id, limit)}
 
 
+# Connected tools status
 @router.get("/tools")
 def get_connected_tools(user: dict = Depends(current_user)):
     """List tools connected for autonomous execution."""
@@ -110,6 +120,7 @@ class ApprovalAction(BaseModel):
     note: Optional[str] = Field(default="", max_length=500)
 
 
+# Pending approval inbox
 @router.get("/approvals")
 def get_approvals(user: dict = Depends(current_user)):
     """Founder's pending approval inbox."""
@@ -121,6 +132,7 @@ def get_approvals(user: dict = Depends(current_user)):
     }
 
 
+# Approve, deny, or edit an approval item
 @router.post("/approvals/{approval_id}")
 def handle_approval_endpoint(approval_id: str, body: ApprovalAction, user: dict = Depends(current_user)):
     """Approve, deny, or edit an agent's proposed action."""
@@ -134,6 +146,7 @@ def handle_approval_endpoint(approval_id: str, body: ApprovalAction, user: dict 
 
 # ── Outcome Verification ──
 
+# Force business outcome verification
 @router.post("/verify-outcome")
 def verify_outcome_now(body: dict, user: dict = Depends(current_user)):
     """Force verification of a past execution outcome."""
@@ -150,6 +163,7 @@ def verify_outcome_now(body: dict, user: dict = Depends(current_user)):
 
 # ── Agent Quality Metrics ──
 
+# Per-agent quality metrics
 @router.get("/agent-quality")
 def get_quality_metrics(user: dict = Depends(current_user)):
     """Per-agent quality: action rate, escalation rate, autonomy score."""
@@ -160,6 +174,7 @@ def get_quality_metrics(user: dict = Depends(current_user)):
 
 # ── LLM Router Status ──
 
+# Connected LLM providers and models
 @router.get("/models")
 def get_available_models(user: dict = Depends(current_user)):
     """List available models across all connected LLM providers."""

@@ -15,16 +15,19 @@ CATEGORIES = ("bug", "idea", "praise", "other")
 STATUSES = ("new", "reviewed", "resolved")
 
 
+# Request schema for submitting feedback
 class FeedbackIn(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     category: Literal["bug", "idea", "praise", "other"]
     message: str = Field(..., min_length=1, max_length=2000)
 
 
+# Request schema for updating feedback status
 class FeedbackStatusIn(BaseModel):
     status: Literal["new", "reviewed", "resolved"]
 
 
+# Strip Mongo fields and ISO-format datetimes
 def _clean(doc: dict) -> dict:
     out = {}
     for k, v in doc.items():
@@ -35,6 +38,7 @@ def _clean(doc: dict) -> dict:
 
 
 # ---------------------------------------------------------------- user side
+# Submit new feedback from a signed-in user
 @router.post("/feedback")
 def submit_feedback(body: FeedbackIn, user: dict = Depends(current_user)):
     msg = body.message.strip()
@@ -56,6 +60,7 @@ def submit_feedback(body: FeedbackIn, user: dict = Depends(current_user)):
 
 
 # ---------------------------------------------------------------- founder side
+# List feedback for founder with filters and summary
 @router.get("/admin/feedback")
 def list_feedback(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
                   status: Optional[str] = Query(None), category: Optional[str] = Query(None),
@@ -81,6 +86,7 @@ def list_feedback(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=10
             "pages": max(1, -(-total // limit))}
 
 
+# Update a feedback item's review status
 @router.patch("/admin/feedback/{feedback_id}")
 def set_feedback_status(feedback_id: str, body: FeedbackStatusIn,
                         admin: dict = Depends(require_admin)):

@@ -43,6 +43,7 @@ DEPENDENCY_GRAPH = {
 }
 
 # Upstream-downstream dependency chain for root cause walking
+# Build reverse dependency map for root cause walking
 UPSTREAM_MAP = {}
 for func_, deps in DEPENDENCY_GRAPH.items():
     for dep in deps:
@@ -50,6 +51,7 @@ for func_, deps in DEPENDENCY_GRAPH.items():
 
 DOWNSTREAM_MAP = DEPENDENCY_GRAPH  # alias for clarity
 
+# Human-readable labels for the 16 business functions
 FUNCTION_LABELS = {
     "vision": "Vision & Mission",
     "strategy": "Strategy & Positioning",
@@ -91,9 +93,11 @@ def _best_book_for(func: str, failure_text: str) -> Optional[str]:
     return None
 
 # ponytail: lazy aliases — DELETE after all callers use _failure_modes_for()
+# Lazy failure-mode lookup per business function
 FAILURE_MODES = {f: _failure_modes_for(f) for f in PROBLEM_TAXONOMY}
 
 # Strong signals that indicate system-level problems (cross-functional)
+# Known cross-functional failure patterns
 _SYSTEM_SIGNALS = [
     ("marketing", "sales", "Marketing brings poor-quality leads → Sales can't close"),
     ("engineering", "marketing", "Slow delivery → Missed launches → Customers leave"),
@@ -105,6 +109,7 @@ _SYSTEM_SIGNALS = [
 ]
 
 
+# Timezone-aware current UTC timestamp
 def _now():
     return datetime.now(timezone.utc)
 

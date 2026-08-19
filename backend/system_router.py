@@ -17,6 +17,7 @@ log = logging.getLogger("business_system_api")
 router = APIRouter(prefix="/api/system", tags=["business-system"])
 
 
+# Request body for walking the root-cause tree.
 class RootCauseIn(BaseModel):
     symptom: str = Field(description="The business function showing problems (e.g., 'sales', 'revenue', 'churn')")
     max_depth: int = Field(default=3, ge=1, le=5)

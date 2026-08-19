@@ -44,6 +44,7 @@ VERIFICATION_CHAIN = [
 # ── Provider registry ──
 
 class _Provider:
+    # Set up an OpenAI-compatible provider session
     def __init__(self, name: str, base_url: str, api_key: str, model_prefix: str = ""):
         self.name = name
         self.base_url = base_url.rstrip("/")
@@ -52,6 +53,7 @@ class _Provider:
         self._session = requests.Session()
         self._session.headers.update({"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
 
+    # Normalize the system prompt to plain text
     def _system_text(self, system) -> Optional[str]:
         if not system:
             return None
@@ -62,6 +64,7 @@ class _Provider:
             return "\n".join(texts) if texts else None
         return None
 
+    # Call the provider with three retries
     def call(self, model: str, system=None, messages=None, max_tokens=600) -> dict:
         msgs = []
         sys_text = self._system_text(system)
@@ -110,6 +113,7 @@ _providers: list[_Provider] = []
 _initialized = False
 
 
+# Register every configured provider once at startup
 def _init_providers():
     global _providers, _initialized
     if _initialized:

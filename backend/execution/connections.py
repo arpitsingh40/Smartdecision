@@ -13,6 +13,7 @@ from security import current_user
 
 log = logging.getLogger("execution.connections")
 
+# Org-scoped tool connection collection
 CONNECTIONS_COL = _db.org_connections if _db is not None else None
 
 # Ensure collection + indexes
@@ -25,6 +26,7 @@ if CONNECTIONS_COL is not None:
         pass
 
 
+# Current UTC timestamp helper
 def _now():
     return datetime.now(timezone.utc)
 
@@ -52,6 +54,7 @@ def _composio_session():
         return None
 
 
+# List integrations with per-org connection status
 def get_available_integrations(org_id: str = None, category: str = None) -> list:
     """List all available integrations from the catalog, with connection status per org."""
     from execution.catalog import get_toolkits as _catalog_toolkits
@@ -83,6 +86,7 @@ def get_available_integrations(org_id: str = None, category: str = None) -> list
     return sorted(result, key=lambda x: (0 if x["connected"] else 1, -x["tool_count"], x["toolkit"]))
 
 
+# List active connections for an org
 def get_org_connections(org_id: str) -> list:
     """List active connections for an org."""
     if CONNECTIONS_COL is None:
@@ -93,6 +97,7 @@ def get_org_connections(org_id: str) -> list:
     ).sort("connected_at", -1))
 
 
+# Initiate OAuth flow for a toolkit
 def init_connection(org_id: str, toolkit: str, redirect_uri: str = None) -> dict:
     """Initiate OAuth connection for a toolkit. Returns auth_url + connection_id."""
     client = _composio()
@@ -153,6 +158,7 @@ def init_connection(org_id: str, toolkit: str, redirect_uri: str = None) -> dict
         return {"error": f"Could not initiate connection: {str(e)[:200]}"}
 
 
+# Mark pending connection active after OAuth
 def complete_connection(org_id: str, toolkit: str) -> dict:
     """Mark a connection as active after OAuth completes. Composio handles the token exchange."""
     if CONNECTIONS_COL is None:
@@ -180,6 +186,7 @@ def complete_connection(org_id: str, toolkit: str) -> dict:
     return {"toolkit": toolkit, "status": "active"}
 
 
+# Record connection event in audit trail
 def _audit_connection(org_id: str, toolkit: str, connected: bool):
     try:
         from audit import record_tool_connection
@@ -188,6 +195,7 @@ def _audit_connection(org_id: str, toolkit: str, connected: bool):
         pass
 
 
+# Disconnect a toolkit for an org
 def disconnect_toolkit(org_id: str, toolkit: str) -> dict:
     """Disconnect a toolkit for an org."""
     if CONNECTIONS_COL is None:
@@ -200,6 +208,7 @@ def disconnect_toolkit(org_id: str, toolkit: str) -> dict:
     return {"toolkit": toolkit, "status": "disconnected"}
 
 
+# Sync Composio connected accounts into DB
 def refresh_connections_from_composio(org_id: str):
     """Sync active connections from Composio to our DB. Call on startup or periodically."""
     session = _composio_session()
@@ -225,6 +234,7 @@ def refresh_connections_from_composio(org_id: str):
 # Tool suggestion by business function
 # ======================================================================
 
+# Business function to recommended toolkits map
 FUNCTION_TO_TOOLKITS = {
     "sales":        ["hubspot", "salesforce", "gmail", "linkedin", "stripe", "calendly", "outreach", "salesloft", "pipedrive", "zendesk_sell"],
     "marketing":    ["mailchimp", "hubspot", "linkedin", "twitter", "google_analytics", "facebook_ads", "canva", "buffer", "semrush", "google_ads"],
@@ -244,6 +254,7 @@ FUNCTION_TO_TOOLKITS = {
 }
 
 
+# Recommend toolkits for a business function
 def suggest_tools_for_function(function: str, org_id: str = None) -> list:
     """Recommend toolkits for a business function. Flags connected vs suggested."""
     suggested = FUNCTION_TO_TOOLKITS.get(function, FUNCTION_TO_TOOLKITS.get("operations", []))
@@ -262,6 +273,7 @@ def suggest_tools_for_function(function: str, org_id: str = None) -> list:
     return result
 
 
+# Suggest tools to fix at-risk functions
 def suggest_tools_for_at_risk(org_id: str) -> dict:
     """For each at-risk function, suggest tools to connect to fix it."""
     from business_system import get_system_model, FUNCTION_LABELS

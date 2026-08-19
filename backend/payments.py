@@ -28,6 +28,7 @@ from ledger import record_ledger, inc_stats
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 log = logging.getLogger("payments")
 
+# One-time credit packs offered for purchase.
 PACKS = {
     "pack_10": {
         "credits": 10, "amount_inr": 49, "label": "Starter", "tag": None,
@@ -59,13 +60,16 @@ PACKS = {
     },
 }
 
+# Age after which unpaid orders auto-fail.
 STALE_ORDER_MINUTES = int(os.environ.get("ORDER_STALE_MINUTES", "30"))
 
 
+# Whether the payment gateway runs in simulated test mode.
 def _test_mode() -> bool:
     return os.environ.get("ZOHO_TEST_MODE", "true").lower() == "true"
 
 
+# Resolve frontend origin for redirect URLs.
 def _frontend_base(request: Request) -> str:
     return (os.environ.get("FRONTEND_BASE_URL") or request.headers.get("origin") or "").rstrip("/")
 
@@ -74,6 +78,7 @@ def _frontend_base(request: Request) -> str:
 _token_cache = {"token": None, "exp": 0.0}
 
 
+# Fetch cached Zoho OAuth token, refreshing when expiring.
 def _zoho_access_token() -> str:
     if _token_cache["token"] and time.time() < _token_cache["exp"] - 120:
         return _token_cache["token"]
@@ -91,6 +96,7 @@ def _zoho_access_token() -> str:
     return _token_cache["token"]
 
 
+# Thin JSON wrapper around the Zoho Payments REST API.
 def _zoho_api(method: str, path: str, payload: Optional[dict] = None) -> dict:
     base = os.environ.get("ZOHO_API_BASE", "https://payments.zoho.in/api/v1")
     account_id = os.environ["ZOHO_ACCOUNT_ID"]
@@ -163,6 +169,7 @@ def fulfil_order(order_id: str, source: str):
     return order
 
 
+# Mark an unpaid order failed with a reason.
 def _mark_failed(order_id: str, reason: str):
     now = now_utc()
     orders_col.update_one(
@@ -184,16 +191,19 @@ def _expire_stale_for_user(user_id: str):
 
 
 # ----------------------------------------------------------------- endpoints
+# Public list of available credit packs.
 @router.get("/packs")
 def packs():
     return {"packs": [{"pack_id": k, **v} for k, v in PACKS.items()],
             "test_mode": _test_mode(), "currency": "INR"}
 
 
+# Request body for creating a purchase order.
 class OrderIn(BaseModel):
     pack_id: str
 
 
+# Create an order and return its checkout URL.
 @router.post("/create-order")
 def create_order(body: OrderIn, request: Request, user: dict = Depends(current_user)):
     pack = PACKS.get(body.pack_id)
@@ -249,6 +259,7 @@ def create_order(body: OrderIn, request: Request, user: dict = Depends(current_u
         raise HTTPException(502, "Could not start the payment. You were not charged - try again.")
 
 
+# Request body for the test-mode checkout simulation.
 class TestCompleteIn(BaseModel):
     order_id: str
     outcome: str  # success | failure
@@ -325,6 +336,7 @@ def _mask_email(email: str) -> str:
     return local[:keep] + "…@" + domain
 
 
+# Authenticated order status with live verification polling.
 @router.get("/status/{order_id}")
 def order_status(order_id: str, user: dict = Depends(current_user)):
     order = orders_col.find_one({"order_id": order_id, "user_id": user["id"]})
@@ -365,6 +377,7 @@ def order_status(order_id: str, user: dict = Depends(current_user)):
             "test": order.get("test", False), "balance": fresh.get("credits", 0)}
 
 
+# User's recent orders, auto-failing stale ones first.
 @router.get("/history")
 def history(user: dict = Depends(current_user)):
     _expire_stale_for_user(user["id"])
@@ -378,6 +391,7 @@ def history(user: dict = Depends(current_user)):
 
 
 # ----------------------------------------------------------------- webhook (live mode)
+# HMAC-SHA256 signature check with replay protection.
 def _verify_webhook_signature(raw: bytes, header_value: str, key: str) -> bool:
     try:
         parts = dict(p.strip().split("=", 1) for p in header_value.split(","))
@@ -414,6 +428,7 @@ def _find_key(obj, names):
     return None
 
 
+# Zoho webhook endpoint fulfilling or failing orders.
 @router.post("/webhook/zoho")
 async def zoho_webhook(request: Request):
     raw = await request.body()

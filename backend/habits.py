@@ -17,12 +17,14 @@ router = APIRouter(prefix="/api/v1/habits")
 
 FREQUENCIES = ("daily", "weekly", "custom")
 
+# Request schema for creating a habit
 class HabitCreateIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     frequency: str = "daily"
     identity_statement: str = ""
     notes: str = ""
 
+# Request schema for updating a habit
 class HabitUpdateIn(BaseModel):
     title: Optional[str] = None
     frequency: Optional[str] = None
@@ -30,9 +32,11 @@ class HabitUpdateIn(BaseModel):
     notes: Optional[str] = None
     archived: Optional[bool] = None
 
+# Request schema for logging habit completion
 class HabitLogIn(BaseModel):
     note: str = ""
 
+# List user's habits with computed views
 @router.get("")
 def list_habits(user: dict = Depends(current_user)):
     items = list(habits_col.find({"user_id": user["id"]}).sort("created_at", -1))
@@ -42,6 +46,7 @@ def list_habits(user: dict = Depends(current_user)):
         out.append(_view(h, now))
     return {"habits": out}
 
+# Create a new habit
 @router.post("")
 def create_habit(body: HabitCreateIn, user: dict = Depends(current_user)):
     doc = {
@@ -60,6 +65,7 @@ def create_habit(body: HabitCreateIn, user: dict = Depends(current_user)):
     inc_stats({"habits_created": 1})
     return _view(doc, now_utc())
 
+# Fetch a single habit by ID
 @router.get("/{habit_id}")
 def get_habit(habit_id: str, user: dict = Depends(current_user)):
     h = habits_col.find_one({"id": habit_id, "user_id": user["id"]})
@@ -67,6 +73,7 @@ def get_habit(habit_id: str, user: dict = Depends(current_user)):
         raise HTTPException(404, "Habit not found")
     return _view(h, now_utc())
 
+# Update habit fields
 @router.patch("/{habit_id}")
 def update_habit(habit_id: str, body: HabitUpdateIn, user: dict = Depends(current_user)):
     h = habits_col.find_one({"id": habit_id, "user_id": user["id"]})
@@ -83,6 +90,7 @@ def update_habit(habit_id: str, body: HabitUpdateIn, user: dict = Depends(curren
     fresh = habits_col.find_one({"id": habit_id})
     return _view(fresh, now_utc())
 
+# Log today's habit completion
 @router.post("/{habit_id}/log")
 def log_habit(habit_id: str, body: HabitLogIn, user: dict = Depends(current_user)):
     h = habits_col.find_one({"id": habit_id, "user_id": user["id"]})
@@ -117,6 +125,7 @@ def log_habit(habit_id: str, body: HabitLogIn, user: dict = Depends(current_user
     inc_stats({"habit_logs": 1})
     return _view(fresh, now)
 
+# Delete a habit
 @router.delete("/{habit_id}")
 def delete_habit(habit_id: str, user: dict = Depends(current_user)):
     r = habits_col.delete_one({"id": habit_id, "user_id": user["id"]})
@@ -124,6 +133,7 @@ def delete_habit(habit_id: str, user: dict = Depends(current_user)):
         raise HTTPException(404, "Habit not found")
     return {"ok": True}
 
+# Build habit API view with streak stats
 def _view(h, now):
     if not h:
         return None
@@ -148,6 +158,7 @@ def _view(h, now):
         "created_at": h.get("created_at").isoformat() if isinstance(h.get("created_at"), datetime) else h.get("created_at"),
     }
 
+# Normalize datetime to date-only
 def _date_only(dt):
     if isinstance(dt, str):
         try:
@@ -156,6 +167,7 @@ def _date_only(dt):
             return datetime.min
     return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
+# Check if habit was logged today
 def _is_today(logs, now):
     today = _date_only(now)
     for l in logs:
@@ -163,6 +175,7 @@ def _is_today(logs, now):
             return True
     return False
 
+# Recompute streak from habit logs
 def _recalc_streak(habit_id, frequency, logs):
     if not logs:
         return

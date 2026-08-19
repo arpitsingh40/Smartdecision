@@ -14,10 +14,12 @@ from typing import Optional
 log = logging.getLogger("execution.collector")
 
 
+# ISO timestamp helper
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+# Package execution result into evidence record
 def collect_execution_result(
     action_result: dict,
     thread_id: Optional[str] = None,
@@ -68,6 +70,7 @@ def collect_execution_result(
     return evidence
 
 
+# Aggregate evidence into verification summary
 def execution_summary(evidence_records: list) -> dict:
     """Aggregate summary for the Verification Engine and Cockpit."""
     total = len(evidence_records)

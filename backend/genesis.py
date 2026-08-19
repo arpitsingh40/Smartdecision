@@ -21,6 +21,7 @@ from llm_client import client, _extract_json, ULTRA_MODEL, PRIMARY_MODEL
 
 log = logging.getLogger("genesis")
 
+# Master prompt for all genesis generation calls
 GENESIS_SYSTEM = """You are the Genesis Engine of SmartDecigen. Your job is to take a founder's raw business description and transform it into the structural blueprint for a company.
 
 You think like a world-class startup advisor who has seen thousands of companies succeed and fail. Your output must be specific, grounded in the founder's actual situation, and immediately actionable — not generic, not aspirational.

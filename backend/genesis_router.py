@@ -27,6 +27,7 @@ log = logging.getLogger("genesis.router")
 router = APIRouter(prefix="/api/genesis")
 
 
+# Current UTC timestamp as ISO string
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
@@ -38,6 +39,7 @@ def _get_pipe(uid: str) -> Optional[dict]:
     return genesis_pipelines_col.find_one({"user_id": uid}, {"_id": 0})
 
 
+# Upsert pipeline state in Mongo
 def _save_pipe(uid: str, pipe: dict) -> None:
     if genesis_pipelines_col is None:
         return
@@ -45,6 +47,7 @@ def _save_pipe(uid: str, pipe: dict) -> None:
     genesis_pipelines_col.update_one({"user_id": uid}, {"$set": pipe}, upsert=True)
 
 
+# Return the authenticated user
 def _require_user(user: dict):
     return user
 
@@ -53,9 +56,11 @@ def _require_user(user: dict):
 class StartIn(BaseModel):
     vision: str = Field(min_length=10, max_length=5000)
 
+# Payload for challenge-question answers
 class AnswerIn(BaseModel):
     answers: dict = Field(default_factory=dict)
 
+# Payload for approved mission fields
 class MissionApprovalIn(BaseModel):
     mission: dict
     north_star: str = ""
@@ -64,6 +69,7 @@ class MissionApprovalIn(BaseModel):
     priorities: list[str] = Field(default_factory=list)
     decision_rules: str = ""
 
+# Payload for approved org structure
 class OrgApprovalIn(BaseModel):
     divisions: list[dict] = Field(default_factory=list)
     culture: list[dict] = Field(default_factory=list)

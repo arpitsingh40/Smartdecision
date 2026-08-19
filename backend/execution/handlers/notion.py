@@ -1,9 +1,11 @@
 import os, time, logging, requests
 from . import register
 log = logging.getLogger("execution.handlers.notion")
+# Notion tool definitions
 TOOLS = [
     {"name": "NOTION_CREATE_PAGE", "description": "Create a Notion page", "inputSchema": {"parent_id": "string", "title": "string"}},
 ]
+# Execute Notion API tool call
 @register("NOTION")
 def handle(tool_name: str, args: dict) -> dict:
     token = os.environ.get("NOTION_TOKEN", "")

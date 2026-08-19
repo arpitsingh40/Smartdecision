@@ -23,6 +23,7 @@ from llm_client import client as llm_client, _extract_json, ULTRA_MODEL
 
 log = logging.getLogger("capabilities")
 
+# In-memory store of active capability builds
 BUILDS = {}  # in-memory store for active builds (persist to DB for production)
 
 
@@ -34,6 +35,7 @@ def _now():
 # Capability Registry — 15 types, extensible
 # ======================================================================
 
+# Registry of all capability types with prompts and deploy configs
 CAPABILITIES = {
     "website": {
         "label": "Website / Landing Page",
@@ -473,6 +475,7 @@ def _deploy_to_gmail(artifact: dict, name: str, _: str = "") -> dict:
             "note": "Content ready. Send via Gmail connection or copy to send manually."}
 
 
+# Map deploy connector names to implementations
 DEPLOY_FUNCTIONS = {
     "_deploy_to_github": _deploy_to_github,
     "_deploy_to_notion": _deploy_to_notion,

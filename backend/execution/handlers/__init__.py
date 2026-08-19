@@ -8,21 +8,26 @@ from pathlib import Path
 
 log = logging.getLogger("execution.handlers")
 
+# Service prefix to handler function registry
 _registry: dict = {}
 
+# Decorator registering a service handler
 def register(service_prefix: str):
     def decorator(fn):
         _registry[service_prefix.upper()] = fn
         return fn
     return decorator
 
+# Look up handler by tool name prefix
 def get_handler(tool_name: str):
     prefix = tool_name.split("_")[0].upper() if "_" in tool_name else tool_name.upper()
     return _registry.get(prefix)
 
+# Return full handler registry copy
 def registered_handlers() -> dict:
     return dict(_registry)
 
+# Collect tool lists from all handlers
 def all_tools() -> list:
     tools = []
     for prefix, fn in _registry.items():
@@ -30,6 +35,7 @@ def all_tools() -> list:
             tools.extend(fn.tool_list)
     return tools
 
+# Auto-import all handler modules in package
 def _discover():
     handlers_dir = Path(__file__).parent
     for f in sorted(handlers_dir.glob("*.py")):

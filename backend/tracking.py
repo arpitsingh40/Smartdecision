@@ -18,6 +18,7 @@ router = APIRouter(prefix="/api/track", tags=["tracking"])
 log = logging.getLogger("tracking")
 
 
+# Extract real client IP from proxy headers
 def client_ip(request: Request) -> str:
     xff = request.headers.get("x-forwarded-for", "")
     if xff:
@@ -25,6 +26,7 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
+# Check if IP is private or loopback
 def _is_private(ip: str) -> bool:
     try:
         return ipaddress.ip_address(ip).is_private or ipaddress.ip_address(ip).is_loopback
@@ -58,6 +60,7 @@ def geo_lookup(ip: str) -> dict:
     return doc
 
 
+# Request body for session heartbeat
 class SessionIn(BaseModel):
     session_id: Optional[str] = None
 

@@ -7,20 +7,24 @@ from security import current_user
 from capabilities import (CAPABILITIES, route_capability, execute_capability,
                           iterate_capability, BUILDS)
 
+# Capability platform API routes
 router = APIRouter(prefix="/api/capabilities", tags=["capabilities"])
 
 
+# Request body for building a capability
 class BuildIn(BaseModel):
     description: str = Field(min_length=10, max_length=2000)
     type: Optional[str] = Field(default=None, max_length=50)
     deploy: bool = Field(default=True)
 
 
+# Request body for iterating a build
 class IterateIn(BaseModel):
     build_id: str = Field(min_length=5)
     feedback: str = Field(min_length=5, max_length=1000)
 
 
+# List all capability types
 @router.get("")
 def list_capabilities(user: dict = Depends(current_user)):
     """List all 15 capability types with trigger keywords."""
@@ -37,6 +41,7 @@ def list_capabilities(user: dict = Depends(current_user)):
     return {"types": len(result), "capabilities": result}
 
 
+# Generate and deploy a capability
 @router.post("/build")
 def create_capability(body: BuildIn, user: dict = Depends(current_user)):
     """Generate and deploy a capability from description.
@@ -47,6 +52,7 @@ def create_capability(body: BuildIn, user: dict = Depends(current_user)):
     return result
 
 
+# Iterate on an existing build
 @router.post("/iterate")
 def iterate_capability_endpoint(body: IterateIn, user: dict = Depends(current_user)):
     """Iterate on an existing build with feedback."""
@@ -56,6 +62,7 @@ def iterate_capability_endpoint(body: IterateIn, user: dict = Depends(current_us
     return result
 
 
+# List recent builds
 @router.get("/builds")
 def list_builds(user: dict = Depends(current_user)):
     """List recent capability builds."""
@@ -63,6 +70,7 @@ def list_builds(user: dict = Depends(current_user)):
     return {"builds": builds, "count": len(builds)}
 
 
+# Test capability routing for a message
 @router.post("/route")
 def route_message(body: dict, user: dict = Depends(current_user)):
     """Test: what capability type would this message route to?"""

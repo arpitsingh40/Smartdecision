@@ -16,12 +16,14 @@ from db import db, orgs_col, tasks_col, members_col, threads_col
 
 log = logging.getLogger("salaar.insight")
 
+# SALAAR's MongoDB collections for threats, actions, people, memory.
 SALAAR_THREATS_COL = db["salaar_threats"] if db is not None else None
 SALAAR_ACTIONS_COL = db["salaar_actions"] if db is not None else None
 SALAAR_PEOPLE_COL = db["salaar_people"] if db is not None else None
 SALAAR_MEMORY_COL = db["salaar_memory"] if db is not None else None
 
 
+# Current UTC timestamp helper.
 def _now():
     return datetime.now(timezone.utc)
 

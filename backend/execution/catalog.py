@@ -9,13 +9,16 @@ from typing import Optional
 
 log = logging.getLogger("execution.catalog")
 
+# Catalog file location next to backend
 CATALOG_PATH = Path(__file__).parent.parent / "composio_catalog.json"
 
+# Lazy-loaded catalog caches
 _toolkits: dict = {}
 _capabilities: dict = {}
 _loaded = False
 
 
+# Load catalog JSON into toolkit indexes
 def _load():
     global _toolkits, _capabilities, _loaded
     if _loaded:
@@ -43,11 +46,13 @@ def _load():
         log.warning(f"Failed to load catalog: {e}")
 
 
+# Return raw toolkits mapping
 def get_toolkits(refresh: bool = False) -> dict:
     _load()
     return _toolkits
 
 
+# List tools with schemas, optionally per toolkit
 def list_tools(toolkit: Optional[str] = None, limit: int = 50) -> list:
     _load()
     if toolkit:
@@ -75,6 +80,7 @@ def list_tools(toolkit: Optional[str] = None, limit: int = 50) -> list:
     return result
 
 
+# Search tools by name or description substring
 def search_tools(query: str, limit: int = 10) -> list:
     _load()
     q = query.lower()
@@ -94,6 +100,7 @@ def search_tools(query: str, limit: int = 10) -> list:
     return result
 
 
+# List toolkit slugs with native handlers
 def toolkits_with_handlers() -> list:
     from .handlers import registered_handlers
     return list(registered_handlers().keys())

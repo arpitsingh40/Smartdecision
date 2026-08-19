@@ -9,6 +9,7 @@ import pytest
 
 import pytest
 
+# Resolve backend base URL from env or frontend .env
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
     try:
@@ -26,6 +27,7 @@ if not BASE_URL:
 API = f"{BASE_URL}/api"
 
 
+# Helper that signs up a fresh QA user
 def _signup():
     ts = int(time.time() * 1000)
     email = f"qa_{ts}@test.com"
@@ -34,12 +36,14 @@ def _signup():
     return email, r.json()
 
 
+# Fixture with a freshly signed-up user token
 @pytest.fixture(scope="module")
 def fresh_user():
     email, data = _signup()
     return {"email": email, "token": data["token"], "user": data["user"]}
 
 
+# Fixture returning Authorization headers
 @pytest.fixture
 def auth_headers(fresh_user):
     return {"Authorization": f"Bearer {fresh_user['token']}"}
@@ -97,6 +101,7 @@ def test_questionnaire_validation_short_field(auth_headers):
     assert r.status_code == 422
 
 
+# Missing required field triggers 422
 def test_questionnaire_validation_missing_field(auth_headers):
     r = requests.post(f"{API}/user/questionnaire", headers=auth_headers, json={
         "dream": "abcd", "capacity": "abcd", "advantage": "abcd",
@@ -121,6 +126,7 @@ def test_first_completion_grants_100_credits(fresh_user, auth_headers):
     assert d["answers"]["dream"].startswith("Build a calm")
 
 
+# Re-submitting the questionnaire adds no more credits
 def test_second_post_is_idempotent(auth_headers):
     payload = {
         "dream": "Updated dream text here.",
@@ -140,6 +146,7 @@ def test_second_post_is_idempotent(auth_headers):
     assert d["answers"]["dream"] == "Updated dream text here."
 
 
+# Completed questionnaire is reflected in GET
 def test_get_after_completion_shows_completed_and_answers(auth_headers):
     r = requests.get(f"{API}/user/questionnaire", headers=auth_headers, timeout=10)
     assert r.status_code == 200
@@ -148,6 +155,7 @@ def test_get_after_completion_shows_completed_and_answers(auth_headers):
     assert d["answers"]["dream"] == "Updated dream text here."
 
 
+# /auth/me reflects questionnaire completion
 def test_auth_me_after_completion(auth_headers):
     r = requests.get(f"{API}/auth/me", headers=auth_headers, timeout=10)
     assert r.status_code == 200
@@ -171,6 +179,7 @@ def test_create_goal_after_questionnaire(auth_headers):
     pytest.thread_id = d["thread"]["thread_id"]
 
 
+# Turns still work after questionnaire completion
 def test_turn_after_questionnaire(auth_headers):
     thread_id = getattr(pytest, "thread_id", None)
     if not thread_id:

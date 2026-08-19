@@ -31,32 +31,39 @@ log = logging.getLogger("execution.router")
 router = APIRouter(prefix="/api/execution")
 
 
+# Request body for connection initiation
 class ConnectIn(BaseModel):
     toolkit: str = Field(min_length=2, max_length=100)
     redirect_uri: Optional[str] = Field(default=None, max_length=500)
 
 
+# Request body for completing a connection
 class CompleteIn(BaseModel):
     toolkit: str = Field(min_length=2, max_length=100)
 
 
+# Request body for disconnecting a toolkit
 class DisconnectIn(BaseModel):
     toolkit: str = Field(min_length=2, max_length=100)
 
 
+# Fetch active membership record for user
 def _active_membership(user: dict) -> Optional[dict]:
     return members_col.find_one({"user_id": user["id"], "status": "active"})
 
 
+# Resolve user's org id from membership
 def _org_for_user(user: dict) -> Optional[str]:
     m = _active_membership(user)
     return m["org_id"] if m else None
 
 
+# Resolve user's department function
 def _department_for_user(user: dict) -> str:
     return (user.get("function") or "general")
 
 
+# MCP health and connection status
 @router.get("/status")
 def execution_status(user: dict = Depends(current_user)):
     """MCP health: CLI installed? logged in? toolkits connected?"""
@@ -76,6 +83,7 @@ def execution_status(user: dict = Depends(current_user)):
     }
 
 
+# List tools available to user's department
 @router.get("/tools")
 def get_tools(query: Optional[str] = None, user: dict = Depends(current_user)):
     """List tools available to this user's department."""
@@ -97,6 +105,7 @@ def get_tools(query: Optional[str] = None, user: dict = Depends(current_user)):
     return {"tools": tools, "count": len(tools), "mcp_enabled": True, "authenticated": True}
 
 
+# Execute a full tool plan (owner-only)
 @router.post("/execute")
 def execute(body: dict, user: dict = Depends(current_user)):
     """Execute a plan of tool calls. Owner-only."""
@@ -129,6 +138,7 @@ def execute(body: dict, user: dict = Depends(current_user)):
     }
 
 
+# Execute a single named tool
 @router.post("/tools/{tool_name}")
 def execute_single_tool(tool_name: str, body: dict, user: dict = Depends(current_user)):
     """Execute a single tool."""
@@ -154,6 +164,7 @@ def execute_single_tool(tool_name: str, body: dict, user: dict = Depends(current
     }
 
 
+# List connected toolkits
 @router.get("/toolkits")
 def get_linked_toolkits(user: dict = Depends(current_user)):
     """List connected toolkits (Gmail, GitHub, etc)."""
@@ -166,6 +177,7 @@ def get_linked_toolkits(user: dict = Depends(current_user)):
 # Connection management endpoints
 # ======================================================================
 
+# List available integrations with status
 @router.get("/connections")
 def list_connections(user: dict = Depends(current_user)):
     """List all available integrations (1,403 toolkits) with connection status."""
@@ -186,6 +198,7 @@ def list_connections(user: dict = Depends(current_user)):
     }
 
 
+# Quick connection status and suggestions
 @router.get("/connections/status")
 def connection_status(user: dict = Depends(current_user)):
     """Quick status: what's connected, what's suggested."""
@@ -202,6 +215,7 @@ def connection_status(user: dict = Depends(current_user)):
     }
 
 
+# Recommend tools for a business function
 @router.get("/connections/suggest/{function}")
 def suggest_for_function(function: str, user: dict = Depends(current_user)):
     """Recommend tools for a specific business function."""
@@ -210,6 +224,7 @@ def suggest_for_function(function: str, user: dict = Depends(current_user)):
     return {"function": function, "tools": suggest_tools_for_function(function, org_id)}
 
 
+# Initiate OAuth connection for a toolkit
 @router.post("/connections/connect")
 def connect_toolkit(body: ConnectIn, user: dict = Depends(current_user)):
     """Initiate OAuth connection for a toolkit. Returns auth URL."""
@@ -235,6 +250,7 @@ def connect_toolkit(body: ConnectIn, user: dict = Depends(current_user)):
     }
 
 
+# Complete OAuth connection callback
 @router.post("/connections/complete")
 def complete_toolkit_connection(body: CompleteIn, user: dict = Depends(current_user)):
     """Mark a toolkit connection as complete after OAuth. Called by frontend/callback."""
@@ -251,6 +267,7 @@ def complete_toolkit_connection(body: CompleteIn, user: dict = Depends(current_u
     return result
 
 
+# Disconnect a toolkit for the org
 @router.post("/connections/disconnect")
 def disconnect_toolkit_endpoint(body: DisconnectIn, user: dict = Depends(current_user)):
     """Disconnect a toolkit for this org."""
@@ -263,6 +280,7 @@ def disconnect_toolkit_endpoint(body: DisconnectIn, user: dict = Depends(current
     return disconnect_toolkit(m["org_id"], body.toolkit) if m else {"error": "No org"}
 
 
+# Sync Composio connections into DB
 @router.post("/connections/sync")
 def sync_connections(user: dict = Depends(current_user)):
     """Sync active connections from Composio to our DB."""
@@ -278,6 +296,7 @@ def sync_connections(user: dict = Depends(current_user)):
 # Workflow endpoints
 # ======================================================================
 
+# List workflow templates grouped by function
 @router.get("/workflows")
 def list_workflows(user: dict = Depends(current_user)):
     """List all available workflow templates grouped by function."""
@@ -289,6 +308,7 @@ def list_workflows(user: dict = Depends(current_user)):
     return {"functions": len(result), "total_workflows": sum(len(w) for w in result.values()), "workflows": result}
 
 
+# Suggest workflows matching a message
 @router.post("/workflows/suggest")
 def suggest_workflows(body: dict, user: dict = Depends(current_user)):
     """Suggest workflows matching a user message."""
@@ -301,6 +321,7 @@ def suggest_workflows(body: dict, user: dict = Depends(current_user)):
                           "risk": m["risk"]} for m in matches]}
 
 
+# Execute a workflow by id (owner-only)
 @router.post("/workflows/execute")
 def execute_workflow(body: dict, user: dict = Depends(current_user)):
     """Execute a workflow by ID. Owner-only."""

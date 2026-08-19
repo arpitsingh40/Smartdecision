@@ -13,10 +13,12 @@ from typing import Optional, Any
 from pydantic import BaseModel, Field
 
 
+# Generate a collision-resistant ID with an optional prefix.
 def new_id(prefix: str = "") -> str:
     return f"{prefix}{uuid.uuid4().hex[:16]}"
 
 
+# Current UTC timestamp, timezone-aware.
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -32,6 +34,7 @@ class AuthorityLevel(str, Enum):
     L5_RESTRICTED = "L5"
 
 
+# Lifecycle states an executive passes through.
 class ExecutiveStatus(str, Enum):
     INSTANTIATED = "instantiation"
     PROBATION = "probation"
@@ -42,12 +45,14 @@ class ExecutiveStatus(str, Enum):
     MERGED = "merged"
 
 
+# Whether an action can be undone once executed.
 class Reversibility(str, Enum):
     REVERSIBLE = "REVERSIBLE"
     IRREVERSIBLE = "IRREVERSIBLE"
     PARTIALLY_REVERSIBLE = "PARTIALLY_REVERSIBLE"
 
 
+# Result states recorded as evidence for learning.
 class OutcomeStatus(str, Enum):
     SUCCESS = "SUCCESS"
     FAILURE = "FAILURE"
@@ -55,12 +60,14 @@ class OutcomeStatus(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+# How quickly this data becomes stale.
 class Volatility(str, Enum):
     STABLE = "STABLE"
     FLUID = "FLUID"
     VOLATILE = "VOLATILE"
 
 
+# Which system layer a learned pattern adjusts.
 class LearningImpact(str, Enum):
     TOOL_SCORE = "TOOL_SCORE"
     CAPABILITY_ESTIMATE = "CAPABILITY_ESTIMATE"
@@ -79,6 +86,7 @@ class Capability(BaseModel):
     required_authority: AuthorityLevel = AuthorityLevel.L1_EXECUTE
 
 
+# A single executable step with authority and tool bindings.
 class Action(BaseModel):
     id: str = Field(default_factory=lambda: new_id("act_"))
     name: str
@@ -87,6 +95,7 @@ class Action(BaseModel):
     tool_bindings: list[ToolBinding] = Field(default_factory=list)
 
 
+# Connection profile between an action and a tool.
 class ToolBinding(BaseModel):
     toolkit_slug: str
     tool_slug: str
@@ -99,6 +108,7 @@ class ToolBinding(BaseModel):
     is_connected: bool = False
 
 
+# An external tool available for execution.
 class Tool(BaseModel):
     slug: str
     name: str
@@ -107,6 +117,7 @@ class Tool(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict)
 
 
+# Measurable target used to grade goals.
 class KPI(BaseModel):
     name: str
     target: str = ""
@@ -115,12 +126,14 @@ class KPI(BaseModel):
     trend: str = "stable"
 
 
+# Money allocated, spent, and remaining.
 class Budget(BaseModel):
     allocated: float = 0.0
     spent: float = 0.0
     remaining: float = 0.0
 
 
+# Track record that drives executive promotion.
 class Experience(BaseModel):
     projects_led: int = 0
     projects_completed: int = 0
@@ -130,6 +143,7 @@ class Experience(BaseModel):
     total_impact: float = 0.0
 
 
+# Full profile of an autonomous executive.
 class ExecutiveState(BaseModel):
     id: str = Field(default_factory=lambda: new_id("exec_"))
     org_id: str = ""
@@ -152,6 +166,7 @@ class ExecutiveState(BaseModel):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+# A functional unit staffed by executives.
 class Division(BaseModel):
     id: str = Field(default_factory=lambda: new_id("div_"))
     name: str
@@ -160,6 +175,7 @@ class Division(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
 
 
+# A strategic objective with KPIs and projects.
 class Goal(BaseModel):
     id: str = Field(default_factory=lambda: new_id("goal_"))
     description: str
@@ -171,6 +187,7 @@ class Goal(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+# Time-boxed work item owned by an executive.
 class Project(BaseModel):
     id: str = Field(default_factory=lambda: new_id("proj_"))
     name: str
@@ -182,6 +199,7 @@ class Project(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+# Smallest unit of execution, traceable by ID.
 class Task(BaseModel):
     id: str = Field(default_factory=lambda: new_id("task_"))
     description: str
@@ -195,6 +213,7 @@ class Task(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+# Annual theme linking a year to its goals.
 class Strategy(BaseModel):
     year: int = utcnow().year
     theme: str = ""
@@ -202,6 +221,7 @@ class Strategy(BaseModel):
     goals: list[Goal] = Field(default_factory=list)
 
 
+# Top-level container holding the whole organization.
 class Mission(BaseModel):
     id: str = Field(default_factory=lambda: new_id("mission_"))
     title: str
@@ -226,6 +246,7 @@ class DecisionLog(BaseModel):
     made_at: datetime = Field(default_factory=utcnow)
 
 
+# One auditable event recorded along the execution chain.
 class TraceStep(BaseModel):
     layer: str
     entity_id: str
@@ -234,6 +255,7 @@ class TraceStep(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+# Execution chain linking every layer from mission to tool.
 class Trace(BaseModel):
     trace_id: str = Field(default_factory=lambda: new_id("trace_"))
     mission_id: Optional[str] = None
@@ -247,6 +269,7 @@ class Trace(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+# Measured outcome used to update learning models.
 class Evidence(BaseModel):
     id: str = Field(default_factory=lambda: new_id("ev_"))
     trace_id: Optional[str] = None
@@ -270,6 +293,7 @@ class Evidence(BaseModel):
                 OutcomeStatus.PARTIAL: "done", OutcomeStatus.UNKNOWN: "unknown"}
         return _map.get(self.outcome, "unknown")
 
+    # Serialize with computed status and raw outcome enum included.
     def model_dump(self, **kwargs) -> dict:
         data = super().model_dump(**kwargs)
         data["status"] = self.status
@@ -278,6 +302,7 @@ class Evidence(BaseModel):
         return data
 
 
+# A derived pattern applied to improve the system.
 class LearningEvent(BaseModel):
     id: str = Field(default_factory=lambda: new_id("learn_"))
     derived_from: list[str] = Field(default_factory=list)
@@ -301,6 +326,7 @@ class ExecutionAction(BaseModel):
     trace_id: Optional[str] = None
 
 
+# Ordered list of tool actions to achieve a goal.
 class ExecutionPlan(BaseModel):
     goal: str = ""
     mission_id: Optional[str] = None
@@ -310,6 +336,7 @@ class ExecutionPlan(BaseModel):
     trace_id: str = Field(default_factory=lambda: new_id("trace_"))
 
 
+# Outcome report for one executed action.
 class ExecutionResult(BaseModel):
     execution_id: str = Field(default_factory=lambda: new_id("exec_"))
     plan: ExecutionPlan = Field(default_factory=ExecutionPlan)

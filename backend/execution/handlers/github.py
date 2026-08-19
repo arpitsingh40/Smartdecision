@@ -9,12 +9,14 @@ from . import register
 
 log = logging.getLogger("execution.handlers.github")
 
+# GitHub tool definitions
 TOOLS = [
     {"name": "GITHUB_CREATE_ISSUE", "description": "Create a GitHub issue", "inputSchema": {"repo": "string", "title": "string", "body": "string"}},
     {"name": "GITHUB_LIST_ISSUES", "description": "List GitHub issues", "inputSchema": {"repo": "string", "state": "string"}},
 ]
 
 
+# Execute GitHub API tool call
 @register("GITHUB")
 def handle(tool_name: str, args: dict) -> dict:
     token = os.environ.get("GITHUB_TOKEN", "")

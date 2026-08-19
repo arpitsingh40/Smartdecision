@@ -3,6 +3,7 @@ import pytest
 from datetime import datetime, timezone
 
 
+# Set default env vars for every test run
 @pytest.fixture(autouse=True)
 def setup_env():
     os.environ.setdefault("JWT_SECRET", "test-secret")
@@ -14,6 +15,7 @@ def setup_env():
     yield
 
 
+# Fixture with a minimal active thread document
 @pytest.fixture
 def sample_thread():
     return {
@@ -33,6 +35,7 @@ def sample_thread():
     }
 
 
+# Fixture with a minimal user document
 @pytest.fixture
 def sample_user():
     return {
@@ -46,6 +49,7 @@ def sample_user():
     }
 
 
+# Fixture with sample substrate events
 @pytest.fixture
 def sample_events():
     return [

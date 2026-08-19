@@ -59,6 +59,7 @@ from audit import ensure_audit_startup
 from salaar import generate_salaar_brief
 from salaar.causal import build_actor_map, simulate_causal_chain, execute_chain_step
 
+# Turn cost and reserve settings for credit billing
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
 ULTRA_TURN_COST = int(os.environ.get("ULTRA_TURN_COST", "10"))
 SIGNUP_CREDITS = int(os.environ.get("SIGNUP_CREDITS", "100"))
@@ -69,11 +70,13 @@ ASSIST_RESERVE = int(os.environ.get("ASSIST_RESERVE", "10"))
 TURN_RESERVE_VISION = int(os.environ.get("TURN_RESERVE_VISION", "40"))
 
 
+# Compute credit cost from token usage
 def token_cost(tokens_in: int, tokens_out: int) -> int:
     total = (tokens_in or 0) + (tokens_out or 0)
     return max(1, math.ceil(total / 1000) * CREDITS_PER_1K_TOKENS)
 
 
+# Charge tokens and credits after a turn
 def deduct_usage(user_id: str, tokens_in: int, tokens_out: int, cost: int):
     try:
         deduct_tokens(user_id, tokens_in, tokens_out)
@@ -86,6 +89,7 @@ def deduct_usage(user_id: str, tokens_in: int, tokens_out: int, cost: int):
 
 from ratelimit import general_limiter, strict_limiter
 
+# Enforce a request-rate limit for a key
 def _rate_limit(key: str, max_reqs: int = 60, window: float = 60.0):
     limiter = strict_limiter if max_reqs < 60 else general_limiter
     limiter.check(key)
@@ -95,6 +99,7 @@ import re as _re
 _XSS_PAT = _re.compile(r'(?:<[^>]*\s*(?:on\w+\s*=|javascript\s*:|data\s*:)|<script\b|<iframe\b|<object\b|<embed\b)', _re.I)
 
 
+# App startup/shutdown: init DB, jobs, and scheduler
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     if os.environ.get("MONGO_URL"):
@@ -135,11 +140,13 @@ async def _lifespan(app: FastAPI):
     scheduler.shutdown(wait=False) if scheduler.running else None
 
 
+# Create the FastAPI application instance
 app = FastAPI(title="SmartDecigen Deep Discussion Engine",
               docs_url=None if os.environ.get("DISABLE_DOCS") else "/docs",
               redoc_url=None if os.environ.get("DISABLE_DOCS") else "/redoc",
               lifespan=_lifespan)
 
+# WWW redirect, XSS scan, and security headers
 @app.middleware("http")
 async def _security_middleware(request: Request, call_next):
     host = request.headers.get("host", "").lower().split(":")[0]
@@ -168,9 +175,11 @@ v1 = APIRouter(prefix="/api/v1")  # Ch.54: versioned API — all new endpoints g
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("sdg")
 
+# Current UTC timestamp helper
 def now_utc():
     return datetime.now(timezone.utc)
 
+# Strip _id and ISO-format datetimes for JSON
 def serialize(doc):
     if isinstance(doc, dict):
         return {k: serialize(v) for k, v in doc.items() if k != "_id"}
@@ -180,25 +189,30 @@ def serialize(doc):
         return doc.isoformat()
     return doc
 
+# Coerce naive datetimes to UTC-aware
 def as_aware(dt):
     if dt and dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
 
+# Signup request payload
 class SignupIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     name: str = ""
     ref: str = ""
 
+# Login request payload
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
 
+# Goal-thread creation payload
 class GoalIn(BaseModel):
     title: str = Field(min_length=3, max_length=200)
     why_now: str = Field(min_length=3, max_length=2000)
 
+# Discussion turn payload with optional attachment
 class TurnIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     mode: str = "normal"
@@ -207,15 +221,18 @@ class TurnIn(BaseModel):
     attachment_filename: Optional[str] = None
     attachment_mime: Optional[str] = None
 
+# Thread status change payload
 class StatusIn(BaseModel):
     status: str
 
 
+# Public pricing/config settings
 @api.get("/config")
 async def public_config():
     return {"signup_credits": int(os.environ.get("SIGNUP_CREDITS", 100))}
 
 
+# Create an account, org, and agents
 @api.post("/auth/signup")
 async def signup(body: SignupIn, request: Request):
     _rate_limit(f"signup:{client_ip(request)}", max_reqs=5, window=300.0)
@@ -290,6 +307,7 @@ async def signup(body: SignupIn, request: Request):
     set_auth_cookie(resp, jwt_str)
     return resp
 
+# Authenticate and issue a session cookie
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
     _rate_limit(f"login:{client_ip(request)}", max_reqs=10, window=300.0)
@@ -306,11 +324,13 @@ async def login(body: LoginIn, request: Request):
     set_auth_cookie(resp, jwt_str)
     return resp
 
+# Return the authenticated user's profile
 @api.get("/auth/me")
 async def me(user: dict = Depends(current_user_async)):
     return {"id": user["id"], "phone": user.get("phone", ""), "email": user.get("email", ""), "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}
 
 
+# Revoke the session token and clear cookie
 @api.post("/auth/logout")
 async def logout(request: Request, user: dict = Depends(current_user_async)):
     token = request.cookies.get("sdg_token")
@@ -329,6 +349,7 @@ async def logout(request: Request, user: dict = Depends(current_user_async)):
     return resp
 
 
+# Run one engine turn and persist thread state
 def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
                  intent_override: str = None, attachment: Optional[dict] = None,
                  attachment_preview: Optional[dict] = None):
@@ -448,6 +469,7 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
     return out, intent, model, latency, usage
 
 
+# Open a new goal thread with first turn
 @api.post("/goals")
 async def create_goal(body: GoalIn, request: Request, user: dict = Depends(current_user_async)):
     _rate_limit(f"goal:{user['id']}", max_reqs=5, window=300.0)
@@ -507,6 +529,7 @@ async def create_goal(body: GoalIn, request: Request, user: dict = Depends(curre
             "cost": actual, "tokens": usage["input_tokens"] + usage["output_tokens"],
             "token_usage": token_budget}
 
+# List threads plus momentum stats
 @api.get("/goals")
 async def list_goals(user: dict = Depends(current_user_async)):
     now = now_utc()
@@ -534,6 +557,7 @@ async def list_goals(user: dict = Depends(current_user_async)):
     return {"goals": items, "momentum": {"kept_promises": kept, "turns_this_week": turns_week,
                                          "avg_consistency": avg_consistency}}
 
+# Fetch a thread with re-engagement line
 @api.get("/threads/{thread_id}")
 async def get_thread(thread_id: str, user: dict = Depends(current_user_async)):
     t = await async_threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
@@ -562,6 +586,7 @@ async def get_thread(thread_id: str, user: dict = Depends(current_user_async)):
             "action_overdue": action_overdue,
             "hours_since_turn": round(hours_since) if hours_since is not None else None}
 
+# Run a discussion turn with credit accounting
 @api.post("/threads/{thread_id}/turn")
 async def turn(thread_id: str, body: TurnIn, request: Request, background: BackgroundTasks, user: dict = Depends(current_user_async)):
     _rate_limit(f"turn:{user['id']}", max_reqs=15, window=60.0)
@@ -647,6 +672,7 @@ async def turn(thread_id: str, body: TurnIn, request: Request, background: Backg
             "had_attachment": bool(attachment),
             "token_usage": token_budget}
 
+# Generate the do-it-for-me artifact
 @api.post("/threads/{thread_id}/complete-action")
 async def complete_action(thread_id: str, user: dict = Depends(current_user_async)):
     t = await async_threads_col.find_one({"thread_id": thread_id, "user_id": user["id"]})
@@ -700,6 +726,7 @@ async def complete_action(thread_id: str, user: dict = Depends(current_user_asyn
     return {"artifact": serialize(artifact), "credits": u.get("credits", 0), "cost": cost,
             "tokens": total_tokens, "token_usage": token_budget}
 
+# Change a thread's lifecycle status
 @api.patch("/threads/{thread_id}/status")
 async def set_status(thread_id: str, body: StatusIn, user: dict = Depends(current_user_async)):
     if body.status not in ("active", "paused", "graduated", "released"):
@@ -709,6 +736,7 @@ async def set_status(thread_id: str, body: StatusIn, user: dict = Depends(curren
         raise HTTPException(404, "Thread not found")
     return {"ok": True, "status": body.status}
 
+# Return credit balance and pricing
 @api.get("/credits")
 async def credits(user: dict = Depends(current_user_async)):
     return {"credits": user.get("credits", 0),
@@ -718,6 +746,7 @@ async def credits(user: dict = Depends(current_user_async)):
             "turn_reserve_ultra": TURN_RESERVE_ULTRA,
             "assist_reserve": ASSIST_RESERVE}
 
+# Service metadata for the API root
 @api.get("/")
 def root():
     return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok", "version": "1"}
@@ -728,15 +757,18 @@ def health():
     """Lightweight health check — no DB, no filesystem. Used by Railway."""
     return {"status": "ok"}
 
+# Service metadata for the versioned root
 @v1.get("")
 def v1_root():
     return {"service": "SmartDecigen Deep Discussion Engine", "status": "ok", "version": "1"}  # ponytail: duplicate needed for /api/v1 root
 
+# Serve a deny-all robots.txt
 @api.get("/robots.txt", include_in_schema=False)
 def robots():
     from fastapi.responses import Response
     return Response(content="User-agent: *\nDisallow: /\n", media_type="text/plain")
 
+# Generate the SALAAR company brief
 @api.get("/salaar/brief")
 async def salaar_brief_endpoint(user: dict = Depends(current_user_async)):
     org_id = user.get("org_id")
@@ -797,6 +829,7 @@ if FRONTEND_BUILD.is_dir():
         if _dir.is_dir():
             app.mount(f"/{_sub}", StaticFiles(directory=str(_dir)), name=f"frontend-{_sub}")
 
+    # Serve SPA index or JSON for missing routes
     @app.exception_handler(404)
     async def _spa_fallback(request: Request, exc):
         # API 404s must stay JSON 404s — swallowing them returns 200+HTML to API
@@ -848,6 +881,7 @@ def _kr_desc(kr):
     return str(kr)[:120]
 
 
+# Weekly job: generate tasks from active plans
 def _saturday_night_generate():
     log.info("scheduler: Saturday night task generation starting")
     try:
@@ -934,6 +968,7 @@ def _saturday_night_generate():
     log.info("scheduler: Saturday night task generation complete")
 
 
+# Periodic job: escalate overdue tasks
 def _six_hour_housekeeping():
     log.info("scheduler: 6h housekeeping starting")
     try:
@@ -976,6 +1011,7 @@ def _six_hour_housekeeping():
         log.error(f"scheduler: 6h housekeeping failed: {e}")
 
 
+# Weekly job placeholder: Monday digest
 def _monday_morning_digest():
     log.info("scheduler: Monday morning digest ready")
 
@@ -1007,6 +1043,7 @@ def _business_os_cron():
         log.exception(f"business_os: global failure — {e}")
 
 
+# Daily job: run morning briefs for orgs
 def _morning_brief_cron():
     try:
         from business_os import run_business_process
@@ -1019,6 +1056,7 @@ def _morning_brief_cron():
         log.exception(f"morning_brief cron failed: {e}")
 
 
+# Daily job: run midday follow-ups for orgs
 def _midday_followup_cron():
     try:
         from business_os import run_business_process
@@ -1031,6 +1069,7 @@ def _midday_followup_cron():
         log.exception(f"midday_followup cron failed: {e}")
 
 
+# Daily job: run evening wraps for orgs
 def _evening_wrap_cron():
     try:
         from business_os import run_business_process
@@ -1069,6 +1108,7 @@ def _weekly_system_scan():
     except Exception as e:
         log.exception(f"system_scan: global failure — {e}")
 
+# Register the scheduled jobs
 scheduler.add_job(_saturday_night_generate, CronTrigger(day_of_week="sat", hour=22, minute=0, timezone="Asia/Kolkata"))
 scheduler.add_job(_monday_morning_digest, CronTrigger(day_of_week="mon", hour=6, minute=0, timezone="Asia/Kolkata"))
 scheduler.add_job(_six_hour_housekeeping, IntervalTrigger(hours=6))
@@ -1090,6 +1130,7 @@ scheduler.add_job(salaar_realtime_scan, IntervalTrigger(minutes=5))   # Awarenes
 scheduler.add_job(salaar_deep_scan, IntervalTrigger(minutes=30))        # Deep: people, patterns, health
 
 
+# Configure CORS from environment origins
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")
 if not CORS_ORIGINS:
     log.warning("CORS_ORIGINS not set — allowing no cross-origin requests. Set to comma-separated origins for production.")

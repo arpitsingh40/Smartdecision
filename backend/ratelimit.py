@@ -8,11 +8,14 @@ log = logging.getLogger("ratelimit")
 _MEMORY_BUCKETS: dict[str, list[float]] = {}
 
 
+# Fixed-window rate limiter backed by DB or memory
 class RateLimiter:
+    # Configure the window size and request cap
     def __init__(self, max_requests: int = 60, window_seconds: float = 60.0):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
 
+    # Reject a request when the key's window is full
     def check(self, key: str) -> None:
         now = time.time()
         cutoff = now - self.window_seconds

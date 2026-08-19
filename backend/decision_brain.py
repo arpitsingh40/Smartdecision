@@ -35,12 +35,14 @@ router = APIRouter(prefix="/api/brain")
 trees_col = db.doc_trees if db is not None else None
 nodes_col = db.doc_nodes if db is not None else None
 
+# Brain model chain + credit cost configuration
 PRIMARY_MODEL = os.environ.get("LLM_MODEL", "gemini-3.5-flash").strip()
 FALLBACK_MODEL = os.environ.get("LLM_MODEL_FALLBACK", PRIMARY_MODEL).strip()
 
 CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
 BRAIN_RESERVE = int(os.environ.get("BRAIN_RESERVE", "16"))   # ~8k tokens; refund unused
 
+# Retrieval limits for the knowledge-base scan
 TOP_CHAPTERS = 3
 TOP_PASSAGES = 6
 MAX_KB_TREES = 25            # how many docs we scan per query (well above POC needs)
@@ -50,6 +52,7 @@ IMAGE_PREFIX = "image/"
 SUPPORTED_HINT = "PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx), CSV, Markdown, HTML, JSON, or plain text"
 
 
+# Current UTC timestamp helper
 def now_utc():
     return datetime.now(timezone.utc)
 
@@ -207,6 +210,7 @@ def ensure_brain_startup():
     decisions_col.create_index([("outcome.status", 1)])
 
 
+# Credit cost for a token pair
 def token_cost(tin: int, tout: int) -> int:
     total = (tin or 0) + (tout or 0)
     return max(1, math.ceil(total / 1000) * CREDITS_PER_1K_TOKENS)
@@ -235,6 +239,7 @@ PROXIMITY_BY_FUNCTION = {
 }
 
 
+# Normalize a function label to a known bucket
 def norm_function(fn):
     fn = (fn or "general").strip().lower()
     return fn if fn in FUNCTIONS else "general"
@@ -248,6 +253,7 @@ def _band(alignment):
     return None
 
 
+# Deterministic revenue-proximity stamp for a function
 def _proximity(function):
     return PROXIMITY_BY_FUNCTION.get(norm_function(function), "internal")
 
@@ -424,6 +430,7 @@ REQUIRED = ("mode", "answer")
 VALID_MODES = ("answer", "decide", "plan")
 
 
+# Strip em-dashes from model output strings
 def _clean(s):
     if isinstance(s, str):
         s = s.replace(" — ", ", ").replace(" – ", ", ").replace("—", ", ").replace("–", ", ")
@@ -519,6 +526,7 @@ class UploadIn(BaseModel):
     base64: str = Field(min_length=1)
 
 
+# Ask-box request payload
 class AskIn(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     session_id: Optional[str] = Field(default=None, max_length=80)
@@ -567,6 +575,7 @@ def _goal_impact(alignment, org, is_owner):
     }
 
 
+# Workspace rules update payload
 class SettingsIn(BaseModel):
     instructions: str = Field(default="", max_length=4000)
 
@@ -606,6 +615,7 @@ def upload(body: UploadIn, background: BackgroundTasks, user: dict = Depends(cur
             "total_chars": len(full_text)}
 
 
+# List the knowledge-base documents for this workspace
 @router.get("/documents")
 def documents(user: dict = Depends(current_user)):
     kb_ns, is_admin, _org, _instr = _resolve_context(user)
@@ -619,6 +629,7 @@ def documents(user: dict = Depends(current_user)):
             "can_train": is_admin}
 
 
+# Remove a document and its tree from the KB
 @router.delete("/documents/{tree_id}")
 def delete_document(tree_id: str, user: dict = Depends(current_user)):
     kb_ns, is_admin, _org, _instr = _resolve_context(user)
@@ -632,12 +643,14 @@ def delete_document(tree_id: str, user: dict = Depends(current_user)):
     return {"ok": True}
 
 
+# Read the workspace's brain rules
 @router.get("/settings")
 def get_settings(user: dict = Depends(current_user)):
     _kb_ns, is_admin, _org, instructions = _resolve_context(user)
     return {"instructions": instructions, "can_train": is_admin}
 
 
+# Update the workspace's brain rules
 @router.post("/settings")
 def set_settings(body: SettingsIn, user: dict = Depends(current_user)):
     _kb_ns, is_admin, org, _instr = _resolve_context(user)
@@ -791,6 +804,7 @@ def _answer_and_log(user: dict, question: str, session_id: Optional[str]):
             **({"goal_impact": goal_impact} if goal_impact else {})}
 
 
+# Answer, decide, or plan from the ask box
 @router.post("/ask")
 def ask(body: AskIn, user: dict = Depends(current_user)):
     return _answer_and_log(user, body.question, body.session_id)
@@ -826,6 +840,7 @@ def get_decision(decision_id: str, user: dict = Depends(current_user)):
             **({"goal_impact": goal_impact} if goal_impact else {})}
 
 
+# Member function update payload
 class FunctionIn(BaseModel):
     function: str = Field(min_length=2, max_length=30)
 
@@ -836,6 +851,7 @@ def get_profile(user: dict = Depends(current_user)):
     return {"function": norm_function(user.get("function")), "functions": list(FUNCTIONS)}
 
 
+# Save the member's function role
 @router.post("/profile")
 def set_profile(body: FunctionIn, user: dict = Depends(current_user)):
     fn = body.function.strip().lower()
@@ -845,11 +861,13 @@ def set_profile(body: FunctionIn, user: dict = Depends(current_user)):
     return {"function": fn}
 
 
+# Commit-a-decision request payload
 class CommitIn(BaseModel):
     action: str = Field(min_length=1, max_length=1000)
     due_in_hours: Optional[int] = Field(default=48, ge=1, le=720)
 
 
+# Decision status + self-report payload
 class StatusIn(BaseModel):
     status: str
     result: Optional[str] = Field(default=None, max_length=2000)
@@ -861,6 +879,7 @@ OUTCOME_MAP = {"worked": "success", "partly": "partial", "didnt": "failed", "did
                "success": "success", "partial": "partial", "failed": "failed"}
 
 
+# ISO-serialize datetimes for responses
 def _iso(dt):
     return dt.isoformat() if isinstance(dt, datetime) else dt
 
@@ -1002,6 +1021,7 @@ def calibration_for(match: dict) -> dict:
             "calibration_gap": gap, "label": label}
 
 
+# Outcome review request payload
 class ReviewIn(BaseModel):
     outcome: str = Field(min_length=2, max_length=20)      # worked | partly | didnt
     actual: Optional[str] = Field(default=None, max_length=2000)

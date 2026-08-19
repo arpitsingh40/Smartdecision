@@ -34,11 +34,13 @@ if INBOX_COL is not None:
 if SIGNALS_COL is not None:
     SIGNALS_COL.create_index([("org_id", 1), ("created_at", -1)])
 
+# Agent authority ladder and schedule cadence (minutes)
 AUTHORITY_LEVELS = {"L1": "observe", "L2": "alert_only", "L3": "execute_reversible",
                      "L4": "execute_with_approval", "L5": "founder_only"}
 SCHEDULES = {"realtime": 5, "hourly": 60, "daily": 1440, "weekly": 10080}
 
 
+# Return current UTC-aware timestamp
 def _now():
     return datetime.now(timezone.utc)
 
@@ -298,6 +300,7 @@ def get_agents(org_id: str) -> list:
     return list(AGENTS_COL.find({"org_id": org_id, "status": "active"}, {"_id": 0}))
 
 
+# Fetch one active agent by type
 def get_agent(org_id: str, agent_type: str) -> Optional[dict]:
     if AGENTS_COL is None:
         return None
@@ -612,6 +615,7 @@ def _update_agent_memory(org_id, agent_type, action, summary):
     )
 
 
+# Increment an agent's memory counter
 def _update_agent_counter(org_id, agent_type, field):
     if AGENTS_COL is None:
         return
@@ -780,6 +784,7 @@ def mark_inbox_item(item_id: str, action: str = "read", founder_note: str = ""):
     }})
 
 
+# Aggregate founder inbox counts
 def inbox_summary(org_id: str) -> dict:
     if INBOX_COL is None:
         return {"unread": 0}
@@ -801,9 +806,11 @@ from fastapi import APIRouter, HTTPException, Depends
 from security import current_user
 from db import members_col
 
+# Router for agent control endpoints
 agent_router = APIRouter(prefix="/api/agents", tags=["agents"])
 
 
+# Resolve the caller's org from membership
 def _get_org_id(user):
     m = members_col.find_one({"user_id": user["id"], "status": "active"})
     if not m:
@@ -811,30 +818,35 @@ def _get_org_id(user):
     return m["org_id"]
 
 
+# List active agents and available types
 @agent_router.get("")
 def list_agents(user: dict = Depends(current_user)):
     org_id = _get_org_id(user)
     return {"agents": get_agents(org_id), "definitions": list(AGENT_DEFINITIONS.keys())}
 
 
+# Trigger all agents immediately
 @agent_router.post("/run")
 def run_agents_now(user: dict = Depends(current_user)):
     org_id = _get_org_id(user)
     return run_all_agents(org_id)
 
 
+# Run one agent's decision cycle
 @agent_router.post("/{agent_type}/run")
 def run_single_agent(agent_type: str, user: dict = Depends(current_user)):
     org_id = _get_org_id(user)
     return run_agent(org_id, agent_type)
 
 
+# Fetch founder escalation inbox
 @agent_router.get("/inbox")
 def get_founder_inbox(user: dict = Depends(current_user)):
     org_id = _get_org_id(user)
     return {"inbox": get_inbox(org_id), "summary": inbox_summary(org_id)}
 
 
+# Mark inbox item read or archived
 @agent_router.post("/inbox/{item_id}")
 def action_inbox_item(item_id: str, body: dict, user: dict = Depends(current_user)):
     mark_inbox_item(item_id, body.get("action", "read"), body.get("note", ""))

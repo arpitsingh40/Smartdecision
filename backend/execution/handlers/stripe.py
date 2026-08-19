@@ -1,9 +1,11 @@
 import os, time, logging, requests
 from . import register
 log = logging.getLogger("execution.handlers.stripe")
+# Stripe tool definitions
 TOOLS = [
     {"name": "STRIPE_LIST_INVOICES", "description": "List recent Stripe invoices", "inputSchema": {"limit": "integer"}},
 ]
+# Execute Stripe API tool call
 @register("STRIPE")
 def handle(tool_name: str, args: dict) -> dict:
     key = os.environ.get("STRIPE_API_KEY", "")

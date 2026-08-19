@@ -34,18 +34,22 @@ MODEL_PRICING = {
 UNKNOWN_PRICING = (_f("PRICE_UNKNOWN_IN", 15.0), _f("PRICE_UNKNOWN_OUT", 75.0), "Pro Engine")
 
 
+# Convert model token usage into an estimated INR cost.
 def _price_inr(model: str, tokens_in: int, tokens_out: int) -> float:
     p_in, p_out, _ = MODEL_PRICING.get(model, UNKNOWN_PRICING)
     usd = (tokens_in / 1_000_000.0) * p_in + (tokens_out / 1_000_000.0) * p_out
     return round(usd * USD_TO_INR, 2)
 
+# User projection excluding sensitive fields for admin listings.
 USER_PROJ = {"_id": 0, "password_hash": 0}
 
 
+# Serialize datetime values to ISO strings if present.
 def _iso(v):
     return v.isoformat() if hasattr(v, "isoformat") else v
 
 
+# Strip _id and ISO-format datetimes for safe JSON output.
 def _clean(doc: dict) -> dict:
     out = {}
     for k, v in doc.items():
@@ -55,6 +59,7 @@ def _clean(doc: dict) -> dict:
     return out
 
 
+# Dashboard summary: users, engine, credits, tokens, revenue, traffic.
 @router.get("/overview")
 def overview(admin: dict = Depends(require_admin)):
     s = get_stats()
@@ -91,6 +96,7 @@ def overview(admin: dict = Depends(require_admin)):
     }
 
 
+# Paginated admin user list with optional search filter.
 @router.get("/users")
 def list_users(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
                q: str = Query(""), admin: dict = Depends(require_admin)):
@@ -104,6 +110,7 @@ def list_users(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
     return {"items": items, "total": total, "page": page, "pages": max(1, -(-total // limit))}
 
 
+# Full activity dump for one user: threads, Q&A, ledger.
 @router.get("/users/{user_id}/activity")
 def user_activity(user_id: str, admin: dict = Depends(require_admin)):
     u = users_col.find_one({"id": user_id}, USER_PROJ)
@@ -125,6 +132,7 @@ def user_activity(user_id: str, admin: dict = Depends(require_admin)):
     return {"user": _clean(u), "threads": threads, "ledger": ledger}
 
 
+# Paginated session traffic list with aggregate summary.
 @router.get("/traffic")
 def traffic(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
             admin: dict = Depends(require_admin)):
@@ -144,6 +152,7 @@ def traffic(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
             "pages": max(1, -(-total // limit))}
 
 
+# Credit, token, turn, and revenue usage summary per user.
 @router.get("/usage")
 def usage(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
           admin: dict = Depends(require_admin)):
@@ -240,6 +249,7 @@ def usage_by_model(admin: dict = Depends(require_admin)):
     }
 
 
+# Paginated list of all purchase orders.
 @router.get("/purchases")
 def purchases(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
               admin: dict = Depends(require_admin)):
@@ -251,6 +261,7 @@ def purchases(page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=100),
 
 # ------------------------------------------------------------------------ Conversations / Data section
 
+# Projection for conversation views excluding sensitive fields.
 USER_PROJ_CONV = {"_id": 0, "password_hash": 0}
 
 

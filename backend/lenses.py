@@ -13,6 +13,7 @@ import re
 from typing import Optional
 
 # (id, book label, [(trigger substring, weight)], lens instruction text)
+# Reasoning module registry: trigger keywords plus lens instruction per book
 MODULES = [
     {
         "id": "kahneman_bias", "book": "Thinking, Fast and Slow (Kahneman)",
@@ -1383,6 +1384,7 @@ KNOWLEDGE_MAP = {
 
 }
 
+# Base directory for resolving knowledge file paths
 _BASE = os.path.dirname(os.path.abspath(__file__))
 
 

@@ -11,14 +11,17 @@ from db import db, orgs_col, members_col, tasks_col, threads_col
 
 log = logging.getLogger("salaar.people")
 
+# People and behavior collections backing the graph.
 SALAAR_PEOPLE_COL = db["salaar_people"] if db is not None else None
 SALAAR_BEHAVIOR_COL = db["salaar_behavior"] if db is not None else None
 
 
+# Current UTC timestamp helper.
 def _now():
     return datetime.now(timezone.utc)
 
 
+# Generate a random unique ID.
 def _uid():
     import uuid
     return str(uuid.uuid4())

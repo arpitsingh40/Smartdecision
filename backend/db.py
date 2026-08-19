@@ -12,6 +12,7 @@ _log = logging.getLogger("db")
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Resolve the Mongo connection (real client or in-memory fallback)
 mongo_url = os.environ.get("MONGO_URL", "").strip()
 
 if mongo_url:
@@ -38,9 +39,11 @@ else:
         _log.warning("No MongoDB configured and mongomock not available")
 
 
+# Get a sync collection handle (None if DB absent)
 def _col(name):
     return db[name] if db is not None else None
 
+# Get an async collection handle, wrapping sync when needed
 def _async_col(name):
     if async_db is not None:
         return async_db[name]
@@ -87,6 +90,7 @@ class _MongomockAsyncAdapter:
         return self._col.create_index(*args, **kwargs)
 
 
+# Adapt a sync cursor to the async iteration protocol
 class _AsyncCursorWrapper:
     def __init__(self, cursor):
         self._cursor = cursor
@@ -103,6 +107,7 @@ class _AsyncCursorWrapper:
     async def to_list(self, length=None):
         return list(self._cursor)
 
+# Handles to every Mongo collection (sync)
 users_col = _col("users")
 threads_col = _col("goal_threads")
 events_col = _col("substrate_events")
@@ -142,6 +147,7 @@ habits_col = _col("habits")                           # Habit Tracker
 weekly_reviews_col = _col("weekly_reviews")           # Weekly Review
 sessions_col = _col("sessions")                       # JWT session tokens
 
+# Handles to every Mongo collection (async)
 async_users_col = _async_col("users")
 async_threads_col = _async_col("goal_threads")
 async_events_col = _async_col("substrate_events")

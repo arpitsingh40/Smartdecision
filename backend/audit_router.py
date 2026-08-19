@@ -8,6 +8,7 @@ from db import members_col
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 
 
+# Resolve the user's active org ID
 def _get_org_id(user: dict) -> str:
     m = members_col.find_one({"user_id": user["id"], "status": "active"})
     if not m:

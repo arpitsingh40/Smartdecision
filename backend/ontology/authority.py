@@ -19,6 +19,7 @@ from functools import wraps
 from typing import Callable, Any
 
 
+# L0–L5 authority levels, ordered from observation to founder-only.
 class AuthorityLevel(str, Enum):
     L0_OBSERVE = "L0"
     L1_EXECUTE = "L1"
@@ -28,6 +29,7 @@ class AuthorityLevel(str, Enum):
     L5_RESTRICTED = "L5"
 
 
+# Numeric privilege rank for comparing authority levels.
 AUTHORITY_ORDER = {
     AuthorityLevel.L0_OBSERVE: 0,
     AuthorityLevel.L1_EXECUTE: 1,
@@ -38,6 +40,7 @@ AUTHORITY_ORDER = {
 }
 
 
+# Human-readable label and description for each authority level.
 AUTHORITY_LABELS = {
     AuthorityLevel.L0_OBSERVE: ("Observe only", "Read-only. No actions taken."),
     AuthorityLevel.L1_EXECUTE: ("Execute automatically", "Trusted autonomous execution. No notification."),
@@ -71,6 +74,7 @@ def needs_notification(level: AuthorityLevel) -> bool:
     return AUTHORITY_ORDER[level] >= AUTHORITY_ORDER[AuthorityLevel.L2_EXECUTE_NOTIFY]
 
 
+# Raised when an executive exceeds their authorized level.
 class AuthorityError(Exception):
     def __init__(self, required: AuthorityLevel, authorized: AuthorityLevel, action: str = ""):
         self.required = required

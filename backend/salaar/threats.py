@@ -25,6 +25,7 @@ from db import (
 
 log = logging.getLogger("salaar")
 
+# SALAAR's MongoDB collections: events, threats, memory, people, actions.
 SALAAR_EVENTS_COL = db["salaar_events"] if db is not None else None
 SALAAR_THREATS_COL = db["salaar_threats"] if db is not None else None
 SALAAR_MEMORY_COL = db["salaar_memory"] if db is not None else None
@@ -32,10 +33,12 @@ SALAAR_PEOPLE_COL = db["salaar_people"] if db is not None else None
 SALAAR_ACTIONS_COL = db["salaar_actions"] if db is not None else None
 
 
+# Current UTC timestamp helper.
 def _now():
     return datetime.now(timezone.utc)
 
 
+# Generate a random unique ID.
 def _uid():
     import uuid
     return str(uuid.uuid4())
@@ -71,6 +74,7 @@ L4 = "L4"  # Escalate — propose, founder must approve
 L5 = "L5"  # Restricted — founder only, irreversible/strategic
 
 # Authority thresholds from trust rails
+# Spend limits pulled from environment configuration.
 APPROVAL_THRESHOLD_INR = int(__import__('os').environ.get("MCP_APPROVAL_THRESHOLD_INR", "5000"))
 ORG_SPEND_CAP_INR = int(__import__('os').environ.get("ORG_MONTHLY_SPEND_CAP_INR", "25000"))
 

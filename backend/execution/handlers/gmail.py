@@ -10,12 +10,14 @@ from . import register
 
 log = logging.getLogger("execution.handlers.gmail")
 
+# Gmail tool definitions
 TOOLS = [
     {"name": "GMAIL_SEND_EMAIL", "description": "Send an email via Gmail", "inputSchema": {"to": "string", "subject": "string", "body": "string"}},
     {"name": "GMAIL_SEARCH_MESSAGES", "description": "Search Gmail inbox", "inputSchema": {"query": "string", "max_results": "integer"}},
 ]
 
 
+# Execute Gmail API tool call
 @register("GMAIL")
 def handle(tool_name: str, args: dict) -> dict:
     token = os.environ.get("GMAIL_ACCESS_TOKEN", "")

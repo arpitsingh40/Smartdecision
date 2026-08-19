@@ -14,16 +14,19 @@ from enum import Enum
 from typing import Optional
 
 
+# Data-change cadence bands used by decay logic.
 class Volatility(str, Enum):
     STABLE = "STABLE"       # Changes yearly (org structure, mission)
     FLUID = "FLUID"         # Changes monthly (strategy, goals)
     VOLATILE = "VOLATILE"   # Changes daily/weekly (tasks, KPIs, tool scores)
 
 
+# Current UTC timestamp for injection into entities.
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# ISO 8601 string form of the current UTC time.
 def iso_now() -> str:
     return utcnow().isoformat()
 
@@ -33,6 +36,7 @@ def age_days(timestamp: datetime) -> float:
     return (utcnow() - timestamp).total_seconds() / 86400
 
 
+# Hours elapsed since the given timestamp.
 def age_hours(timestamp: datetime) -> float:
     return (utcnow() - timestamp).total_seconds() / 3600
 
@@ -84,12 +88,14 @@ def week_start(date: Optional[datetime] = None) -> datetime:
     return d - timedelta(days=d.weekday())
 
 
+# First day of the quarter containing the date.
 def quarter_start(date: Optional[datetime] = None) -> datetime:
     d = date or utcnow()
     q_month = ((d.month - 1) // 3) * 3 + 1
     return datetime(d.year, q_month, 1, tzinfo=timezone.utc)
 
 
+# Human-readable quarter name like "Q3 2026".
 def quarter_label(date: Optional[datetime] = None) -> str:
     d = date or utcnow()
     q = (d.month - 1) // 3 + 1

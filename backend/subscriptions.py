@@ -40,6 +40,7 @@ PLANS = {
     },
 }
 
+# Trial and overage pricing constants.
 TRIAL_PRICE_INR = 99
 TRIAL_DAYS = 3
 OVERAGE_PRICE_INR = 4999
@@ -137,6 +138,7 @@ def list_plans():
             "overage_price_inr": OVERAGE_PRICE_INR, "overage_tokens": OVERAGE_TOKENS}
 
 
+# Request body for creating a subscription.
 class CreateSubIn(BaseModel):
     plan_id: str
 
@@ -259,6 +261,7 @@ def cancel_subscription(user: dict = Depends(current_user)):
     return {"ok": True, "status": "cancelled"}
 
 
+# Request body for token top-ups.
 class TopupIn(BaseModel):
     pass
 

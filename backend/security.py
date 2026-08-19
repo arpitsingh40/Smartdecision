@@ -14,6 +14,7 @@ import logging
 
 _log = logging.getLogger("sdg")
 
+# Password hashing, JWT secret, and cookie settings
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret")
 if not JWT_SECRET or JWT_SECRET in ("dev-secret", "dev-jwt-secret", "dev-jwt-secret-change-in-production"):
@@ -33,10 +34,12 @@ COOKIE_OPTIONS = {
 }
 
 
+# Attach the session cookie to a response
 def set_auth_cookie(response, jwt_str: str):
     response.set_cookie(COOKIE_NAME, jwt_str, **COOKIE_OPTIONS)
 
 
+# Remove the session cookie from a response
 def clear_auth_cookie(response):
     response.delete_cookie(COOKIE_NAME, path="/", domain=".smartdecigen.com")
 
@@ -51,10 +54,12 @@ def _get_token(request: Request, authorization: str = Header(None)) -> str | Non
     return None
 
 
+# Current UTC timestamp helper
 def now_utc():
     return datetime.now(timezone.utc)
 
 
+# Coerce naive datetimes to UTC-aware
 def as_aware(dt):
     if dt and getattr(dt, "tzinfo", None) is None:
         return dt.replace(tzinfo=timezone.utc)
@@ -73,6 +78,7 @@ def make_token(user_id: str) -> tuple[str, str]:
     return token_id, j
 
 
+# Revoke a single session token
 def revoke_token(token_id: str):
     sessions_col.update_one({"token_id": token_id}, {"$set": {"revoked": True}})
 
@@ -82,6 +88,7 @@ def revoke_all_user_tokens(user_id: str):
     sessions_col.update_many({"user_id": user_id}, {"$set": {"revoked": True}})
 
 
+# Decode and validate the JWT signature
 def _decode_token(token: str | None) -> dict:
     if not token:
         raise HTTPException(401, "Not authenticated")
@@ -91,6 +98,7 @@ def _decode_token(token: str | None) -> dict:
         raise HTTPException(401, "Invalid or expired token")
 
 
+# Ensure the session still exists and is not revoked
 def _verify_session(payload: dict):
     token_id = payload.get("jti")
     if not token_id:
@@ -100,6 +108,7 @@ def _verify_session(payload: dict):
         raise HTTPException(401, "Session revoked or not found")
 
 
+# Resolve the authenticated user for sync endpoints
 def current_user(request: Request, authorization: str = Header(None)) -> dict:
     token = _get_token(request, authorization)
     payload = _decode_token(token)
@@ -110,6 +119,7 @@ def current_user(request: Request, authorization: str = Header(None)) -> dict:
     return user
 
 
+# Resolve the authenticated user for async endpoints
 async def current_user_async(request: Request, authorization: str = Header(None)) -> dict:
     token = _get_token(request, authorization)
     payload = _decode_token(token)
@@ -125,6 +135,7 @@ async def current_user_async(request: Request, authorization: str = Header(None)
     return user
 
 
+# Resolve the user if logged in, else None
 def optional_user(request: Request, authorization: str = Header(None)):
     token = _get_token(request, authorization)
     if not token:
@@ -142,6 +153,7 @@ def optional_user(request: Request, authorization: str = Header(None)):
         return None
 
 
+# Async version of optional_user
 async def optional_user_async(request: Request, authorization: str = Header(None)):
     token = _get_token(request, authorization)
     if not token:
@@ -167,12 +179,14 @@ def cleanup_expired_sessions():
     sessions_col.delete_many({"expires_at": {"$lt": cutoff}})
 
 
+# Gate sync endpoints to admin users
 def require_admin(user: dict = Depends(current_user)) -> dict:
     if not user.get("is_admin"):
         raise HTTPException(403, "Founder access only")
     return user
 
 
+# Gate async endpoints to admin users
 async def require_admin_async(user: dict = Depends(current_user_async)) -> dict:
     if not user.get("is_admin"):
         raise HTTPException(403, "Founder access only")

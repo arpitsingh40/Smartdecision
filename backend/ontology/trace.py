@@ -14,14 +14,17 @@ from typing import Optional, Any
 from pydantic import BaseModel, Field
 
 
+# Create a unique trace identifier.
 def generate_trace_id() -> str:
     return f"trace_{uuid.uuid4().hex[:16]}"
 
 
+# Current UTC timestamp.
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# One auditable hop in the execution chain.
 class TraceStep(BaseModel):
     layer: str
     entity_id: str
@@ -30,6 +33,7 @@ class TraceStep(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+# A recorded decision with rationale and alternatives.
 class DecisionLog(BaseModel):
     decision: str
     rationale: str
@@ -52,10 +56,12 @@ class Trace(BaseModel):
     decisions: list[DecisionLog] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
 
+    # Append a layer event to the trace chain.
     def add_step(self, layer: str, entity_id: str, entity_type: str, **meta) -> "Trace":
         self.steps.append(TraceStep(layer=layer, entity_id=entity_id, entity_type=entity_type, metadata=meta))
         return self
 
+    # Append a decision record to the trace.
     def add_decision(self, decision: str, rationale: str, alternatives: list[str] = None,
                      confidence: float = 0.5, authority: str = "L3") -> "Trace":
         self.decisions.append(DecisionLog(
@@ -84,6 +90,7 @@ class Trace(BaseModel):
             nodes.append(f"{step.entity_type}({step.entity_id})")
         return " → ".join(nodes)
 
+    # Serialize the trace to a JSON-safe dict.
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")
 

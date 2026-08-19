@@ -18,6 +18,7 @@ from ledger import record_ledger, inc_stats
 log = logging.getLogger("playbooks")
 router = APIRouter(prefix="/api/v1/playbooks")
 
+# Stage status display labels
 STAGE_DISPLAY = {
     "not_started": "Not started",
     "in_progress": "In progress",
@@ -27,6 +28,7 @@ STAGE_DISPLAY = {
 # --------------------------------------------------------------------------- Playbook definitions
 PLAYBOOKS = {}
 
+# Single playbook stage definition
 class Stage:
     def __init__(self, key, label, prompt_template, input_fields=None):
         self.key = key
@@ -34,6 +36,7 @@ class Stage:
         self.prompt_template = prompt_template
         self.input_fields = input_fields or []
 
+# Base playbook state machine class
 class Playbook:
     key = ""
     title = ""
@@ -42,6 +45,7 @@ class Playbook:
     stages = []
     icon = "book"
 
+    # Resolve stage object by key
     @classmethod
     def get_stage(cls, key):
         for s in cls.stages:
@@ -49,10 +53,12 @@ class Playbook:
                 return s
         return cls.stages[0] if cls.stages else None
 
+    # Return the first stage
     @classmethod
     def first_stage(cls):
         return cls.stages[0] if cls.stages else None
 
+    # Return the stage after current key
     @classmethod
     def next_stage(cls, current_key):
         for i, s in enumerate(cls.stages):
@@ -60,6 +66,7 @@ class Playbook:
                 return cls.stages[i + 1]
         return None
 
+    # Map stage key to progress percentage
     @classmethod
     def progress_pct(cls, stage_key):
         if not cls.stages:
@@ -69,6 +76,7 @@ class Playbook:
                 return int(100 * (i) / len(cls.stages))
         return 0
 
+    # Fill stage prompt template with inputs
     @classmethod
     def build_prompt(cls, stage_key, inputs):
         stage = cls.get_stage(stage_key)
@@ -79,6 +87,7 @@ class Playbook:
             filled[f] = inputs.get(f, "")
         return stage.prompt_template.format(**filled)
 
+    # Serialize playbook metadata for API
     @classmethod
     def registry(cls):
         return {"key": cls.key, "title": cls.title, "book": cls.book,
@@ -326,6 +335,7 @@ PLAYBOOKS["flywheel"] = FlywheelPlaybook
 # ----------------------------------------------------------------------- Biography Bank (simple injector)
 BIOGRAPHY_LENSES = {}  # populated at import
 
+# Load founder biography files into memory
 def _load_biographies():
     import os
     from pathlib import Path
@@ -346,6 +356,7 @@ def _load_biographies():
 
 _load_biographies()
 
+# Build founder-story context block if relevant
 def biography_block(industry=None, context=""):
     if not BIOGRAPHY_LENSES:
         return ""
@@ -360,24 +371,29 @@ def biography_block(industry=None, context=""):
     return "FOUNDER STORIES (real context from biography archives — inject genuine cases):\n" + "\n\n".join(blocks[:3])
 
 # --------------------------------------------------------------------------- CRUD endpoints
+# Request schema for creating a playbook
 class PlaybookCreateIn(BaseModel):
     playbook_key: str = Field(min_length=1, max_length=50)
 
+# Request schema for updating a playbook
 class PlaybookUpdateIn(BaseModel):
     stage_key: Optional[str] = None
     inputs: dict = {}
     status: Optional[str] = None
 
+# List user's playbooks and available frameworks
 @router.get("")
 def list_playbooks(user: dict = Depends(current_user)):
     items = list(playbooks_col.find({"user_id": user["id"]}).sort("updated_at", -1))
     return {"playbooks": [serialize(p) for p in items],
             "available": [k for k in PLAYBOOKS]}
 
+# List all available playbook frameworks
 @router.get("/available")
 def available_playbooks():
     return {"playbooks": [cls.registry() for cls in PLAYBOOKS.values()]}
 
+# Create or resume a playbook instance
 @router.post("")
 def create_playbook(body: PlaybookCreateIn, user: dict = Depends(current_user)):
     cls = PLAYBOOKS.get(body.playbook_key)
@@ -399,6 +415,7 @@ def create_playbook(body: PlaybookCreateIn, user: dict = Depends(current_user)):
     inc_stats({"playbooks_created": 1})
     return serialize(doc)
 
+# Fetch a playbook with current stage detail
 @router.get("/{playbook_id}")
 def get_playbook(playbook_id: str, user: dict = Depends(current_user)):
     p = playbooks_col.find_one({"id": playbook_id, "user_id": user["id"]})
@@ -406,6 +423,7 @@ def get_playbook(playbook_id: str, user: dict = Depends(current_user)):
         raise HTTPException(404, "Playbook not found")
     return serialize_with_stage(p)
 
+# Update playbook stage, inputs, or status
 @router.patch("/{playbook_id}")
 def update_playbook(playbook_id: str, body: PlaybookUpdateIn, user: dict = Depends(current_user)):
     p = playbooks_col.find_one({"id": playbook_id, "user_id": user["id"]})
@@ -429,6 +447,7 @@ def update_playbook(playbook_id: str, body: PlaybookUpdateIn, user: dict = Depen
     fresh = playbooks_col.find_one({"id": playbook_id})
     return serialize_with_stage(fresh)
 
+# Advance playbook to the next stage
 @router.post("/{playbook_id}/advance")
 def advance_playbook(playbook_id: str, user: dict = Depends(current_user)):
     p = playbooks_col.find_one({"id": playbook_id, "user_id": user["id"]})
@@ -448,11 +467,13 @@ def advance_playbook(playbook_id: str, user: dict = Depends(current_user)):
     return serialize_with_stage(fresh)
 
 # --------------------------------------------------------------------------- serialization
+# Strip Mongo metadata and ISO-format dates
 def serialize(p):
     if isinstance(p, dict):
         return {k: v.isoformat() if isinstance(v, datetime) else v for k, v in p.items() if k != "_id"}
     return p
 
+# Serialize playbook with stage info and prompt
 def serialize_with_stage(p):
     cls = PLAYBOOKS.get(p["playbook_key"])
     out = serialize(p)

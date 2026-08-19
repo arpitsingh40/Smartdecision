@@ -63,12 +63,14 @@ class ContentBlock:
         self.text = text
         self.type = "text"
 
+# Token usage totals for a completed call
 class Usage:
     __slots__ = ("input_tokens", "output_tokens")
     def __init__(self, input_tokens: int = 0, output_tokens: int = 0):
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
 
+# Unified response shape shared by all providers
 class Response:
     __slots__ = ("content", "usage", "function_call")
     def __init__(self, text: str = "", input_tokens: int = 0, output_tokens: int = 0,
@@ -90,15 +92,18 @@ class _BaseProvider:
 
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
+# Gemini REST provider implementation
 class GeminiProvider(_BaseProvider):
     def __init__(self, api_key: str):
         self._api_key = api_key
         self._session = requests.Session()
         self._session.headers.update({"x-goog-api-key": api_key, "Content-Type": "application/json"})
 
+    # Build the generateContent URL for a model
     def _url(self, model: str) -> str:
         return f"{_GEMINI_BASE}/{model}:generateContent"
 
+    # Normalize the system prompt to plain text
     @staticmethod
     def _system_to_text(system) -> Optional[str]:
         if not system:
@@ -110,6 +115,7 @@ class GeminiProvider(_BaseProvider):
             return "\n".join(texts) if texts else None
         return None
 
+    # Convert content blocks into Gemini part objects
     @staticmethod
     def _convert_content(content):
         if isinstance(content, str):
@@ -130,6 +136,7 @@ class GeminiProvider(_BaseProvider):
                     parts.append({"file_data": {"file_uri": src["url"], "mime_type": src.get("media_type", "image/png")}})
         return parts
 
+    # Send a chat request to Gemini with retries
     def create(self, model: str, system=None, messages=None, max_tokens=None, tools=None, **kwargs) -> Response:
         system_text = self._system_to_text(system)
         contents = []
@@ -200,6 +207,7 @@ class OpenAICompatibleProvider(_BaseProvider):
         self._session = requests.Session()
         self._session.headers.update({"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
 
+    # Normalize the system prompt to plain text
     @staticmethod
     def _system_to_text(system) -> Optional[str]:
         if not system:
@@ -211,6 +219,7 @@ class OpenAICompatibleProvider(_BaseProvider):
             return "\n".join(texts) if texts else None
         return None
 
+    # Send a chat-completions request with retries
     def create(self, model: str, system=None, messages=None, max_tokens=None, tools=None, **kwargs) -> Response:
         msgs = []
         system_text = self._system_to_text(system)
@@ -273,15 +282,19 @@ class OpenAICompatibleProvider(_BaseProvider):
 # ── Unified client ──
 
 class LLMClient:
+    # Store the primary provider behind a messages proxy
     def __init__(self, provider: _BaseProvider):
         self._messages = _MessagesProxy(provider)
 
+    # Expose the unified messages interface
     @property
     def messages(self):
         return self._messages
 
 
+# Proxy that fans out to fallback providers on failure
 class _MessagesProxy:
+    # Wire the primary provider and fallback chain
     def __init__(self, provider: _BaseProvider):
         self._provider = provider
         self._fallback_providers: list[_BaseProvider] = []
@@ -305,6 +318,7 @@ class _MessagesProxy:
             self._fallback_providers.append(
                 OpenAICompatibleProvider(moonshot_key, "https://api.moonshot.cn/v1"))
 
+    # Call primary provider, then fall through to fallbacks
     def create(self, model: str, system=None, messages=None, max_tokens=None, tools=None, **kwargs) -> Response:
         try:
             return self._provider.create(model=model, system=system, messages=messages,

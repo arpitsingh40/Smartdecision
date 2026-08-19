@@ -33,6 +33,7 @@ Output ONLY valid JSON:
  "reasoning": "one line explaining why",
  "systemic_flag": true if this looks like a systemic issue (bad config, expired auth, broken integration) not a one-off}"""
 
+# Model used for deep verification calls
 VERIFY_MODEL = "deepseek-v4-flash"
 
 

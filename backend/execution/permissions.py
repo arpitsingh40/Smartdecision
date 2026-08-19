@@ -25,6 +25,7 @@ IRREVERSIBLE_ACTIONS = os.environ.get("MCP_IRREVERSIBLE_ACTIONS",
 SENSITIVE_PREFIXES = ("delete", "remove", "terminate", "refund", "destroy", "purge", "revoke")
 
 
+# Detect sensitive or irreversible tool names
 def _is_sensitive(tool_name: str) -> bool:
     name_lower = tool_name.lower()
     if name_lower in IRREVERSIBLE_ACTIONS:

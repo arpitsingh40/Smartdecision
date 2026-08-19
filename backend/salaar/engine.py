@@ -21,6 +21,7 @@ from db import (
 log = logging.getLogger("salaar.engine")
 
 
+# Current UTC timestamp helper.
 def _now():
     return datetime.now(timezone.utc)
 

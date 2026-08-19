@@ -1364,6 +1364,7 @@ def build_function_lens_map():
 
 
 # ponytail: cached at module load, rebuild on lens updates
+# Cached function-to-lens mapping for taxonomy-aware selection
 _FUNCTION_LENS_MAP = None
 
 def function_lens_map():

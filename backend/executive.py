@@ -19,6 +19,7 @@ from security import current_user, now_utc
 log = logging.getLogger("executive")
 router = APIRouter(prefix="/api/org/executives")
 
+# Allowed values for executive fields
 VALID_FUNCTIONS = ("sales", "marketing", "product", "engineering", "operations", "finance", "leadership", "general")
 VALID_STATUSES = ("instantiation", "probation", "active", "promoted", "under_review", "archived", "merged")
 VALID_RISK = ("low", "medium", "high")
@@ -36,6 +37,7 @@ def ensure_executive_startup():
     executive_decisions_col.create_index([("org_id", 1), ("status", 1)])
 
 
+# Ensure caller is workspace owner
 def _require_owner(user: dict) -> dict:
     m = members_col.find_one({"user_id": user["id"], "status": "active", "role": "owner"})
     if not m:
@@ -298,6 +300,7 @@ def list_executive_messages(executive_id: Optional[str] = None,
     return {"messages": rows, "count": len(rows)}
 
 
+# Fetch company culture principles
 @router.get("/culture")
 def get_culture(user: dict = Depends(current_user)):
     """Owner-only. View the company culture principles."""
@@ -317,6 +320,7 @@ def get_executive(executive_id: str, user: dict = Depends(current_user)):
     return {"executive": ex}
 
 
+# Partial-update payload for executive DNA
 class UpdateExecutiveIn(BaseModel):
     role: Optional[str] = None
     mission: Optional[str] = None
@@ -395,6 +399,7 @@ def promote_executive(executive_id: str, body: CreateExecutiveIn, user: dict = D
     return {"ok": True, "promoted": True}
 
 
+# Archive executive, preserving knowledge
 @router.post("/{executive_id}/archive")
 def archive_executive(executive_id: str, reason: str = "", user: dict = Depends(current_user)):
     """Owner-only. Archive an executive — preserves knowledge, transfers active projects."""
@@ -413,6 +418,7 @@ def archive_executive(executive_id: str, reason: str = "", user: dict = Depends(
     return {"ok": True, "archived": True, "reason": reason}
 
 
+# Restore archived executive to probation
 @router.post("/{executive_id}/restore")
 def restore_executive(executive_id: str, user: dict = Depends(current_user)):
     """Owner-only. Restore an archived executive with full knowledge intact."""

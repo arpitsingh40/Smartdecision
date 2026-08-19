@@ -18,9 +18,11 @@ from llm_client import (
     PRIMARY_MODEL, ANALYTICAL_MODEL, ULTRA_MODEL, FALLBACK_MODEL,
 )
 
+# Allowed image mime types + text extraction cap
 IMAGE_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
 MAX_FILE_CHARS = 50000  # cap extracted text — bounds cost; engine doesn't need the whole novel
 
+# Render the company-state summary for the prompt
 def _get_state_block(user_id: str) -> str:
     try:
         u = users_col.find_one({"id": user_id}, {"_id": 0, "company_state": 1})
@@ -122,6 +124,7 @@ ACK = re.compile(r"\b(did it|done|completed|finished|shipped|sent it|made the ca
 SETBACK = re.compile(r"\b(couldn'?t|didn'?t|failed|stuck|blocked|gave up|too hard|avoided|put it off|procrastinat)\b", re.I)
 QUESTION = re.compile(r"\?\s*$|^\s*(how|what|should|why|when|can i|do i|is it)\b", re.I)
 
+# Bucket the message into a conversation intent
 def classify_intent(msg: str, days_since_last: float) -> str:
     if days_since_last >= 14:
         return "silence_breaker"
@@ -166,6 +169,7 @@ PHRASE_BANK = {
 }
 PRIORITY = ["contradiction", "execution", "emotional"]
 
+# Pick a phrase-bank line for returning users
 def compute_reengagement_line(last_snap: dict, now_snap: dict, days_absent: int):
     if days_absent < 7 or not last_snap:
         return None
@@ -215,6 +219,7 @@ def _user_context_block(user_doc) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+# System prompt for the "do it for me" assist call
 ASSIST_SYSTEM = """You are the execution hand. The founder has ONE next action. Your job: produce the exact output they need to finish it — then get out of their way.
 
 SELF CHECK before producing anything: if you would hesitate to see this result in 30 days, do not produce it. An action that does not improve their actual situation is worse than no action at all.
@@ -305,6 +310,7 @@ def _extract_xlsx(b: bytes) -> str:
     return "\n".join(parts)[:MAX_FILE_CHARS]
 
 
+# Extract up to 500 CSV rows as text
 def _extract_csv(b: bytes) -> str:
     import csv
     rdr = csv.reader(io.StringIO(b.decode("utf-8", errors="replace")))
@@ -437,6 +443,7 @@ Return ONLY valid JSON, no markdown fences:
 REQUIRED_KEYS = ("phase", "acknowledgment", "refreshed_open_question", "state_summary", "signals")
 VALID_PHASES = ("exploring", "naming", "ready_to_act", "acting", "checking_in")
 
+# Run the single engine LLM call and normalize output
 def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal",
              attachment=None, user_doc=None,
              recall_block: str = "", attachment_preview=None,

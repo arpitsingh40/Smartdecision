@@ -44,6 +44,7 @@ def session():
     return s
 
 
+# Fixture with demo user auth token and user
 @pytest.fixture(scope="session")
 def demo_auth(session):
     r = session.post(f"{BASE_URL}/api/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASS}, timeout=30)
@@ -52,6 +53,7 @@ def demo_auth(session):
     return {"token": data["token"], "user": data["user"]}
 
 
+# Fixture with admin auth token and user
 @pytest.fixture(scope="session")
 def admin_auth(session):
     r = session.post(f"{BASE_URL}/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASS}, timeout=30)
@@ -59,10 +61,12 @@ def admin_auth(session):
     return r.json()
 
 
+# Helper for Authorization header dict
 def _hdr(tok):
     return {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
 
 
+# Fixture with the Mongo database handle
 @pytest.fixture(scope="session")
 def mongo():
     client = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
@@ -71,6 +75,7 @@ def mongo():
 
 # ---------- auth ----------
 class TestAuth:
+    # Demo login returns JWT and credit balance
     def test_demo_login_returns_jwt_and_credits(self, demo_auth):
         assert demo_auth["token"] and isinstance(demo_auth["token"], str)
         u = demo_auth["user"]
@@ -78,12 +83,14 @@ class TestAuth:
         assert isinstance(u["credits"], int)
         assert u.get("is_admin") in (False, None)
 
+    # Founder account logs in as admin
     def test_founder_login_is_admin(self, admin_auth):
         assert admin_auth["user"]["is_admin"] is True
 
 
 # ---------- packs ----------
 class TestPacks:
+    # Packs endpoint returns live order, amounts, and tags
     def test_packs_order_amounts_tags_live(self, session):
         r = session.get(f"{BASE_URL}/api/payments/packs", timeout=15)
         assert r.status_code == 200, r.text
@@ -103,6 +110,7 @@ class TestPacks:
 
 # ---------- /api/credits ----------
 class TestCreditsEndpoint:
+    # Credits endpoint exposes token billing fields
     def test_credits_includes_token_billing_fields(self, session, demo_auth):
         r = session.get(f"{BASE_URL}/api/credits", headers=_hdr(demo_auth["token"]), timeout=15)
         assert r.status_code == 200, r.text
@@ -125,16 +133,19 @@ def _seeded_thread_id(session, token):
     return active[0]["thread_id"]
 
 
+# Token cost formula used across billing assertions
 def _expected_cost(total_tokens):
     return max(1, math.ceil(total_tokens / 1000) * 2)
 
 
+# Helper to fetch current credit balance
 def _credits(session, token):
     return session.get(f"{BASE_URL}/api/credits", headers=_hdr(token), timeout=15).json()["credits"]
 
 
 # ---------- /turn normal ----------
 class TestTurnNormal:
+    # Normal turn deducts exact token cost, not reserve
     def test_turn_normal_token_billing(self, session, demo_auth):
         token = demo_auth["token"]
         tid = _seeded_thread_id(session, token)
@@ -158,6 +169,7 @@ class TestTurnNormal:
 
 # ---------- /turn ultra ----------
 class TestTurnUltra:
+    # Ultra turn bills tokens on the same formula
     def test_turn_ultra_token_billing(self, session, demo_auth):
         token = demo_auth["token"]
         tid = _seeded_thread_id(session, token)
@@ -179,6 +191,7 @@ class TestTurnUltra:
 
 # ---------- /complete-action ----------
 class TestCompleteAction:
+    # Complete-action endpoint bills tokens and yields artifact
     def test_complete_action_token_billing(self, session, demo_auth):
         token = demo_auth["token"]
         tid = _seeded_thread_id(session, token)
@@ -197,6 +210,7 @@ class TestCompleteAction:
 
 # ---------- payment create-order live ----------
 class TestCreateOrderLive:
+    # Live Zoho order appears in payment history
     def test_create_order_live_zoho_url_and_history(self, session, demo_auth):
         token = demo_auth["token"]
         r = session.post(f"{BASE_URL}/api/payments/create-order",
@@ -220,17 +234,20 @@ class TestCreateOrderLive:
 
 # ---------- stale-order auto-fail (backdate via Mongo) ----------
 class TestStaleOrderAutoFail:
+    # Helper that creates a live pack order
     def _create_order(self, session, token, mongo):
         r = session.post(f"{BASE_URL}/api/payments/create-order",
                          headers=_hdr(token), json={"pack_id": "pack_10"}, timeout=30)
         assert r.status_code == 200, r.text
         return r.json()["order_id"]
 
+    # Helper that backdates an order's created_at
     def _backdate(self, mongo, order_id):
         old = datetime.now(timezone.utc) - timedelta(minutes=45)
         res = mongo["payment_orders"].update_one({"order_id": order_id}, {"$set": {"created_at": old}})
         assert res.matched_count == 1, f"backdate failed for {order_id}"
 
+    # Stale orders auto-fail via status endpoint
     def test_status_endpoint_auto_fails_stale(self, session, demo_auth, mongo):
         token = demo_auth["token"]
         oid = self._create_order(session, token, mongo)
@@ -240,6 +257,7 @@ class TestStaleOrderAutoFail:
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "failed", f"expected failed got {r.json()}"
 
+    # Stale orders auto-fail via history endpoint
     def test_history_endpoint_auto_fails_stale(self, session, demo_auth, mongo):
         token = demo_auth["token"]
         oid = self._create_order(session, token, mongo)
@@ -253,6 +271,7 @@ class TestStaleOrderAutoFail:
 
 # ---------- validation guards ----------
 class TestValidationGuards:
+    # Invalid mode returns 422
     def test_turn_invalid_mode_422(self, session, demo_auth):
         token = demo_auth["token"]
         tid = _seeded_thread_id(session, token)

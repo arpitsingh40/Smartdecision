@@ -15,6 +15,7 @@ from ledger import inc_stats
 log = logging.getLogger("weekly_review")
 router = APIRouter(prefix="/api/v1/weekly-review")
 
+# Weekly review stage definitions and labels
 STAGES = ["capture", "clarify", "reflect", "plan"]
 STAGE_LABELS = {
     "capture": "Capture — what happened this week?",
@@ -23,19 +24,23 @@ STAGE_LABELS = {
     "plan": "Plan — what's next?",
 }
 
+# Request schema for creating a review
 class ReviewCreateIn(BaseModel):
     pass
 
+# Request schema for updating a review
 class ReviewUpdateIn(BaseModel):
     stage: Optional[str] = None
     content: Optional[str] = None
     status: Optional[str] = None
 
+# Compute the current ISO week key
 def _current_week_key():
     now = now_utc()
     iso = now.isocalendar()
     return f"{iso[0]}-W{iso[1]:02d}"
 
+# Fetch or create this week's review doc
 def _get_or_create(user_id):
     week_key = _current_week_key()
     r = weekly_reviews_col.find_one({"user_id": user_id, "week_key": week_key})
@@ -52,6 +57,7 @@ def _get_or_create(user_id):
         inc_stats({"weekly_reviews_started": 1})
     return r
 
+# Convert review doc to API response shape
 def _serialize(r):
     return {
         "id": r["id"], "week_key": r["week_key"],
@@ -66,21 +72,25 @@ def _serialize(r):
         "updated_at": r.get("updated_at").isoformat() if isinstance(r.get("updated_at"), datetime) else r.get("updated_at"),
     }
 
+# Map stage key to completion percentage
 def _progress_pct(stage):
     if stage not in STAGES:
         return 0
     return int(100 * STAGES.index(stage) / len(STAGES))
 
+# Return the current week's review
 @router.get("")
 def get_review(user: dict = Depends(current_user)):
     r = _get_or_create(user["id"])
     return _serialize(r)
 
+# Return recent weekly review history
 @router.get("/history")
 def review_history(user: dict = Depends(current_user)):
     items = list(weekly_reviews_col.find({"user_id": user["id"]}).sort("week_key", -1).limit(8))
     return {"reviews": [_serialize(r) for r in items]}
 
+# Advance stage or save content for the review
 @router.patch("")
 def update_review(body: ReviewUpdateIn, user: dict = Depends(current_user)):
     r = _get_or_create(user["id"])
@@ -115,6 +125,7 @@ def update_review(body: ReviewUpdateIn, user: dict = Depends(current_user)):
     fresh = weekly_reviews_col.find_one({"id": r["id"]})
     return _serialize(fresh)
 
+# Reset the current week's review
 @router.post("/reset")
 def reset_review(user: dict = Depends(current_user)):
     weekly_reviews_col.delete_one({"user_id": user["id"], "week_key": _current_week_key()})

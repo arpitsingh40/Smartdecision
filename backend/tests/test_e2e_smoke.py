@@ -47,18 +47,21 @@ MOCK_AGENT_ALERT = json.dumps({
 })
 
 
+# Mock of the OpenAI response object
 class MockResponse:
     def __init__(self, text, input_tokens=100, output_tokens=50):
         self.content = [MockContent(text)]
         self.usage = MockUsage(input_tokens, output_tokens)
 
 
+# Mock of response content block
 class MockContent:
     def __init__(self, text):
         self.text = text
         self.type = "text"
 
 
+# Mock of token usage counters
 class MockUsage:
     def __init__(self, input_tokens, output_tokens):
         self.input_tokens = input_tokens

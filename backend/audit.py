@@ -14,13 +14,16 @@ from db import db as _db
 
 log = logging.getLogger("audit")
 
+# Mongo collection handle for audit events
 AUDIT_COL = _db.org_audit if _db is not None else None
 
+# Create indexes for common audit queries
 if AUDIT_COL is not None:
     AUDIT_COL.create_index([("org_id", 1), ("created_at", -1)])
     AUDIT_COL.create_index([("org_id", 1), ("event_type", 1), ("created_at", -1)])
     AUDIT_COL.create_index([("org_id", 1), ("actor_type", 1), ("actor_id", 1)])
 
+# All recognized audit event types
 EVENT_TYPES = [
     "agent_decision", "agent_execution", "agent_execution_result",
     "business_cycle", "business_process_run",
@@ -38,6 +41,7 @@ EVENT_TYPES = [
 ]
 
 
+# Current UTC timestamp helper
 def _now():
     return datetime.now(timezone.utc)
 
@@ -159,11 +163,13 @@ def ensure_audit_startup():
 
 # ── Convenience recorders (called from across codebase) ──
 
+# Record an agent decision event
 def record_agent_decision(org_id: str, agent_type: str, action: str, summary: str, model: str = ""):
     return record(org_id, "agent_decision", summary, actor_type="agent", actor_id=agent_type,
                   details={"action": action, "model": model})
 
 
+# Record an agent execution result event
 def record_agent_execution(org_id: str, agent_type: str, tool: str, result: str, success: bool):
     return record(org_id, "agent_execution_result", f"[{agent_type}] {tool}: {result[:150]}",
                   actor_type="agent", actor_id=agent_type,
@@ -171,6 +177,7 @@ def record_agent_execution(org_id: str, agent_type: str, tool: str, result: str,
                   severity="error" if not success else "info")
 
 
+# Record a business cycle run summary
 def record_business_cycle(org_id: str, agents_run: int, agents_executed: int, tools_used: int, elapsed_s: float):
     return record(org_id, "business_cycle",
                   f"Cycle: {agents_executed}/{agents_run} agents executed through {tools_used} tools in {elapsed_s}s",
@@ -178,6 +185,7 @@ def record_business_cycle(org_id: str, agents_run: int, agents_executed: int, to
                            "tools_used": tools_used, "elapsed_s": elapsed_s})
 
 
+# Record tool connection state change
 def record_tool_connection(org_id: str, toolkit: str, connected: bool, user_id: str = ""):
     return record(org_id, "tool_connected" if connected else "tool_disconnected",
                   f"{'Connected' if connected else 'Disconnected'} {toolkit}",
@@ -185,6 +193,7 @@ def record_tool_connection(org_id: str, toolkit: str, connected: bool, user_id: 
                   details={"toolkit": toolkit, "connected": connected})
 
 
+# Record task lifecycle event
 def record_task_event(org_id: str, task_id: str, event: str, description: str, executive_id: str = ""):
     type_map = {"proposed": "task_proposed", "approved": "task_approved", "executed": "task_executed",
                 "verified": "task_verified", "failed": "task_failed"}
@@ -193,6 +202,7 @@ def record_task_event(org_id: str, task_id: str, event: str, description: str, e
                   related_id=task_id, related_type="task")
 
 
+# Record a chat thread turn
 def record_turn(org_id: str, user_id: str, thread_id: str, intent: str, model: str, tokens: int):
     return record(org_id, "thread_turn", f"Turn: {intent} via {model} ({tokens} tokens)",
                   actor_type="user", actor_id=user_id, related_id=thread_id, related_type="thread",

@@ -20,9 +20,11 @@ from ledger import record_ledger, inc_stats
 router = APIRouter(prefix="/api/user", tags=["user"])
 log = logging.getLogger("questionnaire")
 
+# One-time credits awarded for completing questionnaire
 BONUS_CREDITS = int(os.environ.get("QUESTIONNAIRE_BONUS_CREDITS", "100"))
 
 
+# Payload for the four context answers
 class QuestionnaireIn(BaseModel):
     dream: str = Field(min_length=3, max_length=2000)
     capacity: str = Field(min_length=3, max_length=2000)
@@ -30,6 +32,7 @@ class QuestionnaireIn(BaseModel):
     potential: str = Field(min_length=3, max_length=2000)
 
 
+# Strip timestamps from stored answers
 def _serialize(q: Optional[dict]):
     if not q:
         return None
@@ -39,6 +42,7 @@ def _serialize(q: Optional[dict]):
     return out
 
 
+# Return questionnaire state and bonus size
 @router.get("/questionnaire")
 def get_questionnaire(user: dict = Depends(current_user)):
     fresh = users_col.find_one({"id": user["id"]}, {"_id": 0, "questionnaire": 1, "questionnaire_completed": 1})

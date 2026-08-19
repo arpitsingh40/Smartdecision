@@ -21,10 +21,12 @@ log = logging.getLogger("salaar.actions")
 SALAAR_ACTIONS_COL = db["salaar_actions"] if db is not None else None
 
 
+# Current UTC timestamp helper.
 def _now():
     return datetime.now(timezone.utc)
 
 
+# Generate a random unique ID.
 def _uid():
     import uuid
     return str(uuid.uuid4())

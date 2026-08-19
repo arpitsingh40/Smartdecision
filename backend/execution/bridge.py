@@ -18,6 +18,7 @@ from execution.dispatcher import execute_plan as dispatch_plan, validate_plan
 log = logging.getLogger("execution.bridge")
 
 
+# Current UTC timestamp helper
 def utcnow():
     return datetime.now(timezone.utc)
 
@@ -254,6 +255,7 @@ def execute_approved_tasks(org_id: str = None, max_tasks: int = 10) -> dict:
     return {"executed": executed, "results": results}
 
 
+# Read org monthly execution budget state
 def _get_budget_status(org_id: str) -> dict:
     """Read the org's monthly execution budget from the org doc."""
     org = orgs_col.find_one({"id": org_id}, {"_id": 0, "execution_budget": 1})
@@ -265,6 +267,7 @@ def _get_budget_status(org_id: str) -> dict:
     }
 
 
+# Hard-check spend allowance against monthly cap
 def enforce_budget(org_id: str, cost: int) -> bool:
     """Hard-check: can we spend this amount? Returns True if allowed."""
     budget = _get_budget_status(org_id)
@@ -273,6 +276,7 @@ def enforce_budget(org_id: str, cost: int) -> bool:
     return (budget["spent_this_month"] + cost) <= budget["monthly_cap"]
 
 
+# Record spend against the monthly budget
 def record_spend(org_id: str, cost: int):
     """Record a spend against the monthly budget."""
     orgs_col.update_one(

@@ -22,6 +22,7 @@ from llm_client import client as llm_client, _extract_json, PRIMARY_MODEL
 
 log = logging.getLogger("business_os")
 
+# Collections for OS run history and decision outcomes
 OS_RUNS_COL = _db.os_runs if _db is not None else None
 OS_DECISIONS_COL = _db.os_decisions if _db is not None else None
 
@@ -33,6 +34,7 @@ if OS_DECISIONS_COL is not None:
     OS_DECISIONS_COL.create_index([("org_id", 1), ("status", 1)])
 
 
+# Timezone-aware current UTC timestamp
 def _now():
     return datetime.now(timezone.utc)
 
@@ -205,6 +207,7 @@ def execute_agent_decision(org_id: str, agent_type: str, decision: dict) -> dict
 # Autonomous Business Process Templates
 # ======================================================================
 
+# Scheduled autonomous business process templates
 BUSINESS_PROCESSES = {
     "morning_brief": {
         "label": "Morning Brief",
@@ -534,6 +537,7 @@ def os_decisions(org_id: str, limit: int = 20) -> list:
 # Business Outcome Verification — follow-up loop
 # ======================================================================
 
+# Founder approval inbox collection
 APPROVAL_COL = _db.os_approvals if _db is not None else None
 
 if APPROVAL_COL is not None:

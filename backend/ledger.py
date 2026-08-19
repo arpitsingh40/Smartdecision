@@ -11,6 +11,7 @@ from security import pwd, now_utc
 
 log = logging.getLogger("ledger")
 
+# Founder admin credentials from environment
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "ceo@smartdecigen.com")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "FounderOS@2026")
 
@@ -23,6 +24,7 @@ def inc_stats(delta: dict):
         log.error(f"inc_stats failed: {e}")
 
 
+# Read the global stats counters doc
 def get_stats() -> dict:
     return stats_col.find_one({"id": "global"}) or {}
 

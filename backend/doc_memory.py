@@ -41,6 +41,7 @@ TOP_CHAPTERS = 3
 TOP_SECTIONS = 3
 TOP_PARAGRAPHS = 5
 
+# Collection handles for doc trees and their nodes.
 trees_col = db.doc_trees if db is not None else None
 nodes_col = db.doc_nodes if db is not None else None
 
@@ -55,6 +56,7 @@ def _get_embedder():
         _embedder = TextEmbedding(EMBED_MODEL)
     return _embedder
 
+# Lazily get the shared LLM client for summarization.
 def _llm_client():
     from llm_client import client
     return client()
@@ -154,6 +156,7 @@ def _parse_markdown(text: str):
         chapters.append(current)
     return text, chapters
 
+# Parse HTML into chapters from heading tags.
 def _parse_html(b: bytes):
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(b, "lxml")
@@ -230,6 +233,7 @@ def _parse_plain(text: str):
     """No structure -> single chapter, semantic chunking handles leaves later."""
     return text, [{"title": "Document", "text": text, "level": 1}]
 
+# Extension-to-parser mapping for structured files.
 EXT_DISPATCH = {
     ".pdf": ("pdf", _parse_pdf, True),
     ".docx": ("docx", _parse_docx, True),
@@ -243,6 +247,7 @@ EXT_DISPATCH = {
     ".xls": ("xlsx", _parse_xlsx, True),
     ".csv": ("csv", _parse_csv, True),
 }
+# Extensions treated as unstructured plain text.
 PLAIN_EXTS = (".txt", ".log", ".py", ".js", ".ts", ".tsx", ".jsx",
               ".sql", ".yaml", ".yml", ".ini", ".conf", ".sh", ".rb", ".go", ".rs",
               ".java", ".c", ".cpp", ".h", ".css", ".scss", ".env", ".toml")
@@ -311,9 +316,11 @@ def _embed_batch(texts):
     vecs = list(_get_embedder().embed(trimmed))
     return [np.asarray(v, dtype=np.float32) for v in vecs]
 
+# Embed a single text into a vector.
 def _embed_one(text: str):
     return _embed_batch([text])[0]
 
+# Cosine similarity between two embedding vectors.
 def _cos(a: np.ndarray, b: np.ndarray):
     na, nb = np.linalg.norm(a), np.linalg.norm(b)
     if na == 0 or nb == 0:

@@ -33,10 +33,12 @@ if CAUSAL_CHAINS_COL is not None:
     CAUSAL_CHAINS_COL.create_index([("org_id", 1), ("status", 1)])
 
 
+# Current UTC timestamp helper.
 def _now():
     return datetime.now(timezone.utc)
 
 
+# Generate a random unique ID.
 def _uid():
     return str(uuid.uuid4())
 
@@ -636,6 +638,7 @@ def _trigger_fallback(org_id: str, chain: dict, failed_step: dict):
     log.warning(f"Chain {chain['id']}: fallback triggered at step {failed_step.get('step')}")
 
 
+# Close out a chain with its resolution reason.
 def _mark_chain_resolved(chain_id: str, reason: str):
     CAUSAL_CHAINS_COL.update_one(
         {"id": chain_id},

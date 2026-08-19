@@ -21,20 +21,24 @@ from engine import client, _extract_json
 log = logging.getLogger("founder")
 router = APIRouter(prefix="/api/founder", tags=["founder-profile"])
 
+# Model list and interview length config
 INTERVIEW_MODELS = (os.environ.get("LLM_MODEL", "deepseek-flash").strip(),)
 INTERVIEW_TURNS = int(os.environ.get("FOUNDER_INTERVIEW_TURNS", "6"))  # founder answers before auto-distill
 MIN_FINISH_ANSWERS = 2  # can finish early after this many answers
 
+# Fixed opening interview question
 OPENING_Q = ("To give you advice that genuinely fits you, I want to understand you and your business first. "
              "Tell me in your own words: what does your company do, what stage are you at, and what is the "
              "hardest part of your week right now?")
 
+# Fields the distilled profile contains
 PROFILE_FIELDS = ("summary", "personality", "working_style", "communication_style",
                   "decision_style", "risk_appetite", "strengths", "blind_spots",
                   "motivations", "industry_summary")
 
 
 # ---------------------------------------------------------------- helpers
+# Ensure caller is workspace owner
 def _require_owner(user: dict) -> dict:
     m = members_col.find_one({"user_id": user["id"], "status": "active", "role": "owner"})
     if not m:
@@ -45,6 +49,7 @@ def _require_owner(user: dict) -> dict:
     return org
 
 
+# Render interview Q&A as text
 def _transcript_text(transcript: list) -> str:
     lines = []
     for i, t in enumerate(transcript, 1):
@@ -53,6 +58,7 @@ def _transcript_text(transcript: list) -> str:
     return "\n".join(lines)
 
 
+# One LLM call returning raw text
 def _llm_text(system: str, user_msg: str, max_tokens: int = 400) -> str:
     last_err = None
     for model in INTERVIEW_MODELS:
@@ -68,6 +74,7 @@ def _llm_text(system: str, user_msg: str, max_tokens: int = 400) -> str:
     raise RuntimeError(f"interview LLM failed: {last_err}")
 
 
+# Prompt that generates the next question
 NEXT_Q_SYSTEM = (
     "You are conducting a warm, sharp onboarding interview with a startup founder so an AI advisor can "
     "learn how they operate and what their industry really is. Ask exactly ONE question at a time. Build "
@@ -78,6 +85,7 @@ NEXT_Q_SYSTEM = (
     "their last answer. Plain English. No preamble, no numbering, no quotes. Return ONLY the next question."
 )
 
+# Prompt that distills the final profile
 DISTILL_SYSTEM = (
     "From this onboarding interview, distill a concise FOUNDER PROFILE an AI advisor will use to tailor every "
     "decision to this person and their industry. Return ONLY valid JSON (no markdown fences) with these keys, "
@@ -90,12 +98,14 @@ DISTILL_SYSTEM = (
 )
 
 
+# Ask the next connected question
 def _next_question(transcript: list) -> str:
     q = _llm_text(NEXT_Q_SYSTEM, _transcript_text(transcript) + "\n\nNext question:", max_tokens=200)
     q = q.strip().strip('"').strip()
     return q[:600] or "What else should I understand about how you like to work?"
 
 
+# Distill transcript into founder profile
 def _distill(transcript: list) -> dict:
     txt = _llm_text(DISTILL_SYSTEM, _transcript_text(transcript), max_tokens=900)
     try:
@@ -109,6 +119,7 @@ def _distill(transcript: list) -> dict:
     return prof
 
 
+# Client-safe profile and interview state
 def _profile_view(org: dict) -> dict:
     fp = org.get("founder_profile") or {}
     iv = org.get("founder_interview") or {}
@@ -127,6 +138,7 @@ def _profile_view(org: dict) -> dict:
     }
 
 
+# Persist profile onto the org
 def _save_profile(org_id: str, profile: dict, mark_done: bool = True):
     upd = {"founder_profile": profile, "founder_profile_updated_at": now_utc()}
     if mark_done:
@@ -140,6 +152,7 @@ class AnswerIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
+# Payload for manual profile edits
 class ProfileIn(BaseModel):
     summary: str = Field(default="", max_length=600)
     personality: str = Field(default="", max_length=600)

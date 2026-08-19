@@ -25,6 +25,7 @@ from db import executives_col, orgs_col
 client = TestClient(server.app)
 
 
+# Helper that signs up a fresh rails test user
 def _signup(email=None):
     email = email or f"rails_{uuid.uuid4().hex[:8]}@test.com"
     r = client.post("/api/auth/signup", json={"email": email, "password": "abcdef123", "name": "Rails"})
@@ -33,6 +34,7 @@ def _signup(email=None):
     return {"Authorization": f"Bearer {tok}"}
 
 
+# Fixture creating a founder with an org
 @pytest.fixture(scope="module")
 def founder():
     h = _signup()
@@ -44,11 +46,13 @@ def founder():
     return {"h": h, "org_id": org_id}
 
 
+# Fixture with a second user outside the org
 @pytest.fixture(scope="module")
 def stranger():
     return _signup()  # no org
 
 
+# Fixture inserting a growth executive row
 @pytest.fixture(scope="module")
 def executive(founder):
     ex_id = f"exec_test_{uuid.uuid4().hex[:6]}"
@@ -62,6 +66,7 @@ def executive(founder):
     return ex_id
 
 
+# Helper that enqueues a task for the org
 def _task(founder, executive, **overrides):
     data = {"description": "Draft outreach list of 10 factory owners",
             "capability": "email", "expected_outcome": "List of 10 with contacts",
@@ -70,6 +75,7 @@ def _task(founder, executive, **overrides):
     return enqueue_task(executive, data, org_id=founder["org_id"])
 
 
+# Pending tasks are scoped to the owner's org
 def test_pending_is_org_scoped(founder, stranger, executive):
     tid = _task(founder, executive)
     mine = client.get("/api/tasks/pending", headers=founder["h"]).json()
@@ -78,6 +84,7 @@ def test_pending_is_org_scoped(founder, stranger, executive):
     assert theirs["count"] == 0 and not theirs["tasks"]
 
 
+# Approval brief exposes every outcome field
 def test_approval_brief_has_all_outcomes(founder, executive):
     tid = _task(founder, executive)
     r = client.get(f"/api/tasks/{tid}/brief", headers=founder["h"])
@@ -91,12 +98,14 @@ def test_approval_brief_has_all_outcomes(founder, executive):
     assert b["budget"]["cap_inr"] == 25000
 
 
+# Non-owner approval attempts are forbidden
 def test_only_owner_can_approve(founder, stranger, executive):
     tid = _task(founder, executive)
     r = client.post(f"/api/tasks/{tid}/approve", headers=stranger)
     assert r.status_code == 403
 
 
+# Manual approval never invents verification
 def test_manual_path_never_fakes_verification(founder, executive):
     tid = _task(founder, executive)  # no concrete plan, MCP disabled
     r = client.post(f"/api/tasks/{tid}/approve", headers=founder["h"])
@@ -107,6 +116,7 @@ def test_manual_path_never_fakes_verification(founder, executive):
     assert "Manual execution required" in (t["result"] or "")
 
 
+# Over-cap estimates are blocked with 402
 def test_budget_cap_blocks_overspend(founder, executive):
     tid = _task(founder, executive, estimated_cost_inr=50000)  # > 25000 cap
     r = client.post(f"/api/tasks/{tid}/approve", headers=founder["h"])
@@ -114,6 +124,7 @@ def test_budget_cap_blocks_overspend(founder, executive):
     assert "cap" in r.json()["detail"].lower()
 
 
+# Kill switch blocks approvals until resumed
 def test_kill_switch_blocks_everything(founder, executive):
     tid = _task(founder, executive)
     r = client.post("/api/tasks/kill-switch", json={"paused": True}, headers=founder["h"])
@@ -126,12 +137,14 @@ def test_kill_switch_blocks_everything(founder, executive):
     assert r.status_code == 200
 
 
+# Second approval attempt conflicts with 409
 def test_double_approve_conflicts(founder, executive):
     tid = _task(founder, executive)
     assert client.post(f"/api/tasks/{tid}/approve", headers=founder["h"]).status_code == 200
     assert client.post(f"/api/tasks/{tid}/approve", headers=founder["h"]).status_code == 409
 
 
+# Rejecting records reason and unknown tasks 404
 def test_reject_with_reason(founder, executive):
     tid = _task(founder, executive)
     r = client.post(f"/api/tasks/{tid}/reject", json={"reason": "not now"}, headers=founder["h"])
@@ -142,6 +155,7 @@ def test_reject_with_reason(founder, executive):
     assert r.status_code == 404
 
 
+# Summary aggregates counts and budget cap
 def test_summary_counts_and_budget(founder):
     s = client.get("/api/tasks/summary", headers=founder["h"]).json()
     assert s["total"] >= 5
@@ -149,6 +163,7 @@ def test_summary_counts_and_budget(founder):
     assert "budget" in s and s["budget"]["cap_inr"] == 25000
 
 
+# Archived executives cannot approve tasks
 def test_archived_executive_hard_blocked(founder):
     ex_id = f"exec_arch_{uuid.uuid4().hex[:6]}"
     executives_col.insert_one({

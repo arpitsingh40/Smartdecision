@@ -14,6 +14,7 @@ from db import orgs_col, tasks_col, plans_col
 log = logging.getLogger("okr_engine")
 
 
+# Current UTC timestamp helper
 def _now():
     return datetime.now(timezone.utc)
 

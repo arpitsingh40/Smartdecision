@@ -39,13 +39,16 @@ from execution.verification import verify_action, learn_from_evidence
 log = logging.getLogger("tasks.router")
 router = APIRouter(prefix="/api/tasks")
 
+# Monthly autonomous spend cap from env
 MONTHLY_SPEND_CAP_INR = int(os.environ.get("ORG_MONTHLY_SPEND_CAP_INR", "25000"))
 
 
+# Fetch active membership record for user
 def _member(user: dict) -> Optional[dict]:
     return members_col.find_one({"user_id": user["id"], "status": "active"})
 
 
+# Enforce founder-only access
 def _require_owner(user: dict) -> dict:
     m = members_col.find_one({"user_id": user["id"], "status": "active", "role": "owner"})
     if not m:
@@ -53,11 +56,13 @@ def _require_owner(user: dict) -> dict:
     return m
 
 
+# Resolve user's org id from membership
 def _org_scope(user: dict) -> Optional[str]:
     m = _member(user)
     return m["org_id"] if m else None
 
 
+# Fetch task within org scope, 404 otherwise
 def _own_task(task_id: str, org_id: str) -> dict:
     from execution.tasks import _find
     task = _find(task_id)
@@ -69,10 +74,12 @@ def _own_task(task_id: str, org_id: str) -> dict:
     return task
 
 
+# Current month key for budget tracking
 def _month_key() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
+# Read org spend and pause state
 def _budget_status(org_id: str) -> dict:
     org = orgs_col.find_one({"id": org_id}, {"_id": 0, "execution_budget": 1, "execution_paused": 1}) or {}
     b = org.get("execution_budget") or {}
@@ -86,6 +93,7 @@ def _budget_status(org_id: str) -> dict:
     }
 
 
+# Increment org monthly spend
 def _record_spend(org_id: str, amount_inr: int):
     if amount_inr <= 0:
         return
@@ -122,6 +130,7 @@ def _planned_actions(task: dict) -> tuple[list[dict], Optional[dict]]:
     return actions, recommendation
 
 
+# Collect risk flags for approval brief
 def _risk_flags(task: dict, actions: list[dict]) -> list[str]:
     flags = []
     if task.get("reversibility") == "IRREVERSIBLE":
@@ -142,6 +151,7 @@ def _risk_flags(task: dict, actions: list[dict]) -> list[str]:
 
 # ────────────────────────────────────────────────────────── queue + views
 
+# Founder approval queue for proposed tasks
 @router.get("/pending")
 def list_pending(executive_id: Optional[str] = None, user: dict = Depends(current_user)):
     """Founder's approval queue — all L3 tasks awaiting decision. Org-scoped."""
@@ -152,6 +162,7 @@ def list_pending(executive_id: Optional[str] = None, user: dict = Depends(curren
     return {"tasks": tasks, "count": len(tasks)}
 
 
+# Dashboard task counts with budget
 @router.get("/summary")
 def summary(user: dict = Depends(current_user)):
     org_id = _org_scope(user)
@@ -161,16 +172,19 @@ def summary(user: dict = Depends(current_user)):
     return out
 
 
+# Monthly spend status for owner
 @router.get("/budget")
 def budget(user: dict = Depends(current_user)):
     m = _require_owner(user)
     return _budget_status(m["org_id"])
 
 
+# Request body for kill switch toggle
 class KillSwitchIn(BaseModel):
     paused: bool
 
 
+# Founder kill switch for autonomous execution
 @router.post("/kill-switch")
 def kill_switch(body: KillSwitchIn, user: dict = Depends(current_user)):
     """Constitution §10 Human Override — founder pauses ALL autonomous execution instantly."""
@@ -179,6 +193,7 @@ def kill_switch(body: KillSwitchIn, user: dict = Depends(current_user)):
     return {"execution_paused": body.paused}
 
 
+# Deterministic approval brief for a task
 @router.get("/{task_id}/brief")
 def approval_brief(task_id: str, user: dict = Depends(current_user)):
     """The Approval Brief — everything the founder needs to decide, deterministic, zero LLM:
@@ -233,6 +248,7 @@ def approval_brief(task_id: str, user: dict = Depends(current_user)):
 
 # ────────────────────────────────────────────────────────── decisions
 
+# Approve task, run gates then execute
 @router.post("/{task_id}/approve")
 def approve(task_id: str, user: dict = Depends(current_user)):
     """Approve a task. Runs the trust rails, then the real execution pipeline:
@@ -315,10 +331,12 @@ def approve(task_id: str, user: dict = Depends(current_user)):
     return {"task": task, "status": task["status"]}
 
 
+# Request body for task rejection
 class RejectIn(BaseModel):
     reason: str = ""
 
 
+# Reject a proposed task
 @router.post("/{task_id}/reject")
 def reject(task_id: str, body: RejectIn, user: dict = Depends(current_user)):
     m = _require_owner(user)
@@ -327,6 +345,7 @@ def reject(task_id: str, body: RejectIn, user: dict = Depends(current_user)):
     return {"task": task, "status": "rejected"}
 
 
+# List all org tasks with filters
 @router.get("")
 def list_all(status: Optional[str] = None, executive_id: Optional[str] = None,
              user: dict = Depends(current_user)):

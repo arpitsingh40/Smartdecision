@@ -18,6 +18,7 @@ from db import exec_tasks_col
 log = logging.getLogger("tasks")
 
 
+# System prompt for first-week task generation
 TASK_SYSTEM = """You are the Task Engine of SmartDecigen. Your job is to take an executive's mission, KPIs, and the company strategy, and generate the specific, concrete tasks they should execute in their first week.
 
 RULES:
@@ -68,6 +69,7 @@ Return: {{"tasks": [task1, task2, task3]}}"""
         ]
 
 
+# Look up a task by id
 def _find(task_id: str) -> Optional[dict]:
     if exec_tasks_col is None:
         return None
@@ -186,6 +188,7 @@ def set_task_fields(task_id: str, fields: dict) -> None:
         exec_tasks_col.update_one({"id": task_id}, {"$set": fields})
 
 
+# Fetch all tasks, optionally org-scoped
 def get_all_tasks(org_id: str = None) -> list[dict]:
     if exec_tasks_col is None:
         return []

@@ -1,10 +1,12 @@
 import os, time, logging, requests
 from . import register
 log = logging.getLogger("execution.handlers.slack")
+# Slack tool definitions
 TOOLS = [
     {"name": "SLACK_SEND_MESSAGE", "description": "Send a Slack message", "inputSchema": {"channel": "string", "text": "string"}},
     {"name": "SLACK_LIST_CONVERSATIONS", "description": "List Slack channels", "inputSchema": {"limit": "integer"}},
 ]
+# Execute Slack API tool call
 @register("SLACK")
 def handle(tool_name: str, args: dict) -> dict:
     token = os.environ.get("SLACK_TOKEN", "")

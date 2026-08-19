@@ -66,6 +66,7 @@ def _get_org_context(user: dict):
 log = logging.getLogger("journey")
 router = APIRouter(prefix="/api/journey")
 
+# Billing and readiness configuration
 CREDITS_PER_1K_TOKENS = int(os.environ.get("CREDITS_PER_1K_TOKENS", "2"))
 JOURNEY_RESERVE = int(os.environ.get("JOURNEY_RESERVE", "16"))   # ~8k tokens; unused refunded
 READY_THRESHOLD = 70   # model-completeness % at which the founder is ready for an Initial Direction
@@ -212,6 +213,7 @@ def _learning_digest(user_id, j=None):
     return "\n".join(lines[:8])
 
 
+# Blank understanding model
 def _empty_model():
     m = {f: "" for f in STRING_FIELDS}
     m.update({f: [] for f in LIST_FIELDS})
@@ -219,6 +221,7 @@ def _empty_model():
     return m
 
 
+# Whether a model field has content
 def _field_filled(f, v):
     if isinstance(v, str):
         return bool(v.strip())
@@ -235,6 +238,7 @@ def _confidence(model):
     return round(100 * filled / len(MODEL_FIELDS))
 
 
+# Human label for a confidence percent
 def _confidence_band(pct):
     if pct < 25:
         return "Just starting"
@@ -260,10 +264,12 @@ def _merge_model(old, new):
     return out
 
 
+# Credits charged for token usage
 def token_cost(tin, tout):
     return max(1, math.ceil(((tin or 0) + (tout or 0)) / 1000) * CREDITS_PER_1K_TOKENS)
 
 
+# Normalize dashes and whitespace in text
 def _clean(s):
     if isinstance(s, str):
         s = s.replace(" — ", ", ").replace(" – ", ", ").replace("—", ", ").replace("–", ", ")
@@ -271,6 +277,7 @@ def _clean(s):
     return s
 
 
+# Numeric rank of a stage name
 def _stage_rank(stage):
     try:
         return STAGE_ORDER.index(stage)
@@ -553,6 +560,7 @@ success_probability is an integer 0 to 100, a ROUGH estimate from only what you 
 blockers, risks and missing_info each have 2 to 5 short items. trade_offs and first_moves each have
 2 to 4 items. learning_loop.signals has 2 to 4 items, learning_loop.assumptions_to_test has 2 to 3."""
 
+# Prompt for revising a decision package
 REFINE_SYSTEM = """You are REVISING an existing DECISION PACKAGE using the founder's feedback.
 Keep what they liked, change what they flagged, stay concrete and honest. No em-dashes, no markdown.
 Return the SAME JSON schema as before, fully updated:
@@ -561,6 +569,7 @@ Return the SAME JSON schema as before, fully updated:
  "trade_offs": ["..."], "first_moves": ["..."],
  "learning_loop": {"signals": ["..."], "assumptions_to_test": ["..."]}}"""
 
+# Prompt that turns direction into milestones
 MILESTONE_SYSTEM = """You convert an APPROVED direction into 4 to 10 MEASURABLE milestones that take the
 founder from today to the goal. EVERY milestone must be measurable, with a concrete metric and a deadline.
 Order them logically, foundation first. Be specific to their business. No fluff, no em-dashes, no markdown.
@@ -596,6 +605,7 @@ def _llm_json(system_text, prompt, max_tokens=1600):
     raise RuntimeError(f"All models failed: {last_err}")
 
 
+# Coerce value into cleaned string list
 def _norm_str_list(v, cap=6):
     if not isinstance(v, list):
         return []
@@ -603,6 +613,7 @@ def _norm_str_list(v, cap=6):
 
 
 # ----------------------------------------------------------------- competing hypotheses (state + code)
+# Derive a stable id slug
 def _slug(s):
     s = re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")
     return s[:40] or "hypothesis"
@@ -656,6 +667,7 @@ def _normalize_hypotheses(raw, prev=None):
     return items
 
 
+# Coerce raw LLM output into direction dict
 def _build_direction(raw):
     try:
         prob = int(round(float(raw.get("success_probability", 60))))
@@ -679,9 +691,11 @@ def _build_direction(raw):
     }
 
 
+# Valid milestone lifecycle statuses
 MILESTONE_STATUSES = ("not_started", "in_progress", "done")
 
 
+# Build milestone docs from LLM output
 def _build_milestones(raw):
     arr = raw.get("milestones") if isinstance(raw, dict) else None
     if not isinstance(arr, list):
@@ -705,6 +719,7 @@ def _build_milestones(raw):
     return out
 
 
+# Percent of milestones completed
 def _milestone_progress(milestones):
     ms = milestones or []
     total = len(ms)
@@ -731,6 +746,7 @@ TEAM_FIELD_ORDER = ["team_size", "roles", "reporting_structure", "responsibiliti
 TEAM_OPENING = ("Let's set your team up to actually hit this plan. To start: how many people are on your "
                 "team today, and what does each of them mainly do?")
 
+# Prompt for team-setup conversation turns
 TEAM_SYSTEM = """You are helping a founder set up their TEAM to execute a plan you already shaped together.
 You build a clear model of the team, one question at a time, and stay sharp and practical.
 
@@ -754,6 +770,7 @@ Return STRICT JSON only:
  "decision_authority":""}}
 Carry forward everything already known, "" for unknown strings and [] for unknown lists."""
 
+# Prompt that builds the team operating plan
 TEAM_PLAN_SYSTEM = """You turn a founder's goal, milestones and team model into a concrete OPERATING PLAN
 for the team. Be specific and measurable, assign clear ownership, keep it lean. No em-dashes, no markdown.
 
@@ -770,17 +787,20 @@ Return STRICT JSON only:
 Each list has 2 to 6 items. responsibilities has one entry per key role."""
 
 
+# Blank team understanding model
 def _empty_team_model():
     m = {f: "" for f in TEAM_STRING_FIELDS}
     m.update({f: [] for f in TEAM_LIST_FIELDS})
     return m
 
 
+# Completeness of the team model
 def _team_confidence(model):
     filled = sum(1 for f in TEAM_FIELDS if _field_filled(f, (model or {}).get(f)))
     return round(100 * filled / len(TEAM_FIELDS))
 
 
+# Keep prior team fields never regress
 def _merge_team_model(old, new):
     base = _empty_team_model()
     base.update(old or {})
@@ -813,6 +833,7 @@ def team_turn(objective, milestones, team_model, transcript_msgs, latest_user_ms
     return reply, new_model, model_name, usage
 
 
+# Coerce LLM output into operating plan
 def _build_team_plan(raw):
     def lst(k, cap=6):
         return _norm_str_list(raw.get(k), cap)
@@ -872,6 +893,7 @@ def _run_billed(user, produce):
 
 
 # ----------------------------------------------------------------- state helpers
+# Load or initialize journey document
 def _get_or_create(user_id):
     j = journeys_col.find_one({"user_id": user_id})
     if not j:
@@ -882,10 +904,12 @@ def _get_or_create(user_id):
     return j
 
 
+# Serialize datetime safely
 def _iso(v):
     return v.isoformat() if hasattr(v, "isoformat") else v
 
 
+# Build full client-facing journey state
 def _view(user, j):
     model = _merge_model(_empty_model(), j.get("model") or {})
     completeness = _confidence(model)
@@ -952,6 +976,7 @@ def _system_health_view(user):
         return None
 
 
+# Build client-facing team state
 def _team_view(j):
     team = j.get("team") or {}
     tmodel = _merge_team_model(_empty_team_model(), team.get("model") or {})
@@ -974,25 +999,30 @@ class StartIn(BaseModel):
     objective: str = Field(min_length=1, max_length=4000)
 
 
+# Payload for a chat message
 class MessageIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
+# Payload for direction refinement feedback
 class FeedbackIn(BaseModel):
     feedback: str = Field(min_length=1, max_length=4000)
 
 
+# Payload for milestone status updates
 class MilestoneStatusIn(BaseModel):
     status: str
     result: Optional[str] = Field(default=None, max_length=500)
 
 
 # ----------------------------------------------------------------- endpoints
+# Fetch or create the founder's journey
 @router.get("")
 def get_journey(user: dict = Depends(current_user)):
     return _view(user, _get_or_create(user["id"]))
 
 
+# Open the journey with first objective
 @router.post("/start")
 def start(body: StartIn, user: dict = Depends(current_user)):
     j = _get_or_create(user["id"])
@@ -1043,6 +1073,7 @@ def start(body: StartIn, user: dict = Depends(current_user)):
     return out
 
 
+# Handle a chat turn in the journey
 @router.post("/message")
 def message(body: MessageIn, user: dict = Depends(current_user)):
     j = _get_or_create(user["id"])
@@ -1114,6 +1145,7 @@ def message(body: MessageIn, user: dict = Depends(current_user)):
     return out
 
 
+# Wipe journey state back to clarity
 @router.post("/reset")
 def reset(user: dict = Depends(current_user)):
     journeys_col.update_one({"user_id": user["id"]}, {"$set": {
@@ -1123,6 +1155,7 @@ def reset(user: dict = Depends(current_user)):
     return _view(user, _get_or_create(user["id"]))
 
 
+# Mirror journey state onto user company_state
 def _sync_from_journey(user_id: str) -> None:
     try:
         j = journeys_col.find_one({"user_id": user_id}, {

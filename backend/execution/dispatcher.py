@@ -10,10 +10,12 @@ from .mcp_client import call_tool, mcp_enabled, tools_for_department
 
 log = logging.getLogger("execution.dispatcher")
 
+# Retry budget for failed tool calls
 MAX_RETRIES = int(__import__('os').environ.get("MCP_MAX_RETRIES", "3"))
 RETRY_DELAY_BASE = 2  # seconds, exponential backoff
 
 
+# Action lifecycle status constants
 class ActionStatus:
     PENDING = "pending"
     RUNNING = "running"
@@ -22,10 +24,12 @@ class ActionStatus:
     SKIPPED = "skipped"
 
 
+# ISO timestamp helper
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+# Execute plan actions respecting dependencies and retries
 def execute_plan(plan: dict, department_function: str = "general",
                  on_progress=None, org_id: str = None) -> dict:
     """Execute a complete plan: N actions, respecting dependencies.
@@ -164,6 +168,7 @@ def execute_plan(plan: dict, department_function: str = "general",
     return {"actions": results, "summary": summary, "plan_goal": plan.get("goal", "")}
 
 
+# Pre-flight validation of execution plan
 def validate_plan(plan: dict) -> list:
     """Pre-flight validation. Returns list of issues (empty = valid)."""
     issues = []

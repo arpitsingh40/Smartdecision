@@ -39,6 +39,7 @@ from .temporal import (
     Volatility as TemporalVolatility,
 )
 
+# Central public API — every name importers may pull from this package.
 __all__ = [
     # Core types
     "new_id", "utcnow",

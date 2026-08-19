@@ -24,9 +24,11 @@ log = logging.getLogger("share")
 router = APIRouter(prefix="/api/share")
 referral_router = APIRouter(prefix="/api/referral")
 
+# Credits granted to referrer and referee on signup.
 REFERRAL_BONUS = int(os.environ.get("REFERRAL_BONUS", "25"))
 
 
+# Extract a display-safe first name for public cards.
 def _first_name(name, email):
     n = (name or "").strip()
     if n:
@@ -52,6 +54,7 @@ def _card_snapshot(direction, reasoning):
     }
 
 
+# Request body for posting a second opinion.
 class OpinionIn(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
 

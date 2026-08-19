@@ -279,6 +279,12 @@ def approve(task_id: str, user: dict = Depends(current_user)):
         raise HTTPException(402, f"Monthly autonomous-spend cap would be exceeded "
                                  f"(₹{spend} needed, ₹{budget_now['remaining_inr']} remaining). Raise the cap or reject.")
 
+    # Governance gate: kill switch / weekly cap / dry-run consulted before dispatch
+    from governance import execution_gate
+    gov = execution_gate(m["org_id"], spend)
+    if not gov["allowed"]:
+        raise HTTPException(403, f"Governance blocked approval: {gov['reason']}")
+
     task = approve_task(task_id)
 
     # Execute — only a concrete plan executes; we never invent tool calls

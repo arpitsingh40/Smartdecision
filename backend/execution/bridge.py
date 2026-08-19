@@ -238,6 +238,19 @@ def execute_approved_tasks(org_id: str = None, max_tasks: int = 10) -> dict:
                 log.warning(f"Wire 4 BUDGET: task {task['id']} costs {cost}INR, monthly spent={spent}, cap={cap} — blocked")
                 continue
 
+        # Governance gate: kill switch / weekly cap / dry-run — skip with reason when blocked
+        try:
+            from governance import execution_gate
+            gate = execution_gate(task.get("org_id"), cost)
+            if not gate["allowed"]:
+                mark_task_executed(task["id"], status="skipped",
+                                   error=f"Blocked by governance: {gate['reason']}")
+                results.append({"task_id": task["id"], "status": "skipped",
+                                "reason": gate["reason"]})
+                continue
+        except Exception:
+            pass
+
         # Dispatch
         result = dispatch_plan({"goal": task.get("description", ""), "actions": plan}, "general")
         status = "executed" if result["summary"]["failed"] == 0 else (
@@ -279,6 +292,12 @@ def enforce_budget(org_id: str, cost: int) -> bool:
 # Record spend against the monthly budget
 def record_spend(org_id: str, cost: int):
     """Record a spend against the monthly budget."""
+    # Governance: centralize weekly spend tracking for caps (advisory — never fails the caller)
+    try:
+        from governance import record_spend as gov_record_spend
+        gov_record_spend(org_id, cost)
+    except Exception:
+        pass
     orgs_col.update_one(
         {"id": org_id},
         {"$inc": {"execution_budget.spent_this_month": cost}},

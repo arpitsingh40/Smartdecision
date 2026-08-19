@@ -29,6 +29,16 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+# Governance gate helper — lazy import so dispatcher never hard-depends on governance
+def _governed(org_id) -> dict:
+    try:
+        from governance import execution_gate
+        return execution_gate(org_id, 0)
+    except Exception:
+        return {"allowed": True, "reason": "ok", "kill_switch": False,
+                "dry_run": False, "spend_this_week": 0.0, "cap": 0}
+
+
 # Execute plan actions respecting dependencies and retries
 def execute_plan(plan: dict, department_function: str = "general",
                  on_progress=None, org_id: str = None) -> dict:
@@ -43,6 +53,20 @@ def execute_plan(plan: dict, department_function: str = "general",
     actions = plan.get("actions", [])
     if not actions:
         return {"actions": [], "summary": {"total": 0, "done": 0, "failed": 0}}
+
+    # Governance gate: kill switch / weekly cap — block the whole plan before anything runs
+    gate = _governed(org_id)
+    if not gate["allowed"]:
+        skipped = [{"tool": a.get("tool", ""), "description": a.get("description", ""),
+                    "status": ActionStatus.SKIPPED, "error": gate["reason"]} for a in actions]
+        return {"error": gate["reason"], "actions": skipped,
+                "summary": {"total": len(actions), "done": 0, "failed": 0,
+                            "skipped": len(actions), "blocked_by": "governance",
+                            "kill_switch": gate["kill_switch"]},
+                "dry_run": gate["dry_run"]}
+
+    # Dry-run mode: record planned steps, never call any tool
+    dry_run = gate["dry_run"]
 
     # Wire 4: budget enforcement before execution
     if org_id:
@@ -106,6 +130,27 @@ def execute_plan(plan: dict, department_function: str = "general",
                 progressed = True
                 continue
 
+            # Dry-run: record the planned step without invoking the tool
+            if dry_run:
+                statuses[i] = ActionStatus.SKIPPED
+                results[i] = {"tool": tool_name, "description": action.get("description", ""),
+                              "status": ActionStatus.SKIPPED, "dry_run": True,
+                              "planned_args": args,
+                              "result": f"[DRY RUN] would call {tool_name}"}
+                completed += 1
+                progressed = True
+                continue
+
+            # Re-check the kill switch per action — it can flip mid-plan
+            if _governed(org_id)["kill_switch"]:
+                statuses[i] = ActionStatus.FAILED
+                results[i] = {"tool": tool_name, "description": action.get("description", ""),
+                              "status": ActionStatus.FAILED,
+                              "error": "Kill switch activated mid-execution — action aborted"}
+                completed += 1
+                progressed = True
+                continue
+
             statuses[i] = ActionStatus.RUNNING
             if on_progress:
                 on_progress(i, len(actions), action.get("description", tool_name))
@@ -163,6 +208,8 @@ def execute_plan(plan: dict, department_function: str = "general",
         "skipped": sum(1 for s in statuses if s == ActionStatus.SKIPPED),
         "elapsed_s": elapsed,
     }
+    if dry_run:
+        summary["dry_run"] = True
 
     log.info(f"Plan executed: {summary['done']}/{summary['total']} done ({summary['failed']} failed) in {elapsed}s")
     return {"actions": results, "summary": summary, "plan_goal": plan.get("goal", "")}

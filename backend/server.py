@@ -852,7 +852,8 @@ if FRONTEND_BUILD.is_dir():
         candidate = (FRONTEND_BUILD / request.url.path.lstrip("/")).resolve()
         if candidate.is_file() and str(candidate).startswith(str(FRONTEND_BUILD.resolve())):
             return FileResponse(str(candidate))
-        return FileResponse(str(FRONTEND_BUILD / "index.html"), media_type="text/html")
+        return FileResponse(str(FRONTEND_BUILD / "index.html"), media_type="text/html",
+                            headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     log.info(f"frontend build served from {FRONTEND_BUILD}")
 

@@ -12,6 +12,7 @@ import { useAuth } from '../App';
 import { Sparkles, Compass, Wallet, Trophy, Mountain, ArrowRight, Lock, Loader2, Send, RotateCcw, Brain, CheckCircle2, UserCog, Building2, User, Mail, ShieldCheck } from 'lucide-react';
 import { trackPixel } from '../lib/pixel';
 
+// Baseline questionnaire questions
 const QUESTIONS = [
   { key: 'dream', icon: Compass, eyebrow: 'Baseline 1 of 4', title: 'What is the outcome you are actually chasing?', hint: 'Not the generic vision — the concrete result you need to make this worth it.', placeholder: "e.g. Build a calm, profitable studio that clears ₹3L/month." },
   { key: 'capacity', icon: Wallet, eyebrow: 'Baseline 2 of 4', title: 'What is your real capacity right now?', hint: 'Honest hours per week, money you can risk, energy you can spare.', placeholder: "e.g. ~8 hours a week after my day job, ~₹50k I can lose." },
@@ -19,12 +20,14 @@ const QUESTIONS = [
   { key: 'potential', icon: Mountain, eyebrow: 'Baseline 4 of 4', title: 'What does success actually look like?', hint: 'The ceiling you can almost see, but never name.', placeholder: "e.g. The go-to person for D2C brand stories in India." },
 ];
 
+// Labels for founder profile fields
 const PROFILE_FIELDS = {
   personality: 'Personality', working_style: 'How you work', communication_style: 'Communication style',
   decision_style: 'Decision style', risk_appetite: 'Risk appetite', strengths: 'Strengths to lean on',
   blind_spots: 'Blind spots to cover', motivations: 'What drives you', industry_summary: 'Your industry',
 };
 
+// Baseline and operating profile page
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { setUser, user, setCredits } = useAuth();
@@ -57,6 +60,7 @@ export default function ProfilePage() {
     }).catch(() => {});
   }, []);
 
+  // Load founder profile and interview state
   const loadFp = useCallback(async () => {
     setFpLoading(true);
     try {
@@ -78,6 +82,7 @@ export default function ProfilePage() {
   useEffect(() => { loadFp(); }, [loadFp]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [question, transcript, profile]);
 
+  // Save baseline answers for bonus credits
   const submitQ = async () => {
     if (qBusy) return;
     setQBusy(true);
@@ -95,6 +100,7 @@ export default function ProfilePage() {
     finally { setQBusy(false); }
   };
 
+  // Start the founder profile interview
   const fpStart = async () => {
     setFpBusy(true);
     try {
@@ -105,6 +111,7 @@ export default function ProfilePage() {
     finally { setFpBusy(false); }
   };
 
+  // Send an interview answer
   const fpSend = async () => {
     if (fpBusy || !fpAnswer.trim()) return;
     const myQ = question; const myA = fpAnswer.trim();
@@ -124,6 +131,7 @@ export default function ProfilePage() {
     } finally { setFpBusy(false); }
   };
 
+  // Finish the interview early
   const fpFinish = async () => {
     setFpBusy(true);
     try { const r = await api.post('/founder/interview/finish'); setProfile(r.data.profile); setQuestion(null); toast.success('Profile built.'); }

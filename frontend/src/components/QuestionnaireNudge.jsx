@@ -44,11 +44,13 @@ export function QuestionnaireNudge() {
     return () => clearTimeout(t);
   }, [eligible]);
 
+  // Mark the nudge dismissed in localStorage and hide it.
   const dismiss = () => {
     try { localStorage.setItem(DISMISS_KEY, '1'); } catch (_e) { /* noop */ }
     setOpen(false);
   };
 
+  // Close the nudge and navigate to the questionnaire.
   const start = () => {
     setOpen(false);
     navigate('/app/questionnaire');

@@ -3,6 +3,7 @@ import * as SeparatorPrimitive from "@radix-ui/react-separator"
 
 import { cn } from "@/lib/utils"
 
+// Horizontal or vertical divider line
 const Separator = React.forwardRef((
   { className, orientation = "horizontal", decorative = true, ...props },
   ref

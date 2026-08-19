@@ -4,6 +4,7 @@ import { ThemeProvider } from 'next-themes';
 import { Toaster } from './components/ui/sonner';
 import ErrorBoundary from './components/ErrorBoundary';
 
+// Wraps lazy pages with an error boundary HOC
 const withErrorBoundary = (Component: React.LazyExoticComponent<React.ComponentType<any>>) =>
   (props: any) => <ErrorBoundary><Component {...props} /></ErrorBoundary>;
 import { Button } from './components/ui/button';
@@ -38,6 +39,7 @@ const BusinessOSPage = lazy(() => import('./pages/BusinessOSPage'));
 const ConnectionsPage = lazy(() => import('./pages/ConnectionsPage'));
 const RecordRoomPage = lazy(() => import('./pages/RecordRoomPage'));
 
+// Authenticated user shape stored in context
 interface AppUser {
   id: string;
   email: string;
@@ -51,6 +53,7 @@ interface AppUser {
   [key: string]: unknown;
 }
 
+// Contract for the auth context value
 interface AuthContextType {
   user: AppUser | null;
   login: (usr: AppUser) => void;
@@ -59,13 +62,16 @@ interface AuthContextType {
   setUser: React.Dispatch<React.SetStateAction<AppUser | null>>;
 }
 
+// Holds the global auth state and actions
 const AuthContext = createContext<AuthContextType | null>(null);
+// Access auth context or throw if missing
 export const useAuth = (): AuthContextType => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthContext.Provider");
   return ctx;
 };
 
+// Modal shown when credits run out
 function InsufficientCreditsModal() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -105,6 +111,7 @@ function InsufficientCreditsModal() {
   );
 }
 
+// Root app with auth state and routes
 const App: FC = () => {
   const [user, setUser] = useState<AppUser | null>(null);
   const [checking, setChecking] = useState(true);

@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
 
+// Render the app logo mark SVG
 const BrandMark = ({ size = 28 }) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
     <path d="M22 8.5 A7 7 0 0 0 10 8.5 Q10 13 16 15.5 Q22 18 22 22.5 A7 7 0 0 1 10 22.5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" fill="none" />
@@ -17,12 +18,14 @@ const BrandMark = ({ size = 28 }) => (
   </svg>
 );
 
+// Marketing pillars shown beside the auth form
 const PILLARS = [
   { num: '01', icon: Target, label: 'One goal', sub: 'The thing you keep avoiding.' },
   { num: '02', icon: CheckCircle2, label: 'One action', sub: 'Easiest move for the next 48h.' },
   { num: '03', icon: RefreshCw, label: 'Real progress', sub: 'Kept promises. Not vibes.' },
 ];
 
+// Sign up and login page for the app
 export default function AuthPage() {
   const { login } = useAuth();
   const refCode = new URLSearchParams(window.location.search).get('ref') || '';
@@ -35,6 +38,7 @@ export default function AuthPage() {
   const [config, setConfig] = useState({ signup_credits: 100 });
   useEffect(() => { api.get('/config').then(r => setConfig(r.data)).catch(() => {}); }, []);
 
+  // Submit the signup or login form
   const submitEmail = async (e) => {
     e.preventDefault();
     if (busy) return;

@@ -9,6 +9,7 @@ import { Book, Target, Radar, Activity, ListChecks, Scale, CircleDot, CheckCircl
 
 const ICONS = { target: Target, radar: Radar, activity: Activity, list_checks: ListChecks, scale: Scale, circle_dot: CircleDot, book: Book };
 
+// Framework playbook browser and runner
 export default function PlaybooksPage() {
   const { user } = useAuth();
   const [playbooks, setPlaybooks] = useState([]);
@@ -16,6 +17,7 @@ export default function PlaybooksPage() {
   const [activeId, setActiveId] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Load started and available playbooks
   const load = useCallback(() => {
     Promise.all([
       api.get('/v1/playbooks'),
@@ -28,16 +30,19 @@ export default function PlaybooksPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Start a new playbook
   const create = (key) => {
     api.post('/v1/playbooks', { playbook_key: key })
       .then(r => { load(); setActiveId(r.data.id); toast.success('Playbook started'); })
       .catch(() => {});
   };
 
+  // Save inputs for the current stage
   const saveStage = (id, inputs) => {
     api.patch(`/v1/playbooks/${id}`, { inputs }).then(r => { load(); }).catch(() => {});
   };
 
+  // Advance to the next playbook stage
   const advance = (id) => {
     api.post(`/v1/playbooks/${id}/advance`).then(r => { load(); toast.success('Advanced to next stage'); }).catch(() => {});
   };

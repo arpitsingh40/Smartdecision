@@ -10,6 +10,7 @@ import {
   MessageSquarePlus, Eye,
 } from 'lucide-react';
 
+// Public shareable decision card page
 export default function DecisionCardPage() {
   const { shareId } = useParams();
   const { user } = useAuth();
@@ -26,6 +27,7 @@ export default function DecisionCardPage() {
       .finally(() => setLoading(false));
   }, [shareId]);
 
+  // Post a second opinion on the card
   const postOpinion = useCallback(async () => {
     const text = opinion.trim();
     if (!text || posting) return;

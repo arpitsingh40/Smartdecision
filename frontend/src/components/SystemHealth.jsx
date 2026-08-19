@@ -97,6 +97,7 @@ function RootCauseButton({ journey }) {
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
 
+  // Request a causal tree analysis for the at-risk function.
   const analyze = useCallback(async () => {
     setLoading(true);
     try {
@@ -123,6 +124,7 @@ function RootCauseButton({ journey }) {
   );
 }
 
+// Recursive expandable node for the causal tree display.
 function TreeView({ node, depth }) {
   const [open, setOpen] = useState(depth < 2);
   const color = node.status === 'at_risk' ? 'text-red-600' : node.status === 'warning' ? 'text-amber-600' : 'text-emerald-600';
@@ -145,10 +147,12 @@ function TreeView({ node, depth }) {
   );
 }
 
+// Button that fetches adjacent leverage opportunities.
 function OpportunityButton({ journey }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Fetch the opportunities list from the backend.
   const scan = useCallback(async () => {
     setLoading(true);
     try {
@@ -245,6 +249,7 @@ const CAPABILITY_ICONS = {
   financial_model: Calculator, strategy_doc: Target,
 };
 
+// Universal panel for building and iterating on capabilities.
 export function CapabilityPanel() {
   const [description, setDescription] = useState('');
   const [capType, setCapType] = useState('');
@@ -270,6 +275,7 @@ export function CapabilityPanel() {
     }
   }, [description]);
 
+  // Kick off a capability build with the description.
   const doBuild = async () => {
     if (!description.trim() || building) return;
     setBuilding(true);
@@ -285,6 +291,7 @@ export function CapabilityPanel() {
     } finally { setBuilding(false); }
   };
 
+  // Apply feedback to iterate on an existing build.
   const doIterate = async () => {
     if (!feedback.trim() || !build?.build_id || iterating) return;
     setIterating(true);

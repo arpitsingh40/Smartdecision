@@ -10,6 +10,7 @@ const POLL_INTERVAL_MS = 3000;
 const MAX_ATTEMPTS = 20; // 20 × 3s = 60s window — Zoho can take 30–45s to settle
 const AUTO_REDIRECT_DELAY_MS = 2500;
 
+// Verify payment status after checkout redirect
 export default function PaymentResultPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();

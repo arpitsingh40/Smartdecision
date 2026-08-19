@@ -11,6 +11,7 @@ import {
 import { Loader2, CheckCircle2, Clock, Upload, MessageCircle, AlertTriangle, FileText, ChevronDown, ChevronUp, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Badge colors per task status
 const STATUS_COLORS = {
   pending: 'bg-muted text-muted border-hairline/60',
   in_progress: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -20,12 +21,14 @@ const STATUS_COLORS = {
   needs_clarification: 'bg-orange-50 text-orange-700 border-orange-200',
 };
 
+// Format a task due date
 const fmtDate = (iso) => {
   if (!iso) return '';
   try { return new Date(iso).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }); }
   catch { return ''; }
 };
 
+// Expandable task card with proof and clarify flows
 const TaskCard = ({ task, onUpdate, busy }) => {
   const [expanded, setExpanded] = useState(false);
   const [file, setFile] = useState(null);
@@ -35,6 +38,7 @@ const TaskCard = ({ task, onUpdate, busy }) => {
   const [clarifyBusy, setClarifyBusy] = useState(false);
   const [clarifyAnswer, setClarifyAnswer] = useState('');
 
+  // Read and validate an attached file
   const handleFile = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -47,6 +51,7 @@ const TaskCard = ({ task, onUpdate, busy }) => {
     reader.readAsDataURL(f);
   };
 
+  // Submit proof file for AI review
   const submitProof = async () => {
     if (!file) return;
     setUploading(true);
@@ -64,6 +69,7 @@ const TaskCard = ({ task, onUpdate, busy }) => {
     } finally { setUploading(false); }
   };
 
+  // Update the task status
   const changeStatus = async (status) => {
     try {
       await api.patch(`/org/tasks/${task.id}`, { status });
@@ -74,12 +80,14 @@ const TaskCard = ({ task, onUpdate, busy }) => {
     }
   };
 
+  // Open the clarification dialog
   const askAboutTask = () => {
     setClarifyQuestion('');
     setClarifyAnswer('');
     setClarifyOpen(true);
   };
 
+  // Ask the brain about this task
   const submitClarify = async () => {
     if (!clarifyQuestion.trim()) return;
     setClarifyBusy(true);
@@ -241,12 +249,14 @@ const TaskCard = ({ task, onUpdate, busy }) => {
   );
 };
 
+// Assigned tasks list page
 export default function MyTasksPage() {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
+  // Load tasks assigned to the user
   const load = useCallback(async () => {
     setLoading(true);
     try {

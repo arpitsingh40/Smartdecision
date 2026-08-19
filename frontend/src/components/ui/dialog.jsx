@@ -4,6 +4,7 @@ import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+// Re-export Radix dialog primitives
 const Dialog = DialogPrimitive.Root
 
 const DialogTrigger = DialogPrimitive.Trigger
@@ -12,6 +13,7 @@ const DialogPortal = DialogPrimitive.Portal
 
 const DialogClose = DialogPrimitive.Close
 
+// Dimmed backdrop behind the dialog
 const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
@@ -23,6 +25,7 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
+// Portal-rendered dialog panel with close button
 function DialogContent({ className = '', children, ...props }) {
   return (
     <DialogPortal>
@@ -45,6 +48,7 @@ function DialogContent({ className = '', children, ...props }) {
 }
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
+// Header wrapper for title and description
 function DialogHeader({ className = '', ...props }) {
   return (
     <div
@@ -54,6 +58,7 @@ function DialogHeader({ className = '', ...props }) {
 }
 DialogHeader.displayName = "DialogHeader"
 
+// Footer row for dialog actions
 function DialogFooter({ className = '', ...props }) {
   return (
     <div
@@ -63,6 +68,7 @@ function DialogFooter({ className = '', ...props }) {
 }
 DialogFooter.displayName = "DialogFooter"
 
+// Accessible title for the dialog
 function DialogTitle({ className = '', ...props }) {
   return (
     <DialogPrimitive.Title
@@ -72,6 +78,7 @@ function DialogTitle({ className = '', ...props }) {
 }
 DialogTitle.displayName = DialogPrimitive.Title.displayName
 
+// Accessible description for the dialog
 function DialogDescription({ className = '', ...props }) {
   return (
     <DialogPrimitive.Description

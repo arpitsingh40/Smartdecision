@@ -1,5 +1,6 @@
 import { useInView } from '../hooks/useInView';
 
+// Fade-and-slide wrapper that animates children in when scrolled into view.
 export default function AnimateIn({ children, className = '', delay = 0 }) {
   const [ref, inView] = useInView(0.1);
   return (

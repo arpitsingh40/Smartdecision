@@ -10,6 +10,7 @@ import {
   CheckCircle2, Link2, Wifi, ArrowLeft, Zap
 } from 'lucide-react';
 
+// Group business functions by category
 const functionGroups = {
   'Sales & Revenue': ['sales', 'customer_success'],
   'Marketing & Growth': ['marketing', 'growth', 'brand'],
@@ -19,6 +20,7 @@ const functionGroups = {
   'Strategy': ['strategy', 'vision', 'partnerships'],
 };
 
+// Display labels for function keys
 const functionLabels = {
   sales: 'Sales', marketing: 'Marketing', product: 'Product',
   technology: 'Technology', finance: 'Finance', operations: 'Operations',
@@ -27,6 +29,7 @@ const functionLabels = {
   vision: 'Vision', strategy: 'Strategy', leadership: 'Leadership',
 };
 
+// Tool connection management page
 export default function ConnectionsPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -36,6 +39,7 @@ export default function ConnectionsPage() {
   const [connecting, setConnecting] = useState(null);
   const [authUrl, setAuthUrl] = useState(null);
 
+  // Load current tool connections
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -50,6 +54,7 @@ export default function ConnectionsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Start OAuth for a toolkit
   const connectTool = async (toolkit) => {
     setConnecting(toolkit);
     try {
@@ -66,6 +71,7 @@ export default function ConnectionsPage() {
     finally { setConnecting(null); }
   };
 
+  // Poll until the OAuth connection lands
   const completeConnection = async (toolkit) => {
     try {
       // Poll until the connection is confirmed
@@ -83,6 +89,7 @@ export default function ConnectionsPage() {
     } catch (e) { /* handled */ }
   };
 
+  // Disconnect a connected toolkit
   const disconnectTool = async (toolkit) => {
     setConnecting(toolkit);
     try {

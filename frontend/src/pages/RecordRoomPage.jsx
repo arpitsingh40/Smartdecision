@@ -10,6 +10,7 @@ import {
   CheckCircle2, XCircle, Clock, Zap, Play, ArrowRight, Info
 } from 'lucide-react';
 
+// Icons per audit event type
 const typeIcons = {
   agent_decision: Brain,
   agent_execution: Zap,
@@ -34,6 +35,7 @@ const typeIcons = {
   error: XCircle,
 };
 
+// Labels per audit event type
 const typeLabels = {
   agent_decision: 'Agent Decision',
   agent_execution: 'Agent Execution',
@@ -61,6 +63,7 @@ const typeLabels = {
   error: 'Error',
 };
 
+// Badge color per severity level
 const sevBadge = (s) => {
   const m = {
     info: 'bg-slate-50 text-slate-600 border-slate-200',
@@ -71,6 +74,7 @@ const sevBadge = (s) => {
   return m[s] || m.info;
 };
 
+// Organization audit trail page
 export default function RecordRoomPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -83,6 +87,7 @@ export default function RecordRoomPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [limit, setLimit] = useState(50);
 
+  // Load audit events with filters
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -143,6 +148,7 @@ export default function RecordRoomPage() {
     );
   }
 
+  // Pick the icon for an event type
   const IconFor = (type) => {
     const I = typeIcons[type] || Info;
     return <I size={14} strokeWidth={1.75} />;

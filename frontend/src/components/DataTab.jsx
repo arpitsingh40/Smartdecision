@@ -184,6 +184,7 @@ function UnderstandingCard({ understanding }) {
   );
 }
 
+// Card showing the dominant behavioral pattern for a user.
 function PatternsCard({ patterns }) {
   if (!patterns) return null;
   const p = patterns.current || {};
@@ -208,6 +209,7 @@ function PatternsCard({ patterns }) {
   );
 }
 
+// Card summarizing decisions committed and their outcomes.
 function DecisionsCard({ decisions }) {
   if (!decisions) return null;
   if (decisions.total === 0) return null;
@@ -253,6 +255,7 @@ function DecisionsCard({ decisions }) {
   );
 }
 
+// Card displaying emotional temperature and consistency metrics.
 function EngagementCard({ engagement, threads }) {
   if (!engagement) return null;
   const { emotional_temperature_avg: temp, execution_consistency_avg: consistency, pace_trend } = engagement;

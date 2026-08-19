@@ -11,6 +11,7 @@ import {
   Users, Building2, Link2, Copy, Trash2, Crown, UserPlus, Loader2, ShieldCheck, Target, Lock, Save, Rocket, ArrowRight,
 } from 'lucide-react';
 
+// Workspace management page for teams
 export default function TeamPage() {
   const { user, setUser } = useAuth();
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ export default function TeamPage() {
   const [strategy, setStrategy] = useState({ north_star: '', target: '', deadline: '', priorities: '', decision_rules: '', current_arr: null, target_arr: null });
   const [savingStrategy, setSavingStrategy] = useState(false);
 
+  // Load members, invites, and strategy
   const loadOwnerData = useCallback(async () => {
     try {
       const [m, i] = await Promise.all([api.get('/org/members'), api.get('/org/invites')]);
@@ -43,6 +45,7 @@ export default function TeamPage() {
     } catch (_e) { /* not owner */ }
   }, []);
 
+  // Load the current workspace
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -59,10 +62,12 @@ export default function TeamPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Sync org info into the user context
   const syncUserOrg = (data) => {
     setUser((u) => (u ? { ...u, org_id: data.id, org_role: data.role } : u));
   };
 
+  // Create a new workspace
   const createOrg = async () => {
     if (orgName.trim().length < 2 || busy) return;
     setBusy(true);
@@ -76,6 +81,7 @@ export default function TeamPage() {
     } finally { setBusy(false); }
   };
 
+  // Join a workspace by invite code
   const joinByCode = async () => {
     const code = joinCode.trim();
     if (code.length < 4 || busy) return;
@@ -90,6 +96,7 @@ export default function TeamPage() {
     } finally { setBusy(false); }
   };
 
+  // Create and copy an invite link
   const createInvite = async () => {
     setBusy(true);
     try {
@@ -106,11 +113,13 @@ export default function TeamPage() {
     } finally { setBusy(false); }
   };
 
+  // Copy an invite link to clipboard
   const copyLink = async (url) => {
     try { await navigator.clipboard.writeText(url); toast.success('Link copied.'); }
     catch (_e) { toast.error('Copy failed — select the link manually.'); }
   };
 
+  // Revoke a pending invite
   const revokeInvite = async (code) => {
     try {
       await api.post(`/org/invites/${code}/revoke`);
@@ -121,6 +130,7 @@ export default function TeamPage() {
     }
   };
 
+  // Remove a member from the workspace
   const removeMember = async (userId, name) => {
     try {
       await api.delete(`/org/members/${userId}`);
@@ -132,6 +142,7 @@ export default function TeamPage() {
     }
   };
 
+  // Save the North Star strategy
   const saveStrategy = async () => {
     if (savingStrategy) return;
     setSavingStrategy(true);

@@ -8,6 +8,7 @@ import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { api } from '../lib/api';
 
+// Feedback category options for the picker.
 const CATEGORIES = [
   { id: 'bug', label: 'Bug' },
   { id: 'idea', label: 'Idea' },
@@ -15,6 +16,7 @@ const CATEGORIES = [
   { id: 'other', label: 'Other' },
 ];
 
+// Modal dialog for collecting star-rated feedback.
 export const FeedbackDialog = ({ open, onOpenChange }) => {
   const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
@@ -22,8 +24,10 @@ export const FeedbackDialog = ({ open, onOpenChange }) => {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Clear all form fields after sending.
   const reset = () => { setRating(0); setHover(0); setCategory('idea'); setMessage(''); };
 
+  // Validate and post the feedback to the API.
   const submit = async () => {
     if (!rating || !message.trim()) return;
     setSending(true);

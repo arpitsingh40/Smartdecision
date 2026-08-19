@@ -1,5 +1,6 @@
 import { Brain, Target, Users, BookOpen, Radar, ShieldCheck, ArrowRight, Zap, Wifi, History } from 'lucide-react';
 
+// Feature card content for the six engine highlights.
 const FEATURES = [
   {
     icon: Target,
@@ -45,6 +46,7 @@ const FEATURES = [
   },
 ];
 
+// Grid of feature cards describing the six engines.
 export default function FeaturesSection() {
   return (
     <section id="features" className="relative py-28 sm:py-36 bg-surface-2 overflow-x-clip">

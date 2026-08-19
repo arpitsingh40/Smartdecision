@@ -3,6 +3,7 @@
 
 const os = require('os');
 
+// Timestamp used to compute server uptime
 const SERVER_START_TIME = Date.now();
 
 /**

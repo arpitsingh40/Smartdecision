@@ -1,5 +1,6 @@
 import { MessageCircle, Target, CheckCircle2, Users, GitCommitHorizontal } from 'lucide-react';
 
+// Timeline steps explaining the five-stage journey.
 const STEPS = [
   {
     num: '01', icon: MessageCircle, label: 'One conversation',
@@ -33,6 +34,7 @@ const STEPS = [
   },
 ];
 
+// Vertical timeline walking through the five steps.
 export default function HowItWorks() {
   return (
     <section id="how-it-works" className="relative py-28 sm:py-36 bg-surface overflow-x-clip">

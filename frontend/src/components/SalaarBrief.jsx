@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ShieldCheck, AlertTriangle, CheckCircle2, Users, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 
+// Collapsible bar showing SALAAR threats and pending actions.
 export function SalaarBrief() {
   const [brief, setBrief] = useState(null);
   const [loading, setLoading] = useState(true);

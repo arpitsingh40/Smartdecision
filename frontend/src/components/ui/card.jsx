@@ -2,6 +2,7 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+// Root card container with surface styling
 const Card = React.forwardRef(({ className, ...props }, ref) => (
   <div
     ref={ref}
@@ -10,6 +11,7 @@ const Card = React.forwardRef(({ className, ...props }, ref) => (
 ))
 Card.displayName = "Card"
 
+// Header section of a card
 const CardHeader = React.forwardRef(({ className, ...props }, ref) => (
   <div
     ref={ref}
@@ -18,6 +20,7 @@ const CardHeader = React.forwardRef(({ className, ...props }, ref) => (
 ))
 CardHeader.displayName = "CardHeader"
 
+// Title text inside card header
 const CardTitle = React.forwardRef(({ className, ...props }, ref) => (
   <div
     ref={ref}
@@ -26,6 +29,7 @@ const CardTitle = React.forwardRef(({ className, ...props }, ref) => (
 ))
 CardTitle.displayName = "CardTitle"
 
+// Muted description under card title
 const CardDescription = React.forwardRef(({ className, ...props }, ref) => (
   <div
     ref={ref}
@@ -34,11 +38,13 @@ const CardDescription = React.forwardRef(({ className, ...props }, ref) => (
 ))
 CardDescription.displayName = "CardDescription"
 
+// Main padded body of a card
 const CardContent = React.forwardRef(({ className, ...props }, ref) => (
   <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
 ))
 CardContent.displayName = "CardContent"
 
+// Footer row for card actions
 const CardFooter = React.forwardRef(({ className, ...props }, ref) => (
   <div
     ref={ref}

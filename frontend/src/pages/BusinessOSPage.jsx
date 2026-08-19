@@ -10,6 +10,7 @@ import {
   Target, Shield, History, Wifi, Plus, ArrowRight, Gauge,
 } from 'lucide-react';
 
+// Business OS tab definitions
 const TABS = [
   { id: 'ops', label: 'Ops', icon: Zap },
   { id: 'cockpit', label: 'Cockpit', icon: Gauge },
@@ -17,12 +18,14 @@ const TABS = [
   { id: 'tools', label: 'Tools', icon: Wifi },
 ];
 
+// Labels for scheduled process runs
 const processScheduleLabels = {
   morning_brief: '8 AM', midday_followup: '2 PM', evening_wrap: '7 PM',
   weekly_strategy: 'Monday', weekly_people: 'Friday',
   pipeline_health: 'Every 4h', tech_health: 'Every 6h',
 };
 
+// Business OS dashboard with tabbed views
 export default function BusinessOSPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -45,6 +48,7 @@ export default function BusinessOSPage() {
   const [tools, setTools] = useState(null);
   const [toolsLoading, setToolsLoading] = useState(false);
 
+  // Fetch status, processes, and approvals
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -97,10 +101,13 @@ export default function BusinessOSPage() {
     }
   }, [tab, cockpit, records, tools, cockpitLoading, recordsLoading, toolsLoading]);
 
+  // Trigger a full business OS cycle
   const runCycle = async () => { setRunning(true); try { await api.post('/business-os/run'); await load(); } catch (_) {} finally { setRunning(false); } };
+  // Approve or deny a pending approval
   const handleApproval = async (id, action) => {
     try { await api.post(`/business-os/approvals/${id}`, { action }); toast.success(action === 'approve' ? 'Approved' : 'Denied'); await load(); } catch (_) {}
   };
+  // Start OAuth flow for a toolkit
   const connectTool = async (toolkit) => {
     try {
       const r = await api.post('/execution/connections/connect', { toolkit, redirect_uri: window.location.origin + '/app/business-os' });

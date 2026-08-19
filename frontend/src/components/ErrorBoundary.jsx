@@ -1,16 +1,19 @@
 import { Component } from 'react';
 import { Button } from './ui/button';
 
+// Catches render errors and shows a recoverable fallback screen.
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
+  // Capture any thrown error into component state.
   static getDerivedStateFromError(error) {
     return { hasError: true, error };
   }
 
+  // Render fallback UI on error, children otherwise.
   render() {
     if (this.state.hasError) {
       return (

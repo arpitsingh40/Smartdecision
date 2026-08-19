@@ -16,6 +16,7 @@ import { useAuth } from '../App';
      §10 Human Override     — the kill switch is always one tap away
      §5 Evidence-First      — verification results are shown as they really are */
 
+// Status badge styles per task status
 const STATUS_STYLE = {
   proposed: 'text-amber-600 bg-amber-500/10 border-amber-500/30',
   verified: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/30',
@@ -26,6 +27,7 @@ const STATUS_STYLE = {
   approved: 'text-sky-600 bg-sky-500/10 border-sky-500/30',
 };
 
+// Render a colored status badge
 function StatusChip({ status }) {
   return (
     <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${STATUS_STYLE[status] || 'text-muted border-hairline'}`}>
@@ -34,6 +36,7 @@ function StatusChip({ status }) {
   );
 }
 
+// Show monthly autonomous spend budget
 function BudgetBar({ budget }) {
   if (!budget) return null;
   const pct = budget.cap_inr > 0 ? Math.min(100, Math.round((budget.spent_inr / budget.cap_inr) * 100)) : 0;
@@ -51,6 +54,7 @@ function BudgetBar({ budget }) {
   );
 }
 
+// Show approval brief with actions
 function Brief({ brief, onApprove, onReject, busy }) {
   if (!brief) return null;
   const t = brief.task || {};
@@ -117,6 +121,7 @@ function Brief({ brief, onApprove, onReject, busy }) {
   );
 }
 
+// Founder approval queue and kill switch page
 export default function MissionControlPage() {
   const { user } = useAuth();
   const [pending, setPending] = useState([]);
@@ -127,6 +132,7 @@ export default function MissionControlPage() {
   const [busy, setBusy] = useState(false);
   const [denied, setDenied] = useState(false);
 
+  // Load pending tasks, summary, and history
   const load = useCallback(() => {
     api.get('/tasks/pending').then((r) => setPending(r.data.tasks || [])).catch(() => {});
     api.get('/tasks/summary').then((r) => setSummary(r.data)).catch((e) => {
@@ -141,6 +147,7 @@ export default function MissionControlPage() {
     return () => clearInterval(id);
   }, [load]);
 
+  // Fetch the approval brief for a task
   const openBrief = (task) => {
     setBriefFor(task.id);
     api.get(`/tasks/${task.id}/brief`)
@@ -151,6 +158,7 @@ export default function MissionControlPage() {
       });
   };
 
+  // Post an approval action and refresh
   const act = (path, body) => {
     setBusy(true);
     api.post(path, body || {})
@@ -166,6 +174,7 @@ export default function MissionControlPage() {
       .finally(() => setBusy(false));
   };
 
+  // Pause or resume autonomous execution
   const toggleKillSwitch = () => {
     const paused = !(summary?.budget?.execution_paused);
     api.post('/tasks/kill-switch', { paused })

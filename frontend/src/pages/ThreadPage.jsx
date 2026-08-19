@@ -22,6 +22,7 @@ import { useTilt3D } from '../hooks/use-3d-tilt';
 
 const ACTION_WINDOW_MS = 48 * 3600 * 1000;
 const MAX_ATTACH_BYTES = 8 * 1024 * 1024;
+// File types accepted for attachments
 const ACCEPTED_TYPES = [
   'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif',
   'application/pdf', '.pdf',
@@ -34,6 +35,7 @@ const ACCEPTED_TYPES = [
   '.py', '.js', '.ts', '.tsx', '.jsx', '.yaml', '.yml', '.sql',
 ].join(',');
 
+// Prebuilt adjustment chips for the next action
 const ADJUST_CHIPS = [
   { id: 'no-time', label: 'No time', phrase: "I don't have time for this step as written." },
   { id: 'blocked', label: 'Blocked by someone', phrase: "I'm blocked by someone else on this step." },
@@ -41,16 +43,19 @@ const ADJUST_CHIPS = [
   { id: 'different-idea', label: 'I have a different idea', phrase: 'I have a different idea for this step.' },
 ];
 
+// Format a duration as hours and minutes
 const fmtRemaining = (ms) => {
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 };
+// Format a timestamp as clock time
 const fmtTime = (iso) => {
   try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
   catch { return ''; }
 };
 
+// Daily check-in thread conversation page
 export default function ThreadPage() {
   const { threadId } = useParams();
   const navigate = useNavigate();
@@ -76,6 +81,7 @@ export default function ThreadPage() {
   const fileInputRef = useRef(null);
   const [fieldRefresh, setFieldRefresh] = useState(false);
 
+  // Briefly toggle field refresh flag
   const onFieldRefresh = useCallback(() => {
     setFieldRefresh(true);
     setTimeout(() => setFieldRefresh(false), 300);
@@ -105,6 +111,7 @@ export default function ThreadPage() {
     return () => clearInterval(id);
   }, [thinking]);
 
+  // Validate and read an attached file
   const pickFile = (file) => {
     if (!file) return;
     if (file.size > MAX_ATTACH_BYTES) {
@@ -117,6 +124,7 @@ export default function ThreadPage() {
     reader.readAsDataURL(file);
   };
 
+  // Send a message and sync thread state
   const sendText = useCallback(async (text, adjust = false) => {
     const msg = (text || '').trim();
     if (!msg || thinking) return false;
@@ -151,8 +159,10 @@ export default function ThreadPage() {
     }
   }, [thinking, threadId, setCredits, mode, attachment, onFieldRefresh]);
 
+  // Send the current composer message
   const send = useCallback(() => sendText(message), [sendText, message]);
 
+  // Send an adjustment for the next action
   const sendAdjust = useCallback(async () => {
     const chip = ADJUST_CHIPS.find((c) => c.id === adjustChip);
     const extra = adjustText.trim();
@@ -167,6 +177,7 @@ export default function ThreadPage() {
     }
   }, [adjustChip, adjustText, sendText]);
 
+  // Send on Enter without shift
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -174,6 +185,7 @@ export default function ThreadPage() {
     }
   };
 
+  // Change the thread status
   const setStatus = async (status) => {
     try {
       await api.patch(`/threads/${threadId}/status`, { status });
@@ -188,6 +200,7 @@ export default function ThreadPage() {
   const artifactKey = artifact?.generated_at || null;
   const artifactText = (artifactEdit && artifactEdit.key === artifactKey) ? artifactEdit.text : (artifact?.artifact || '');
 
+  // Draft the current action artifact
   const doItForMe = async () => {
     if (assistLoading || thinking) return;
     setAssistLoading(true);
@@ -203,6 +216,7 @@ export default function ThreadPage() {
     }
   };
 
+  // Copy the artifact text to clipboard
   const copyArtifact = async () => {
     try {
       await navigator.clipboard.writeText(artifactText);

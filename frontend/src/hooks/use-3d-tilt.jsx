@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback } from 'react';
 
+// Tilts element in 3D based on cursor position
 export function useTilt3D(maxTilt = 2.5) {
   const ref = useRef(null);
   const state = useRef({ isHovering: false });

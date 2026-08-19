@@ -4,6 +4,7 @@ import { Check, ChevronRight, Circle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+// Re-export Radix dropdown primitives
 const DropdownMenu = DropdownMenuPrimitive.Root
 
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
@@ -16,6 +17,7 @@ const DropdownMenuSub = DropdownMenuPrimitive.Sub
 
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
 
+// Trigger row that opens a submenu
 const DropdownMenuSubTrigger = React.forwardRef(({ className, inset, children, ...props }, ref) => (
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
@@ -32,6 +34,7 @@ const DropdownMenuSubTrigger = React.forwardRef(({ className, inset, children, .
 DropdownMenuSubTrigger.displayName =
   DropdownMenuPrimitive.SubTrigger.displayName
 
+// Popover panel for a submenu
 const DropdownMenuSubContent = React.forwardRef(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.SubContent
     ref={ref}
@@ -44,6 +47,7 @@ const DropdownMenuSubContent = React.forwardRef(({ className, ...props }, ref) =
 DropdownMenuSubContent.displayName =
   DropdownMenuPrimitive.SubContent.displayName
 
+// Portal-rendered dropdown panel
 const DropdownMenuContent = React.forwardRef(({ className, sideOffset = 4, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
@@ -59,6 +63,7 @@ const DropdownMenuContent = React.forwardRef(({ className, sideOffset = 4, ...pr
 ))
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
 
+// Clickable item inside the dropdown
 const DropdownMenuItem = React.forwardRef(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
@@ -71,6 +76,7 @@ const DropdownMenuItem = React.forwardRef(({ className, inset, ...props }, ref) 
 ))
 DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName
 
+// Checkbox item with indicator
 const DropdownMenuCheckboxItem = React.forwardRef(({ className, children, checked, ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
@@ -91,6 +97,7 @@ const DropdownMenuCheckboxItem = React.forwardRef(({ className, children, checke
 DropdownMenuCheckboxItem.displayName =
   DropdownMenuPrimitive.CheckboxItem.displayName
 
+// Radio item with indicator
 const DropdownMenuRadioItem = React.forwardRef(({ className, children, ...props }, ref) => (
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
@@ -109,6 +116,7 @@ const DropdownMenuRadioItem = React.forwardRef(({ className, children, ...props 
 ))
 DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName
 
+// Section label inside the dropdown
 const DropdownMenuLabel = React.forwardRef(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
@@ -117,6 +125,7 @@ const DropdownMenuLabel = React.forwardRef(({ className, inset, ...props }, ref)
 ))
 DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName
 
+// Divider line inside the dropdown
 const DropdownMenuSeparator = React.forwardRef(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
@@ -125,6 +134,7 @@ const DropdownMenuSeparator = React.forwardRef(({ className, ...props }, ref) =>
 ))
 DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName
 
+// Keyboard shortcut hint text
 const DropdownMenuShortcut = ({
   className,
   ...props

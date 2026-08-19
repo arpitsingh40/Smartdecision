@@ -3,6 +3,7 @@ import { cva } from "class-variance-authority";
 
 import { cn } from "@/lib/utils"
 
+// Variant styles for badge components
 const badgeVariants = cva(
   "inline-flex items-center rounded-lg border px-2.5 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2",
   {
@@ -24,6 +25,7 @@ const badgeVariants = cva(
   }
 )
 
+// Styled status pill component
 function Badge({
   className,
   variant,

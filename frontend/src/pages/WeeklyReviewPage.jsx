@@ -10,12 +10,14 @@ import { ListChecks, RotateCcw, CheckCircle, Inbox, Search, RefreshCw, Compass }
 const STAGE_ICONS = { capture: Inbox, clarify: Search, reflect: RefreshCw, plan: Compass };
 const STAGE_COLORS = { capture: 'text-blue-500', clarify: 'text-amber-500', reflect: 'text-purple-500', plan: 'text-green-500' };
 
+// Four-stage weekly review flow page
 export default function WeeklyReviewPage() {
   const { user } = useAuth();
   const [review, setReview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState('');
 
+  // Load the current review and stage content
   const load = useCallback(() => {
     api.get('/v1/weekly-review').then(r => {
       setReview(r.data);
@@ -25,6 +27,7 @@ export default function WeeklyReviewPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Save stage content and advance
   const save = () => {
     api.patch('/v1/weekly-review', { content }).then(r => {
       setReview(r.data);
@@ -34,6 +37,7 @@ export default function WeeklyReviewPage() {
     }).catch(() => {});
   };
 
+  // Reset the review back to capture
   const reset = () => {
     api.post('/v1/weekly-review/reset').then(r => {
       setReview(r.data);
@@ -126,4 +130,5 @@ export default function WeeklyReviewPage() {
   );
 }
 
+// Render a step separator chevron
 function ChevronRightIcon() { return <span className="text-muted/30 text-[10px]">▸</span>; }

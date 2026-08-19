@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import { Users, Loader2, LogIn, AlertCircle } from 'lucide-react';
 
+// Accept an org invite via share link
 export default function JoinPage() {
   const { code } = useParams();
   const { user, setUser } = useAuth();
@@ -24,6 +25,7 @@ export default function JoinPage() {
     return () => { alive = false; };
   }, [code]);
 
+  // Join the workspace with the invite code
   const join = useCallback(async () => {
     if (busy) return;
     setBusy(true);
@@ -44,6 +46,7 @@ export default function JoinPage() {
     } finally { setBusy(false); }
   }, [busy, code, navigate, setUser]);
 
+  // Stash invite and send to sign in
   const goSignIn = () => {
     localStorage.setItem('sdg_pending_invite', code);
     navigate('/auth');

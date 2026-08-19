@@ -1,5 +1,6 @@
 import { MessageCircle, Zap, BarChart3 } from 'lucide-react';
 
+// Mock product screens shown in the demo cards.
 const SCREENS = [
   {
     icon: MessageCircle,
@@ -21,6 +22,7 @@ const SCREENS = [
   },
 ];
 
+// Section showcasing three product surfaces in mock frames.
 export default function DemoSection() {
   return (
     <section id="demo" className="relative py-28 sm:py-36 bg-surface-2 overflow-hidden">

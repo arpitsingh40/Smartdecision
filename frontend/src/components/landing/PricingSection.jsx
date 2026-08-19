@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Check, Sparkles, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 
+// Pricing tiers with credits, features, and popular flag.
 const PLANS = [
   {
     id: 'starter',
@@ -32,6 +33,7 @@ const PLANS = [
   },
 ];
 
+// Pricing grid with the three one-time credit plans.
 export default function PricingSection() {
   const navigate = useNavigate();
   return (

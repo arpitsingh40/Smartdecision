@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { ArrowRight } from 'lucide-react';
 
+// Landing hero with headline and signup actions.
 export default function HeroSection() {
   const navigate = useNavigate();
   return (

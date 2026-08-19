@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import DataTab from '../components/DataTab';
 import { fmt, fmtDate, Stat, Th, Td, Pager } from '../lib/admin-ui';
 
+// Format seconds into a compact duration string
 const fmtDur = (s) => {
   if (!s || s < 60) return `${s || 0}s`;
   const m = Math.floor(s / 60);
@@ -14,6 +15,7 @@ const fmtDur = (s) => {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 };
 
+// Render an uppercase section heading with optional icon
 const SectionTitle = ({ icon: Icon, children }) => (
   <h2 className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted mt-8 mb-3">
     {Icon && <Icon size={13} strokeWidth={1.75} />} {children}
@@ -124,11 +126,13 @@ function UserDetail({ userId, onBack }) {
   );
 }
 
+// List users with search, pagination, and activity drill-down
 function UsersTab() {
   const [data, setData] = useState(null);
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState(null);
+  // Fetch the paginated user list
   const load = useCallback(() => {
     api.get('/admin/users', { params: { page, limit: 25, q } }).then((r) => setData(r.data)).catch(() => {});
   }, [page, q]);
@@ -309,12 +313,14 @@ function UsageTab() {
 }
 
 // ---------------------------------------------------------------- Feedback
+// Feedback status filter options for the tab
 const STATUS_FILTERS = [
   { id: '', label: 'All' },
   { id: 'new', label: 'New' },
   { id: 'reviewed', label: 'Reviewed' },
   { id: 'resolved', label: 'Resolved' },
 ];
+// Badge color styles per feedback category
 const CATEGORY_STYLE = {
   bug: 'bg-red-50 text-red-700 border-red-200',
   idea: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -322,6 +328,7 @@ const CATEGORY_STYLE = {
   other: 'bg-secondary text-muted border-hairline/70',
 };
 
+// Render a five-star rating row
 const Stars = ({ n }) => (
   <span className="inline-flex items-center gap-0.5" title={`${n}/5`}>
     {[1, 2, 3, 4, 5].map((i) => (
@@ -331,6 +338,7 @@ const Stars = ({ n }) => (
   </span>
 );
 
+// Show user feedback with status management
 function FeedbackTab() {
   const [data, setData] = useState(null);
   const [page, setPage] = useState(1);
@@ -342,6 +350,7 @@ function FeedbackTab() {
   }, [page, status]);
   useEffect(() => { load(); }, [load]);
 
+  // Update a feedback row's review status
   const setRowStatus = (id, newStatus) => {
     api.patch(`/admin/feedback/${id}`, { status: newStatus }).then(() => load()).catch(() => {});
   };
@@ -412,14 +421,17 @@ function FeedbackTab() {
 }
 
 // ---------------------------------------------------------------- Launch readiness (5 KPIs + release gate)
+// Format a percentage value or show a dash
 const pctOr = (p) => (p == null ? '—' : `${p}%`);
 const GATE_LABELS = { truth: 'Truth', reasoning: 'Reasoning', actionability: 'Actionability', impact: 'Impact' };
 
+// Show launch KPIs and the release gate runner
 function LaunchTab() {
   const [d, setD] = useState(null);
   const [gate, setGate] = useState(null);
   const [starting, setStarting] = useState(false);
 
+  // Fetch launch readiness and gate status
   const load = useCallback(() => {
     api.get('/admin/launch-readiness').then((r) => setD(r.data)).catch(() => {});
     api.get('/admin/release-gate').then((r) => setGate(r.data)).catch(() => {});
@@ -434,6 +446,7 @@ function LaunchTab() {
     return () => clearInterval(id);
   }, [runningNow, load]);
 
+  // Kick off the release gate scenario run
   const runGate = async () => {
     if (starting || runningNow) return;
     setStarting(true);
@@ -527,6 +540,7 @@ function LaunchTab() {
 }
 
 // ---------------------------------------------------------------- page
+// Admin page navigation tab definitions
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'users', label: 'Users' },
@@ -537,6 +551,7 @@ const TABS = [
   { id: 'launch', label: 'Launch' },
 ];
 
+// Admin dashboard page with tabbed sections
 export default function AdminPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState('overview');

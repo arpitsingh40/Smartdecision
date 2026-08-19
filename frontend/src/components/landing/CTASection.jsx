@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { ArrowRight } from 'lucide-react';
 
+// Final call-to-action band prompting signup.
 export default function CTASection() {
   const navigate = useNavigate();
   return (

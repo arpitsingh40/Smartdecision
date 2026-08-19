@@ -1,13 +1,16 @@
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { toast } from 'sonner';
 
+// Backend base URL from env or same origin
 const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL || '';
 
+// Shared axios instance with credentials
 export const api = axios.create({
   baseURL: `${BACKEND_URL}/api`,
   withCredentials: true,
 });
 
+// Payload shape for task updates
 interface TaskUpdateBody {
   status?: string;
   proof_files?: Record<string, unknown>[];
@@ -15,6 +18,7 @@ interface TaskUpdateBody {
   due_at?: string;
 }
 
+// Endpoints for org task management
 export const tasksApi = {
   generateWeek: (weekStart?: string) => api.post('/org/tasks/generate-week', { week_start: weekStart }),
   list: (params?: Record<string, unknown>) => api.get('/org/tasks', { params }),
@@ -27,6 +31,7 @@ export const tasksApi = {
   setDepartmentHead: (body: Record<string, unknown>) => api.put('/org/department-heads', body),
 };
 
+// Global interceptor surfacing backend errors as toasts
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError<{ detail?: string }>) => {
@@ -45,6 +50,7 @@ api.interceptors.response.use(
   }
 );
 
+// Endpoints for habit tracking
 export const habitsApi = {
   list: () => api.get('/v1/habits'),
   create: (body: Record<string, unknown>) => api.post('/v1/habits', body),
@@ -54,6 +60,7 @@ export const habitsApi = {
   delete: (id: string) => api.delete(`/v1/habits/${id}`),
 };
 
+// Endpoints for playbook workflows
 export const playbooksApi = {
   list: () => api.get('/v1/playbooks'),
   available: () => api.get('/v1/playbooks/available'),
@@ -63,6 +70,7 @@ export const playbooksApi = {
   advance: (id: string) => api.post(`/v1/playbooks/${id}/advance`),
 };
 
+// Endpoints for weekly review data
 export const weeklyReviewApi = {
   get: () => api.get('/v1/weekly-review'),
   update: (body: Record<string, unknown>) => api.patch('/v1/weekly-review', body),

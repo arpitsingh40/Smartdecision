@@ -15,6 +15,7 @@ import {
   FlaskConical, Share2, Layers, Wifi,
 } from 'lucide-react';
 
+// Rotating landing input placeholders
 const PLACEHOLDERS = [
   'The pivot you keep postponing…',
   'The founder you need to let go…',
@@ -27,6 +28,7 @@ const PLACEHOLDERS = [
 
 const STRING_FIELDS = ['objective', 'why_now', 'whats_at_stake', 'knowledge_level', 'urgency', 'impact', 'timeline'];
 
+// Coerce a model field value to a string
 function fieldValue(field, value) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return value.filter((v) => String(v).trim()).join(' · ');
@@ -36,10 +38,12 @@ function fieldValue(field, value) {
   return String(value).trim();
 }
 
+// Check whether a model field has content
 function isFilled(field, value) {
   return fieldValue(field, value).length > 0;
 }
 
+// Render a labeled list block in the direction card
 function DirList({ icon: Icon, label, items }) {
   if (!items || !items.length) return null;
   return (
@@ -89,6 +93,7 @@ function OSStatusStrip() {
   );
 }
 
+// Conversational journey page for shaping direction
 export default function JourneyPage() {
   const { user, setCredits } = useAuth();
   const navigate = useNavigate();
@@ -111,6 +116,7 @@ export default function JourneyPage() {
   const [sessionId, setSessionId] = useState(null);
   const endRef = useRef(null);
 
+  // Load an in-progress journey
   const load = useCallback(async () => {
     try {
       const r = await api.get('/journey');
@@ -139,6 +145,7 @@ export default function JourneyPage() {
   }, [journey?.messages?.length, journey?.has_direction, journey?.milestones?.length, journey?.stage,
       journey?.team?.started, journey?.team?.messages?.length, journey?.team?.plan, busy]);
 
+  // Map engine errors to friendly toasts
   const handleError = (e) => {
     const status = e?.response?.status;
     if (status === 402) {
@@ -148,6 +155,7 @@ export default function JourneyPage() {
     }
   };
 
+  // Start a new journey from the objective
   const start = useCallback(async () => {
     const obj = objective.trim();
     if (!obj || busy) return;
@@ -161,6 +169,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setBusy(false); }
   }, [objective, busy, setCredits]);
 
+  // Send a chat or team message
   const send = useCallback(async () => {
     const msg = message.trim();
     if (!msg || busy) return;
@@ -186,10 +195,12 @@ export default function JourneyPage() {
     } finally { setBusy(false); }
   }, [message, busy, journey, setCredits, sessionId]);
 
+  // Submit on Ctrl/Cmd+Enter
   const onKey = (e, fn) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); fn(); }
   };
 
+  // Ask the engine to shape a direction
   const shapeDirection = useCallback(async () => {
     setShaping(true);
     try {
@@ -199,6 +210,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setShaping(false); }
   }, [setCredits]);
 
+  // Refine the direction with feedback
   const refineDirection = useCallback(async () => {
     const fb = refineText.trim();
     if (!fb || refining) return;
@@ -211,6 +223,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setRefining(false); }
   }, [refineText, refining, setCredits]);
 
+  // Approve the direction to build milestones
   const approveDirection = useCallback(async () => {
     setApproving(true);
     try {
@@ -221,6 +234,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setApproving(false); }
   }, [setCredits]);
 
+  // Advance a milestone through its statuses
   const cycleMilestone = useCallback(async (m) => {
     const next = m.status === 'not_started' ? 'in_progress' : m.status === 'in_progress' ? 'done' : 'not_started';
     try {
@@ -229,6 +243,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); }
   }, []);
 
+  // Start the team setup conversation
   const startTeam = useCallback(async () => {
     setTeamStarting(true);
     try {
@@ -238,6 +253,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setTeamStarting(false); }
   }, []);
 
+  // Skip the team setup offer
   const skipTeam = useCallback(async () => {
     setTeamSkipping(true);
     try {
@@ -246,6 +262,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setTeamSkipping(false); }
   }, []);
 
+  // Build the team operating plan
   const buildTeam = useCallback(async () => {
     setTeamBuilding(true);
     try {
@@ -256,6 +273,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setTeamBuilding(false); }
   }, [setCredits]);
 
+  // Create and copy a public share link
   const shareDirection = useCallback(async () => {
     setSharing(true);
     try {
@@ -270,6 +288,7 @@ export default function JourneyPage() {
     } catch (e) { handleError(e); } finally { setSharing(false); }
   }, []);
 
+  // Save a milestone outcome
   const saveMilestoneResult = useCallback(async (m) => {
     const text = (resultDrafts[m.id] || '').trim();
     if (!text) return;

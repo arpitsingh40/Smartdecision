@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 
+// Fixed landing nav that solidifies on scroll.
 export default function Navbar() {
   const navigate = useNavigate();
   const [scrolled, setScrolled] = useState(false);

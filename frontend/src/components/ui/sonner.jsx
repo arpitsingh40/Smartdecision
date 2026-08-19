@@ -1,6 +1,7 @@
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, toast } from "sonner"
 
+// Themed toast notifier for the app
 const Toaster = ({
   ...props
 }) => {

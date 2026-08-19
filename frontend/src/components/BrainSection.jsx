@@ -13,7 +13,9 @@ import {
   CheckCircle2, AlertCircle, Clock, ArrowRight, Target, Sparkles,
 } from 'lucide-react';
 
+// Label map for answer/decide/plan result badges.
 const MODE_LABEL = { answer: 'Answer', decide: 'Decision', plan: 'Plan' };
+// Due-time presets offered when committing an action.
 const DUE_OPTIONS = [
   { label: 'Today', hours: 8 },
   { label: '24h', hours: 24 },
@@ -21,11 +23,13 @@ const DUE_OPTIONS = [
   { label: '3 days', hours: 72 },
   { label: '1 week', hours: 168 },
 ];
+// Generate a unique id for each new brain session.
 const newSessionId = () =>
   (typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `s_${Date.now()}_${Math.random().toString(36).slice(2)}`);
 
+// Main company-brain panel: ask questions, commit actions, upload docs.
 export default function BrainSection({ compact }) {
   const { setCredits } = useAuth();
   const [question, setQuestion] = useState('');
@@ -52,11 +56,13 @@ export default function BrainSection({ compact }) {
   const [reviewImpact, setReviewImpact] = useState('');
   const [reviewNote, setReviewNote] = useState('');
 
+  // Fetch decision reviews that are due for closure.
   const loadReviews = useCallback(async () => {
     try { const r = await api.get('/brain/reviews/due'); setReviewsDue(r.data.due || []); } catch (_e) { /* noop */ }
   }, []);
   useEffect(() => { loadReviews(); }, [loadReviews]);
 
+  // Record a real-world outcome for a committed decision.
   const submitReview = useCallback(async (id, outcome) => {
     if (reviewBusy) return;
     setReviewBusy(true);
@@ -73,6 +79,7 @@ export default function BrainSection({ compact }) {
     finally { setReviewBusy(false); }
   }, [reviewBusy, reviewNote, reviewImpact, loadReviews]);
 
+  // Fetch uploaded documents and current brain settings.
   const loadDocs = useCallback(async () => {
     try { const r = await api.get('/brain/documents'); setDocs(r.data.documents || []); setCanTrain(r.data.can_train !== false); } catch (_e) { /* noop */ }
   }, []);
@@ -92,6 +99,7 @@ export default function BrainSection({ compact }) {
     return () => clearInterval(id);
   }, [docs, loadDocs]);
 
+  // Send a question to the brain and store its answer.
   const runAsk = useCallback(async (q, sid) => {
     if (!q.trim() || loading) return;
     setLoading(true);
@@ -107,11 +115,14 @@ export default function BrainSection({ compact }) {
     finally { setLoading(false); }
   }, [loading, setCredits]);
 
+  // Trigger a brain query with the current question.
   const ask = useCallback(() => runAsk(question, sessionId), [runAsk, question, sessionId]);
+  // Reset workspace and start a brand-new session.
   const askNew = useCallback(() => {
     setQuestion(''); setResult(null); setSessionId(newSessionId()); setCommitted(null); setDecisionStatus(null);
   }, []);
 
+  // Upload a document for the brain to index.
   const uploadFile = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -126,16 +137,19 @@ export default function BrainSection({ compact }) {
     finally { setUploading(false); if (e.target) e.target.value = ''; }
   };
 
+  // Remove a previously uploaded document.
   const deleteDoc = async (docId) => {
     try { await api.delete(`/brain/documents/${docId}`); loadDocs(); } catch (_e) { toast.error('Could not remove document.'); }
   };
 
+  // Persist the custom company rules to the brain.
   const saveRules = async () => {
     setSavingRules(true);
     try { await api.put('/brain/settings', { instructions }); toast.success('Company rules saved.'); setTrainOpen(false); } catch (_e) { toast.error('Could not save rules.'); }
     finally { setSavingRules(false); }
   };
 
+  // Lock in the next action with a due time.
   const commitAction = async () => {
     if (!result?.decision_id || !actionInput.trim() || execBusy) return;
     setExecBusy(true);
@@ -150,6 +164,7 @@ export default function BrainSection({ compact }) {
     finally { setExecBusy(false); }
   };
 
+  // Log the final outcome of a committed action.
   const logResult = async (outcome) => {
     if (!result?.decision_id || execBusy) return;
     setExecBusy(true);
@@ -161,6 +176,7 @@ export default function BrainSection({ compact }) {
     finally { setExecBusy(false); }
   };
 
+  // Submit on Enter; Shift+Enter stays a newline.
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
   };

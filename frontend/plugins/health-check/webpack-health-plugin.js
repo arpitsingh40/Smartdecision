@@ -15,6 +15,7 @@ class WebpackHealthPlugin {
     };
   }
 
+  // Registers webpack lifecycle hooks
   apply(compiler) {
     const pluginName = 'WebpackHealthPlugin';
 
@@ -81,6 +82,7 @@ class WebpackHealthPlugin {
     });
   }
 
+  // Full status with computed health fields
   getStatus() {
     return {
       ...this.status,

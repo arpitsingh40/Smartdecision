@@ -7,6 +7,7 @@ import { TopBar } from '../components/TopBar';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
 
+// Show token usage progress bar
 function UsageBar({ used, budget }) {
   const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
   return (
@@ -23,6 +24,7 @@ function UsageBar({ used, budget }) {
   );
 }
 
+// Plans, subscription, and token billing page
 export default function BillingPage() {
   const { user, setCredits } = useAuth();
   const navigate = useNavigate();
@@ -32,6 +34,7 @@ export default function BillingPage() {
   const [busy, setBusy] = useState(null);
   const [referral, setReferral] = useState(null);
 
+  // Load plans, subscription, and referral data
   const load = useCallback(async () => {
     try {
       const [p, s, r] = await Promise.all([
@@ -51,6 +54,7 @@ export default function BillingPage() {
 
   const activePlanId = subscription?.plan_id;
 
+  // Start the paid trial via UPI mandate
   const startTrial = async () => {
     setBusy('trial');
     try {
@@ -61,6 +65,7 @@ export default function BillingPage() {
     } finally { setBusy(null); }
   };
 
+  // Create a subscription for a plan
   const subscribe = async (planId) => {
     setBusy(planId);
     try {
@@ -77,6 +82,7 @@ export default function BillingPage() {
     } finally { setBusy(null); }
   };
 
+  // Cancel the active subscription
   const cancelSub = async () => {
     if (!window.confirm('Cancel your subscription? You will lose access at the end of the current period.')) return;
     setBusy('cancel');
@@ -89,6 +95,7 @@ export default function BillingPage() {
     } finally { setBusy(null); }
   };
 
+  // Buy extra tokens via checkout
   const topup = async () => {
     setBusy('topup');
     try {
@@ -99,11 +106,13 @@ export default function BillingPage() {
     } finally { setBusy(null); }
   };
 
+  // Check whether the user is on a plan
   const isOnPlan = (planId) => {
     if (!subscription) return false;
     return subscription.plan_id === planId && ['active', 'trial'].includes(subscription.status);
   };
 
+  // Copy the referral invite link
   const copyReferral = async () => {
     if (!referral) return;
     const url = `${window.location.origin}${referral.path}`;
@@ -113,6 +122,7 @@ export default function BillingPage() {
     } catch (_e) { toast.message(url); }
   };
 
+  // Hard-coded trial plan details
   const trialPlan = {
     id: 'trial', label: 'Trial', price_inr: 99, tokens_per_month: 1_000_000,
     ultra_enabled: true, model: 'deepseek-flash',

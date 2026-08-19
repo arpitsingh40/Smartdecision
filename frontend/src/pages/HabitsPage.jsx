@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { Plus, Check, Flame, Trash2, Target, RotateCcw, Archive } from 'lucide-react';
 
+// Daily habit tracker page
 export default function HabitsPage() {
   const { user } = useAuth();
   const [habits, setHabits] = useState([]);
@@ -15,12 +16,14 @@ export default function HabitsPage() {
   const [newIdentity, setNewIdentity] = useState('');
   const [showForm, setShowForm] = useState(false);
 
+  // Load the user's habit list
   const load = useCallback(() => {
     api.get('/v1/habits').then(r => setHabits(r.data.habits || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
+  // Create a new daily habit
   const create = () => {
     if (!newTitle.trim()) return;
     api.post('/v1/habits', { title: newTitle.trim(), identity_statement: newIdentity.trim(), frequency: 'daily' })
@@ -28,16 +31,19 @@ export default function HabitsPage() {
       .catch(() => {});
   };
 
+  // Log today's completion for a habit
   const logHabit = (id) => {
     api.post(`/v1/habits/${id}/log`, { note: '' })
       .then(() => { load(); toast.success('Logged!'); })
       .catch(() => {});
   };
 
+  // Delete a habit permanently
   const del = (id) => {
     api.delete(`/v1/habits/${id}`).then(() => { load(); toast.success('Habit removed'); }).catch(() => {});
   };
 
+  // Archive or restore a habit
   const toggleArchive = (id, archived) => {
     api.patch(`/v1/habits/${id}`, { archived: !archived }).then(() => load()).catch(() => {});
   };

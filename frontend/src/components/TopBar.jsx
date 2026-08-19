@@ -11,6 +11,7 @@ import { FeedbackDialog } from './FeedbackDialog';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
 
+// Format remaining time until a due date as "2d 3h".
 const fmtLeft = (iso) => {
   if (!iso) return '';
   const ms = new Date(iso).getTime() - Date.now();
@@ -20,6 +21,7 @@ const fmtLeft = (iso) => {
   return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h` : `${mm}m`;
 };
 
+// Primary navigation groups with routes and icons.
 const NAV_SECTIONS = [
   {
     id: 'think', label: '',
@@ -37,6 +39,7 @@ const NAV_SECTIONS = [
   },
 ];
 
+// App header with nav, theme toggle, credits, and account menu.
 export const TopBar = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -47,6 +50,7 @@ export const TopBar = () => {
   const [threadCount, setThreadCount] = useState(0);
   const [journeyState, setJourneyState] = useState(null);
 
+  // Fetch the active action timer state from the brain.
   const loadActive = useCallback(() => {
     if (!user) return;
     api.get('/brain/active').then((r) => setActive(r.data?.next || null)).catch(() => {});
@@ -83,7 +87,9 @@ export const TopBar = () => {
     return () => { clearInterval(id); window.removeEventListener('sdg-actions-changed', onChange); };
   }, [loadActive]);
 
+  // Highlight the nav item matching the current route.
   const isActive = (to) => (to === '/app' ? location.pathname === '/app' : location.pathname.startsWith(to));
+  // Switch between light and dark themes.
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
   const allNavItems = NAV_SECTIONS.flatMap(s => s.items);

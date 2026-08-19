@@ -1,3 +1,4 @@
+// Site footer with brand, section links, and copyright.
 export default function Footer() {
   return (
     <footer className="py-12 bg-background border-t border-hairline">

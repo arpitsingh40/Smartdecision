@@ -1,6 +1,7 @@
 import { TopBar } from '../components/TopBar';
 import BrainSection from '../components/BrainSection';
 
+// Brain knowledge base page wrapper
 export default function BrainPage() {
   return (
     <div className="min-h-screen">

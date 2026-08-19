@@ -11,6 +11,7 @@ import Footer from '../components/landing/Footer';
 import AnimateIn from '../components/AnimateIn';
 import { Button } from '../components/ui/button';
 
+// Draw interactive background particle canvas
 function ParticleCanvas({ mousePos }) {
   const canvasRef = useRef(null);
   useEffect(() => {
@@ -71,6 +72,7 @@ function ParticleCanvas({ mousePos }) {
   return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />;
 }
 
+// Show headline stats below the hero
 const StatsBar = () => (
   <div className="relative max-w-4xl mx-auto px-6 sm:px-10 pb-20">
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -89,6 +91,7 @@ const StatsBar = () => (
   </div>
 );
 
+// Public marketing landing page
 export default function LandingPage() {
   const navigate = useNavigate();
   const mousePos = useRef({ x: -1000, y: -1000 });

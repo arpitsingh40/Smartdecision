@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Star } from 'lucide-react';
 
+// Rotating customer quotes for the carousel.
 const TESTIMONIALS = [
   {
     quote: 'SmartDecigen replaced my executive coach. The engine remembers my business better than I do — every check-in builds on the last one. My follow-through rate went from 30% to 80%.',
@@ -28,6 +29,7 @@ const TESTIMONIALS = [
   },
 ];
 
+// Auto-advancing carousel of founder testimonials.
 export default function TestimonialsCarousel() {
   const [idx, setIdx] = useState(0);
   useEffect(() => {

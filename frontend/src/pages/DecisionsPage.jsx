@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Loader2, Clock, CheckCircle2, Target, ArrowRight, ListChecks } from 'lucide-react';
 
 const MODE_LABEL = { answer: 'Answer', decide: 'Decision', plan: 'Plan' };
+// Due-time options for committing a move
 const DUE_OPTIONS = [
   { label: 'Today', hours: 8 },
   { label: '24h', hours: 24 },
@@ -15,11 +16,13 @@ const DUE_OPTIONS = [
   { label: '3 days', hours: 72 },
   { label: '1 week', hours: 168 },
 ];
+// Parse a due date, handling missing timezone
 const parseDue = (iso) => {
   if (!iso) return null;
   const hasTz = /[zZ]|[+-]\d{2}:\d{2}$/.test(iso);
   return new Date(hasTz ? iso : `${iso}Z`);
 };
+// Format time left until an action is due
 const fmtLeft = (iso) => {
   const dt = parseDue(iso);
   if (!dt) return '';
@@ -31,6 +34,7 @@ const fmtLeft = (iso) => {
   return overdue ? `${txt} overdue` : `${txt} left`;
 };
 
+// Render a stat card
 const Stat = ({ label, value, accent }) => (
   <div className="rounded-2xl border bg-surface p-4">
     <div className="text-xs text-muted mb-1">{label}</div>
@@ -38,6 +42,7 @@ const Stat = ({ label, value, accent }) => (
   </div>
 );
 
+// List committed decisions with status actions
 export default function DecisionsPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
@@ -49,6 +54,7 @@ export default function DecisionsPage() {
   const [dueFor, setDueFor] = useState(null);
   const [dueHours, setDueHours] = useState(48);
 
+  // Load the user's decision list
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -72,6 +78,7 @@ export default function DecisionsPage() {
     return true;
   });
 
+  // Commit a next action with a due window
   const commit = async (id, action) => {
     setBusy(id);
     try {
@@ -84,6 +91,7 @@ export default function DecisionsPage() {
     finally { setBusy(null); }
   };
 
+  // Mark a decision done or dropped
   const setStatus = async (id, status, result) => {
     setBusy(id);
     try {
@@ -96,6 +104,7 @@ export default function DecisionsPage() {
     finally { setBusy(null); }
   };
 
+  // Open the workspace for the next step
   const nextStep = async (id) => {
     setBusy(id);
     try {

@@ -3,6 +3,7 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 
 import { cn } from "@/lib/utils"
 
+// Scrollable container with custom scrollbar
 const ScrollArea = React.forwardRef(({ className, children, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
     ref={ref}
@@ -17,6 +18,7 @@ const ScrollArea = React.forwardRef(({ className, children, ...props }, ref) => 
 ))
 ScrollArea.displayName = ScrollAreaPrimitive.Root.displayName
 
+// Custom scrollbar thumb track
 const ScrollBar = React.forwardRef(({ className, orientation = "vertical", ...props }, ref) => (
   <ScrollAreaPrimitive.ScrollAreaScrollbar
     ref={ref}

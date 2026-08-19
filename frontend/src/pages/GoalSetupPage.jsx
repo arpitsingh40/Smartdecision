@@ -12,6 +12,7 @@ import {
   Lock, Check, Building2,
 } from 'lucide-react';
 
+// Guided goal setup step definitions
 const STEPS = [
   {
     key: 'dream', icon: Target, title: 'What is the dream?',
@@ -35,12 +36,14 @@ const STEPS = [
   },
 ];
 
+// Parse a numeric input, ignoring commas
 const num = (v) => {
   if (v === '' || v === null || v === undefined) return null;
   const n = Number(String(v).replace(/[, ]/g, ''));
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
 
+// Guided wizard for setting the org goal
 export default function GoalSetupPage() {
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
@@ -55,8 +58,10 @@ export default function GoalSetupPage() {
     north_star: '', target: '', deadline: '', target_arr: '', current_arr: '',
     priorities: '', decision_rules: '',
   });
+  // Update one form field by key
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
 
+  // Load current strategy and org ownership
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -77,6 +82,7 @@ export default function GoalSetupPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Save the strategy and finish setup
   const save = async () => {
     if (saving) return;
     if (!f.north_star.trim()) { setStep(0); toast.error('Add your dream first.'); return; }
@@ -98,10 +104,12 @@ export default function GoalSetupPage() {
     } finally { setSaving(false); }
   };
 
+  // Advance a step or save on the last one
   const next = () => {
     if (step === 0 && !f.north_star.trim()) { toast.error('Add your dream to continue.'); return; }
     if (step < STEPS.length - 1) setStep((s) => s + 1); else save();
   };
+  // Go back one step
   const back = () => { if (step > 0) setStep((s) => s - 1); };
 
   if (loading) {

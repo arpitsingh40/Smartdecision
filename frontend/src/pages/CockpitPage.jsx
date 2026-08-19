@@ -9,12 +9,15 @@ import {
   Wifi, WifiOff, Sparkles, Play, StopCircle, ChevronRight, Shield,
 } from 'lucide-react';
 
+// Format numbers with Indian locale
 const fmtNum = (n) => {
   if (n == null) return '—';
   try { return Number(n).toLocaleString('en-IN'); } catch { return String(n); }
 };
+// Pick progress color by completion
 const statusColor = (pct) => (pct == null ? 'text-muted ' : pct >= 100 ? 'text-emerald-600' : pct >= 60 ? 'text-[hsl(var(--ring))]' : pct >= 25 ? 'text-amber-600' : 'text-muted ');
 
+// Format remaining time until a deadline
 const fmtLeft = (iso) => {
   if (!iso) return '';
   const ms = new Date(iso).getTime() - Date.now();
@@ -24,6 +27,7 @@ const fmtLeft = (iso) => {
   return d > 0 ? `${d}d ${h}h left` : `${h || 1}h left`;
 };
 
+// Render a stat card with icon and label
 const Stat = ({ icon: Icon, label, value, sub }) => (
   <div className="rounded-2xl border bg-surface p-4">
     <div className="flex items-center gap-1.5 text-xs text-muted  mb-1">
@@ -34,8 +38,10 @@ const Stat = ({ icon: Icon, label, value, sub }) => (
   </div>
 );
 
+// Pick color by alignment score
 const alignColor = (s) => (s == null ? 'text-muted ' : s >= 70 ? 'text-emerald-600' : s >= 40 ? 'text-amber-600' : 'text-red-600');
 
+// Founder cockpit dashboard page
 export default function CockpitPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -54,6 +60,7 @@ export default function CockpitPage() {
   const [connections, setConnections] = useState(null);
   const [connectingTool, setConnectingTool] = useState(null);
 
+  // Load cockpit overview data
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -66,6 +73,7 @@ export default function CockpitPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Load the weekly task digest
   const loadDigest = useCallback(async () => {
     setDigestLoading(true);
     try {
@@ -126,6 +134,7 @@ export default function CockpitPage() {
     loadTrend();
   }, []);
 
+  // Generate this week's tasks from the plan
   const generateWeek = async () => {
     setGenerating(true);
     try {
@@ -136,6 +145,7 @@ export default function CockpitPage() {
     } finally { setGenerating(false); }
   };
 
+  // Save the current ARR progress figure
   const saveProgress = async () => {
     const n = Number(String(arrInput).replace(/[, ]/g, ''));
     if (!Number.isFinite(n) || n < 0) { return; }
@@ -689,6 +699,7 @@ function SystemHealthTab({ health }) {
 
 // ── Execution Tab Content ──
 function ExecutionTab({ status, setConnectingTool, connectingTool }) {
+  // Connect a tool and complete the OAuth
   const connect = async (toolkit) => {
     setConnectingTool(toolkit);
     try {
@@ -764,6 +775,7 @@ function ConnectionsTab({ connections, setConnectingTool, connectingTool, setCon
   const connected = connections?.connected_list || [];
   const available = connections?.top_available || [];
 
+  // Connect a tool via OAuth flow
   const connect = async (toolkit) => {
     setConnectingTool(toolkit);
     try {
@@ -777,6 +789,7 @@ function ConnectionsTab({ connections, setConnectingTool, connectingTool, setCon
     } catch (_) { setConnectingTool(null); }
   };
 
+  // Disconnect a connected tool
   const disconnect = async (toolkit) => {
     try {
       await api.post('/execution/connections/disconnect', { toolkit });

@@ -59,7 +59,7 @@ def ensure_salaar_startup():
     ]:
         for field in fields:
             try:
-                db[col_name].create_index(field, unique=field[0] == "id")
+                db[col_name].create_index([field], unique=field[0] == "id")
             except Exception as e:
                 log.warning(f"SALAAR startup: index {col_name}.{field} failed: {e}")
     log.info("SALAAR startup: collections and indexes ready")

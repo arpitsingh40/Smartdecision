@@ -7,9 +7,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-from db import orgs_col, members_col, loop_reports_col
+from db import orgs_col, members_col
 from security import current_user
-from loop import record_decision_outcome, generate_weekly_auto_review
+from loop import record_decision_outcome, generate_weekly_auto_review, loop_reports_col
 
 log = logging.getLogger("loop_api")
 router = APIRouter(prefix="/api/loop", tags=["loop"])

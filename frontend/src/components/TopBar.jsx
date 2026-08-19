@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
-import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Clock, BookOpen, CheckSquare, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, Flame, Compass, Zap, History, Brain } from 'lucide-react';
+import { LogOut, CircleUser, Plus, LayoutDashboard, MessageSquare, Users, Clock, BookOpen, CheckSquare, MessageCircle, Target, Flag, CheckCircle, Sun, Moon, Flame, Compass, Zap, History, Brain, UserCog } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,

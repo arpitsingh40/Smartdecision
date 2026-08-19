@@ -1,0 +1,6 @@
+# Caddy reverse proxy — terminates TLS (Let's Encrypt, free) and forwards to the app.
+# __DOMAIN__ is replaced by setup.sh with your real domain.
+__DOMAIN__, www.__DOMAIN__ {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+}

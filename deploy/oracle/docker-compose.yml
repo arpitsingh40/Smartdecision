@@ -1,0 +1,22 @@
+# Production compose file for the Oracle Always Free VM.
+# The backend container builds the whole app (frontend + API) via the repo Dockerfile.
+# Caddy on the host fronts 127.0.0.1:8000 with auto-HTTPS, so the app port is NOT public.
+services:
+  # Local MongoDB — only started with: docker compose --profile local-mongo up -d
+  # Prefer MongoDB Atlas (set MONGO_URL in .env); this is the no-Atlas fallback.
+  mongo:
+    image: mongo:7
+    profiles: ["local-mongo"]
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file: .env
+
+volumes:
+  mongo_data:

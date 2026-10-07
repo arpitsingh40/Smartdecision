@@ -25,9 +25,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from engine import classify_intent, rolling_fields, compute_reengagement_line, llm_turn, llm_complete_action, salaar_route
 from db import (
     users_col, threads_col, events_col, telemetry_col, orgs_col, tasks_col, plans_col, members_col,
-    async_users_col, async_threads_col, async_events_col, async_telemetry_col,
+    async_users_col, async_threads_col, async_events_col, async_telemetry_col, decisions_col,
 )
-from security import pwd, make_token, revoke_token, cleanup_expired_sessions, set_auth_cookie, clear_auth_cookie, current_user, current_user_async
+from security import pwd, make_token, revoke_token, cleanup_expired_sessions, set_auth_cookie, clear_auth_cookie, current_user_async, JWT_SECRET
 from ledger import record_ledger, inc_stats, ensure_startup
 from tracking import router as tracking_router, client_ip, geo_lookup
 from admin import router as admin_router
@@ -65,6 +65,13 @@ from automation_loops import ensure_automation_startup
 from governance_router import router as governance_router
 from salaar import generate_salaar_brief
 from salaar.causal import build_actor_map, simulate_causal_chain, execute_chain_step
+from revenue_router import router as revenue_router
+from revenue_engine import ensure_revenue_startup
+from business_builder_router import router as business_builder_router
+from business_builder import ensure_builder_startup
+from factory_router import router as factory_router
+from factory_bridge import ensure_factory_startup
+from growth_engine import ensure_growth_startup
 
 # Turn cost and reserve settings for credit billing
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -109,45 +116,55 @@ _XSS_PAT = _re.compile(r'(?:<[^>]*\s*(?:on\w+\s*=|javascript\s*:|data\s*:)|<scri
 # App startup/shutdown: init DB, jobs, and scheduler
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    if os.environ.get("MONGO_URL"):
+    # Always start scheduler even when DB is absent (health checks etc.)
+    # Track which startups succeeded so scheduler isn't gated on DB presence
+    startup_ok = False
+    try:
+        ensure_startup()
+        ensure_org_startup()
+        ensure_brain_startup()
+        ensure_journey_startup()
+        ensure_share_startup()
+        ensure_subscriptions_startup()
+        ensure_executive_startup()
+        ensure_salaar_startup()
+        ensure_business_os_startup()
+        ensure_audit_startup()
+        ensure_metrics_startup()
+        ensure_loop_startup()
+        ensure_automation_startup()
+        ensure_revenue_startup()
+        ensure_builder_startup()
+        ensure_factory_startup()
+        ensure_growth_startup()
+        # Sync connections from Composio on startup for all orgs
         try:
-            ensure_startup()
-            ensure_org_startup()
-            ensure_brain_startup()
-            ensure_journey_startup()
-            ensure_share_startup()
-            ensure_subscriptions_startup()
-            ensure_executive_startup()
-            ensure_salaar_startup()
-            ensure_business_os_startup()
-            ensure_audit_startup()
-            ensure_metrics_startup()
-            ensure_loop_startup()
-            ensure_automation_startup()
-            # Sync connections from Composio on startup for all orgs
-            try:
-                from execution.connections import refresh_connections_from_composio
-                for org in orgs_col.find({}, {"_id": 0, "id": 1}):
-                    try:
-                        refresh_connections_from_composio(org["id"])
-                    except Exception:
-                        pass
-                log.info("connection sync complete")
-            except Exception:
-                pass
-        except Exception as e:
-            log.warning(f"Startup init failed (DB may not be ready): {e}")
-        scheduler.start()
-        log.info("scheduler started")
-        try:
-            from playbooks import PLAYBOOKS as _P
-            log.info(f"playbooks loaded: {len(_P)} frameworks")
+            from execution.connections import refresh_connections_from_composio
+            for org in orgs_col.find({}, {"_id": 0, "id": 1}):
+                try:
+                    refresh_connections_from_composio(org["id"])
+                except Exception:
+                    pass
+            log.info("connection sync complete")
         except Exception:
             pass
-    else:
-        log.warning("MONGO_URL not set — skipping DB startup.")
+        startup_ok = True
+    except Exception as e:
+        log.warning(f"Startup init failed (DB may not be ready): {e}")
+    if not scheduler.running:
+        try:
+            scheduler.start()
+            log.info(f"scheduler started (startup_ok={startup_ok})")
+        except Exception as e:
+            log.warning(f"scheduler start failed: {e}")
+    try:
+        from playbooks import PLAYBOOKS as _P
+        log.info(f"playbooks loaded: {len(_P)} frameworks")
+    except Exception:
+        pass
     yield
-    scheduler.shutdown(wait=False) if scheduler.running else None
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
 
 
 # Create the FastAPI application instance
@@ -165,16 +182,27 @@ async def _security_middleware(request: Request, call_next):
         path = request.url.path
         qs = ("?" + request.url.query) if request.url.query else ""
         return RedirectResponse(f"https://www.smartdecigen.com{path}{qs}", status_code=301)
-    ct = request.headers.get("content-type", "")
-    body = await request.body()
-    if body:
-        text = body.decode("utf-8", errors="replace")
-        if _XSS_PAT.search(text):
-            raise HTTPException(400, "Request blocked: suspicious content detected")
+    # XSS scan: read body without draining it for downstream handlers
+    # FastAPI caches body after first read, but we must not break streaming
+    ctype = request.headers.get("content-type", "")
+    # Only scan json/form bodies, skip multipart/file uploads
+    if ctype and ("json" in ctype or "x-www-form-urlencoded" in ctype):
+        try:
+            body = await request.body()
+            if body:
+                text = body.decode("utf-8", errors="replace")
+                if _XSS_PAT.search(text):
+                    return JSONResponse({"detail": "Request blocked: suspicious content detected"}, status_code=400)
+                # Restore body so Pydantic can read it
+                async def _receive():
+                    return {"type": "http.request", "body": body}
+                request._receive = _receive
+        except Exception:
+            pass
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://*.firebaseapp.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https:; frame-src 'none'; object-src 'none'"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://*.firebaseapp.com https://assets.emergent.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src 'none'; object-src 'none'"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
@@ -427,6 +455,14 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
             "current_mirror": out.get("mirror"),
             "current_insight": (out.get("insight") or "").strip() or None,
             "current_action_artifact": None,
+            "current_mode": out.get("mode") or "advice",
+            "current_key_takeaway": (out.get("key_takeaway") or "").strip() or None,
+            "current_recommendation": out.get("recommendation"),
+            "current_plan": out.get("plan"),
+            "current_citations": out.get("citations") or [],
+            "current_found_in_docs": bool(out.get("found_in_docs")),
+            "current_predicted_outcome": out.get("predicted_outcome"),
+            "current_dont_follow_if": out.get("dont_follow_if"),
             "skip_list": out.get("skip_list", []),
             "last_turn_at": now,
             "snapshot_at_last_turn": new_snapshot,
@@ -435,6 +471,54 @@ def run_pipeline(thread: dict, user: dict, message: str, mode: str = "normal",
         },
         "$push": {"messages": {"$each": new_msgs}},
     })
+    # ── Merged engine: persist the decision record (brain ledger) for every turn ──
+    try:
+        _mode = out.get("mode") or "advice"
+        _reasoning = out.get("reasoning") if isinstance(out.get("reasoning"), dict) else {}
+        _po = out.get("predicted_outcome")
+        _cost = token_cost(usage["input_tokens"], usage["output_tokens"])
+        _decision = {
+            "id": str(uuid.uuid4()),
+            "org_id": user.get("org_id"),
+            "user_id": user["id"],
+            "user_name": user.get("name", "") or "",
+            "session_id": f"thread_{thread['thread_id']}",
+            "question": message[:4000],
+            "mode": _mode,
+            "found_in_docs": out.get("found_in_docs"),
+            "situation_read": out.get("mirror") or "",
+            "answer": out["acknowledgment"],
+            "recommendation": out.get("recommendation"),
+            "plan": out.get("plan"),
+            "next_action": (out.get("refreshed_next_action") or "").strip() or None,
+            "hook": out.get("key_takeaway") or "",
+            "sharpening_question": out.get("refreshed_open_question") if (out.get("refreshed_open_question") or "").strip() and (out.get("refreshed_open_question") or "") != "(none yet)" else None,
+            "citations": out.get("citations") or [],
+            "model": model,
+            "cost": _cost,
+            "tokens": usage["input_tokens"] + usage["output_tokens"],
+            "created_at": now,
+            "committed_action": None,
+            "due_at": None,
+            "result": None,
+            "status": "open",
+            "strategic_alignment": None,
+            "reasoning": _reasoning,
+            "function": "general",
+            "revenue_proximity": "core",
+            "strategy_version": 0,
+            "alignment_band": None,
+            "outcome": {"status": "unknown", "score": None, "source": None, "at": None},
+            "predicted_outcome": _po,
+            "dont_follow_if": out.get("dont_follow_if"),
+            "review_at": ((now + timedelta(days=_po["review_after_days"])) if _po else None),
+            "reviewed_at": None,
+            "impact_inr": None,
+            "source": "thread",
+        }
+        decisions_col.insert_one(_decision)
+    except Exception as _de:
+        log.warning(f"decision record persist failed (non-fatal): {_de}")
     latency = round(time.time() - t0, 2)
     actual_cost = token_cost(usage["input_tokens"], usage["output_tokens"])
     telemetry_col.insert_one({"id": str(uuid.uuid4()), "type": "discussion_turn", "user_id": user["id"],
@@ -885,6 +969,9 @@ app.include_router(metrics_router)
 app.include_router(loop_router)
 app.include_router(automation_router)
 app.include_router(governance_router)
+app.include_router(revenue_router)
+app.include_router(business_builder_router)
+app.include_router(factory_router)
 
 scheduler = BackgroundScheduler(daemon=True)
 
@@ -1141,8 +1228,32 @@ scheduler.add_job(salaar_realtime_scan, IntervalTrigger(minutes=5))   # Awarenes
 scheduler.add_job(salaar_deep_scan, IntervalTrigger(minutes=30))        # Deep: people, patterns, health
 scheduler.add_job(auto_advance_all_chains, IntervalTrigger(minutes=15))  # Chain auto-advance + verify
 from salaar.threats import ensure_salaar_startup
-scheduler.add_job(salaar_realtime_scan, IntervalTrigger(minutes=5))   # Awareness: scan every 5 min
-scheduler.add_job(salaar_deep_scan, IntervalTrigger(minutes=30))        # Deep: people, patterns, health
+# Revenue jobs: trial conversion + mandate renewal (daily 02:30 IST) + topup status poll is webhook-driven
+try:
+    from subscriptions import process_pending_trial_conversions, process_mandate_executions
+    scheduler.add_job(process_pending_trial_conversions, CronTrigger(hour=2, minute=30, timezone="Asia/Kolkata"))
+    scheduler.add_job(process_mandate_executions, CronTrigger(hour=2, minute=35, timezone="Asia/Kolkata"))
+except Exception:
+    pass
+
+# Autonomous revenue cycle — try to earn on a schedule (honest: tasks are L3-approval, money is real)
+def _revenue_cycle_cron():
+    try:
+        from revenue_engine import run_revenue_cycle
+        for org in orgs_col.find({"north_star": {"$ne": "", "$exists": True}}, {"_id": 0, "id": 1}):
+            try:
+                run_revenue_cycle(org["id"], pipelines=["invoicing", "retention"])
+            except Exception:
+                pass
+        for org in orgs_col.find({"north_star": {"$eq": ""}}, {"_id": 0, "id": 1}):
+            # Even without north_star, at least try overdue collection if tools are connected
+            try:
+                run_revenue_cycle(org["id"], pipelines=["invoicing"])
+            except Exception:
+                pass
+    except Exception as e:
+        log.warning(f"revenue_cycle failed: {e}")
+scheduler.add_job(_revenue_cycle_cron, IntervalTrigger(hours=6))
 
 
 # Configure CORS from environment origins

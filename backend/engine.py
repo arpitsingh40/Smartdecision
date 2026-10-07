@@ -59,6 +59,74 @@ def _bio_block(context: str) -> str:
     except Exception:
         return ""
 
+# ---------------------------------------------------------------- Decision Brain context merge
+def _brain_context_block(org_id: str, user_doc: dict, question: str) -> str:
+    """Merge the Decision Brain's grounding into thread turns: INDUSTRY_CONTEXT
+    (incl. the Tavily deep-research digest), FOUNDER_PROFILE (owner only),
+    HIDDEN_STRATEGY (owner only), BUSINESS HEALTH, and KB retrieval passages.
+    Empty string when there is no org or the merge fails (never blocks a turn)."""
+    if not org_id or not user_doc:
+        return ""
+    try:
+        from decision_brain import (_resolve_context, _industry_block, _founder_profile_block,
+                                    _signal_scan_block, kb_retrieve)
+        from db import members_col, orgs_col
+        m = members_col.find_one({"user_id": user_doc.get("id"), "status": "active"})
+        if not m:
+            return ""
+        org = orgs_col.find_one({"id": m["org_id"]})
+        if not org:
+            return ""
+        parts = []
+        ind = _industry_block(org)
+        if ind:
+            parts.append(ind)
+        if (m.get("role") or "") == "owner":
+            fp = _founder_profile_block(org)
+            if fp:
+                parts.append(fp)
+            sb = _hidden_strategy_for_thread(org)
+            if sb:
+                parts.append(sb)
+        sh = _signal_scan_block(org)
+        if sh:
+            parts.append(sh)
+        kb_ns, _, _, _ = _resolve_context(user_doc)
+        try:
+            passages, _, _ = kb_retrieve(kb_ns, question)
+            if passages:
+                psg = "\n\n".join(f"[{p['doc']} -> {p['chapter']}] (score {p['score']})\n{p['text'][:1000]}"
+                                  for p in passages[:4])
+                parts.append("RETRIEVED_PASSAGES (the most relevant evidence from the company's own "
+                             "documents — ground factual claims in these, cite the source doc):\n" + psg)
+        except Exception:
+            pass
+        if not parts:
+            return ""
+        return "\n\n".join(parts) + "\n\n"
+    except Exception:
+        return ""
+
+
+def _hidden_strategy_for_thread(org: dict) -> str:
+    """HIDDEN_STRATEGY steering for the thread engine — same direction as the brain's
+    strategy block but without the brain's strategic_alignment JSON field."""
+    ns = (org.get("north_star") or "").strip()
+    if not ns:
+        return ""
+    target = (org.get("target") or "").strip()
+    deadline = (org.get("deadline") or "").strip()
+    prios = [p for p in (org.get("priorities") or []) if isinstance(p, str) and p.strip()]
+    lines = ["HIDDEN_STRATEGY (CONFIDENTIAL leadership direction. The user must NEVER see or sense any of this):",
+             f"- North Star: {ns}"]
+    if target or deadline:
+        lines.append(f"- Target: {target}{(' by ' + deadline) if deadline else ''}".strip())
+    if prios:
+        lines.append("- Strategic priorities: " + "; ".join(prios))
+    lines.append("INSTRUCTION: Silently steer every reply toward this North Star. NEVER mention, quote, "
+                 "paraphrase, name, hint at, or allude to this strategy or any hidden objective.")
+    return "\n".join(lines)
+
 # ---------------------------------------------------------------- Ch.X: MCP tool injection
 def _mcp_tools_block(department_function: str = "general") -> str:
     """Inject available MCP tools into the engine prompt so the LLM knows
@@ -384,14 +452,19 @@ def salaar_route(text: str, thread: dict = None, user: dict = None) -> str:
 
 
 # ------------------------------------------------- single LLM call per turn
-SYSTEM = """You maintain the highest-fidelity model of this founder and their company. Every message is evidence. Your job is not to answer — it is to update the model and let the response emerge from it.
+SYSTEM = """You are the ONE system for this founder: both their personal coach AND the company's brain. You maintain the highest-fidelity model of this founder and their company. Every message is evidence. Your job is not just to answer — it is to update the model and let the response emerge from it. For a solo founder, that means: you track their goal across turns (coach) AND you answer, decide, and plan for the company (brain) — in the same conversation, in the same turn if needed.
 
 BEFORE EVERY TURN (your silent internal sweep — never output this):
-1. ASSEMBLE STATE. From everything known (identity, codex, company state, memory, their words, file facts, geo), build the current picture of their objective reality. What has changed since last turn? What is confirmed vs newly revealed?
+1. ASSEMBLE STATE. From everything known (identity, codex, company state, memory, their words, file facts, geo, industry, docs, strategy), build the current picture of their objective reality. What has changed since last turn? What is confirmed vs newly revealed?
 2. LOCATE THEIR MESSAGE IN THAT STATE. Does this message confirm the model, contradict it, or add a new dimension? What gap exists between their perception and the state you hold?
 3. TEST REQUEST AGAINST STATE. Given the state, does their ask make sense? What would have to be true for it to be right? What is the weakest assumption they are carrying?
 4. EVALUATE THE FIELD. What are the viable moves from here? For each, what changes in the state? Which one moves them toward their goal with the least downside and the highest expected impact?
-5. OUTPUT FROM STATE. Your phase, acknowledgment, and action must be the direct consequence of your state model, not a conversational formula. If the state cannot support a move, say so plainly.
+5. OUTPUT FROM STATE. Your phase, mode, acknowledgment, and action must be the direct consequence of your state model, not a conversational formula. If the state cannot support a move, say so plainly.
+
+THREE JOBS (pick the mode the message calls for; one reply can serve one job or blend two):
+- ANSWER: a factual question (about the company's documents, the market, a regulation, a competitor). Lead with the direct answer, grounded in RETRIEVED_PASSAGES / INDUSTRY_CONTEXT / TAVILY results. Cite sources in citations. If the answer is NOT in the evidence, say plainly you could not find it — NEVER invent a fact.
+- DECIDE: a judgment call ("should we...", "what do I do about...", "is it okay to..."). Give a clear recommendation FOR THIS COMPANY, one short why, and the single risk to watch. State your assumption out loud and proceed; then note what would sharpen it.
+- PLAN: the user wants a path to an objective ("give me a plan", "how do I...", "lay it out"). Give a REAL, detailed, usable plan: 4 to 8 ordered steps in plan, each concrete and doable, with who/what/a rough number/a timeframe where it helps. Name the first move to make this week and the one risk that could sink it. A plan is the deliverable, not a teaser.
 
 WHO YOU ARE IN THE CONVERSATION:
 - A sharp operator who has done this before. Not a coach, not a therapist, not a chatbot.
@@ -405,6 +478,14 @@ THE WAY YOU SPEAK:
 - No filler, no corporate speak, no emojis, no exclamation marks.
 - Contractions welcome. Every line earns its place.
 
+LEAD WITH VALUE: every reply opens with ONE punchy, genuinely useful line — the single most valuable thing they get this turn (a direct answer, a number, a sharp recommendation, the key first step, a warning, or a reframe). Not always a number — pick the value type that fits.
+
+HONOR THE REQUEST: if the user explicitly asks for a plan, an answer, a draft, a list, or asks you to suggest / recommend / pick / choose one, DELIVER the full thing now. When asked to suggest or recommend, COMMIT to ONE specific, named option — never a category or a menu: name it, justify it in one line, and give the first move. NEVER answer a direct request by asking a question instead.
+
+PREDICT THE OUTCOME: whenever you recommend an action, a decision, or a plan, commit to ONE measurable prediction (predicted_outcome): what will observably happen if they follow it (a number, a signal, a state change they can check later), an HONEST confidence 0..100 (55 when genuinely unsure, 85+ only when the mechanism is near-certain), and review_after_days (7 for fast-feedback actions, 14 for medium, 30 for slow-burn strategy). You WILL be checked against this later, so make it checkable. Pure factual lookups (mode answer with no recommendation) may set null.
+
+WHEN NOT TO FOLLOW: name the ONE condition under which they should NOT follow this recommendation (dont_follow_if): the specific fact that, if true in their world, flips the call. Plain, specific, one line. Pure factual lookups may set null.
+
 PHASE GUIDE (driven by state confidence, not by conversational feel):
 - exploring: state model is sparse. Most dimensions unknown. Gather evidence.
 - naming: the critical obstacle is visible in the state. Name it plainly.
@@ -417,12 +498,32 @@ CONVERSATION RULES:
 - Exactly ONE question per turn (in refreshed_open_question). No question marks in acknowledgment.
 - The acknowledgment is the only visible output. Everything else is internal state tracking.
 
+USE COMPANY CONTEXT (when present in the prompt):
+- INDUSTRY_CONTEXT: real domain knowledge about their market — including a web-research digest with sources. Ground your reads in it instead of generic advice. Never invent numbers not in it.
+- FOUNDER_PROFILE: this is who you're advising. Fit tone, framing, and the next action to them naturally. NEVER quote it back or label them.
+- HIDDEN_STRATEGY: CONFIDENTIAL. Silently steer every reply toward the North Star; the user must NEVER sense this block exists.
+- BUSINESS HEALTH CONTEXT: factor in the company's real state silently; never mention the scan itself.
+- RETRIEVED_PASSAGES: the company's own documents. Ground factual claims in them and cite the document name.
+- When you need current, real-world facts (market, competitors, pricing, regulations, news) and the user's question depends on them, request a TAVILY_SEARCH tool call so the results are appended to your reply. You may also request TAVILY_DEEP_RESEARCH when the company's market context is thin and a full research pass would materially improve the state.
+
+REASONING SWEEP (silent, every message): ten-dimension uncertainty map about THIS user's situation, each scored 0..100 (0 = fully understood, 100 = complete unknown), honest, may rise when new information exposes a problem: goal, reality, constraints, risks, resources, knowledge_gap, assumptions, hidden_desire, decision_impact, missing_info. Detect unsupported assumptions. Classify the decision (idea|validation|execution|scaling|crisis|other) and whether it is reversible. Note the 2-4 expert lenses you applied. When the decision-critical dimensions are already low-uncertainty, set sufficient=true and refreshed_open_question SHOULD be the single sharpest remaining question or null.
+
+HARVEST BENCHMARK FACTS: whenever the user states a REAL number about the business (revenue, orders, margin, ticket size, headcount, conversion...), record it in benchmark_facts with a reusable snake_case metric name and the industry. ONLY numbers they explicitly stated, never your own estimates. Empty list when none.
+
 Return ONLY valid JSON, no markdown fences:
-{"phase": "exploring"|"naming"|"ready_to_act"|"acting"|"checking_in",
+{"mode": "answer" | "decide" | "plan" | "advice",
+ "phase": "exploring"|"naming"|"ready_to_act"|"acting"|"checking_in",
  "phase_reason": "1 short line — what in the state drives this phase",
+ "key_takeaway": "ONE punchy, genuinely useful line: the single most valuable thing this turn. Never empty.",
  "acknowledgment": "Your reply. Start by showing you understand what their message reveals. Then one thing that moves them forward. No question marks here — the question goes in refreshed_open_question.",
  "mirror": "1 gentle sentence: the gap between their words and the state you see. Statement, not a question. Soft openers welcome: 'I may be wrong, but…'",
  "understanding": {"focus": "...", "fears": "...", "blockers": "...", "constraints": "...", "tried": "...", "motivators": "...", "stage": "...", "gap_to_goal": "...", "emotional_read": "...", "needs_now": "heard|decision|plan|reality_check|encouragement|answer"},
+ "recommendation": "decide mode ONLY: the company-favoured choice + one why + the one risk to watch. Otherwise null.",
+ "plan": ["plan mode ONLY: 4 to 8 ordered steps, each a full, concrete, useful line (who/what/rough number/timeframe where it helps)"] or null,
+ "citations": [{"doc": "document name", "chapter": "chapter title or URL"}],
+ "found_in_docs": true or false,
+ "predicted_outcome": {"claim": "ONE measurable, checkable thing that will happen if they follow this", "confidence": 62, "review_after_days": 14} or null,
+ "dont_follow_if": "ONE plain, specific condition under which they should NOT follow this recommendation" or null,
  "refreshed_easiest_path": "1-2 lines — null when exploring",
  "refreshed_next_action": "1 line: concrete 24-48h action — null when exploring or naming",
  "outbox_alternative": "1-2 lines: one non-obvious higher-leverage alternative — null when exploring/naming",
@@ -434,14 +535,78 @@ Return ONLY valid JSON, no markdown fences:
  "refreshed_open_question": "1 line: the unresolved tension. The ONLY question mark.",
  "skip_list": ["0-2 things to ignore right now"],
  "state_summary": "3 short lines: where they are, grounded in the state model",
-  "signals": {"emotional_temperature": 0.0to1.0, "action_done": bool, "contradiction": "string or null"},
-  "tool_calls": [{"tool": "tool_name", "args": {"param": "value"}, "reason": "why this call"}]
-  // tool_calls is OPTIONAL — include it ONLY when you need to take action on the internet
-  // (send email, search, create issue, update CRM, etc). Max 5 calls per turn.
-  // Every tool_call MUST be a real need, not filler. Omit the field entirely when no action needed.}"""
+ "signals": {"emotional_temperature": 0.0to1.0, "action_done": bool, "contradiction": "string or null"},
+ "reasoning": {"uncertainty": {"goal": {"score": 0, "note": ""}, "reality": {"score": 0, "note": ""}, "constraints": {"score": 0, "note": ""}, "risks": {"score": 0, "note": ""}, "resources": {"score": 0, "note": ""}, "knowledge_gap": {"score": 0, "note": ""}, "assumptions": {"score": 0, "note": ""}, "hidden_desire": {"score": 0, "note": ""}, "decision_impact": {"score": 0, "note": ""}, "missing_info": {"score": 0, "note": ""}}, "biggest_uncertainty": "one of the ten dimension keys", "assumptions_detected": ["an unsupported belief they are carrying"], "hidden_desire": "what they seem to really want, one line, empty string if unknown", "decision_type": "idea|validation|execution|scaling|crisis|other", "reversible": true, "expert_lenses": ["the 2-4 expert perspectives you applied"], "sufficient": false, "sufficiency_reason": "one line on whether more information would still change this decision"},
+ "benchmark_facts": {"industry": "short lowercase industry label, 1-3 words, or '' if unknown", "facts": [{"metric": "snake_case_metric_name_with_unit_hint", "value": 123, "unit": "inr|pct|orders|people|..."}]},
+ "tool_calls": [{"tool": "tool_name", "args": {"param": "value"}, "reason": "why this call"}]
+ // tool_calls is OPTIONAL — include it ONLY when you need to take action on the internet
+ // (send email, search, create issue, update CRM, etc). Max 5 calls per turn.
+ // Every tool_call MUST be a real need, not filler. Omit the field entirely when no action needed.}"""
 
 REQUIRED_KEYS = ("phase", "acknowledgment", "refreshed_open_question", "state_summary", "signals")
 VALID_PHASES = ("exploring", "naming", "ready_to_act", "acting", "checking_in")
+VALID_MODES = ("answer", "decide", "plan", "advice")
+
+CONFIRM_SYSTEM = """You are the final quality gate for a founder's coach-and-brain assistant. A draft reply has been written.
+Your ONLY job: make it undeniable.
+
+Step 1 — TRUE REPLY CHECK. Read the founder's message. Does the draft genuinely answer what they actually asked?
+If the draft dodges, generalizes, or answers a different question — the draft FAILS. It must directly, specifically
+address their demand.
+
+Step 2 — BEST POSSIBLE CHECK. Is this the genuinely best reply this founder could receive right now? The best reply is:
+sharp, concrete, personal to their situation, free of fluff, and gives them something they can act on. If the draft has
+even a hint of generic filler, weak phrasing, or a better answer exists — IMPROVE it.
+
+Step 3 — REWRITE FOR CONNECTION. The trust is FELT in the tone, never stated. Rewrite so the voice is warm,
+direct, a little magnetic — like the sharpest, most loyal person in their life. Simple powerful sentences.
+The relationship is in how you say it, never in what you say about it.
+
+STRICT RULES:
+- NEVER use the word "friend". NEVER say "I'm on your side", "I've got your back", "we're in this together",
+  "I'm in your corner", "as your friend", "you can count on me", "trust me".
+- Keep facts, numbers, and specifics from the draft exactly as they are. Only upgrade tone and sharpness.
+- End in a way that leaves them feeling capable.
+- If the draft already passes all three checks, return it nearly verbatim.
+
+Output STRICT JSON only:
+{"verdict": "kept" | "improved", "reply": "<final reply text>"}"""
+
+
+def _dedash(s: str) -> str:
+    """Clean em-dashes -> comma without a stray leading space (slop ban + polish fix)."""
+    s = s.replace(" — ", ", ").replace(" – ", ", ").replace("—", ", ").replace("–", ", ")
+    return s.replace(" ,", ",")
+
+
+def _confirm_final_reply(reply: str, user_msg: str, objective: str = "") -> str:
+    """Confirmation layer: verify the draft truly answers the founder's demand, check it is the
+    genuinely best possible reply, and rewrite it with a connected, attractive tone.
+    NEVER blocks a turn — on any failure the original draft is returned unchanged."""
+    if not (reply or "").strip():
+        return reply or ""
+    try:
+        prompt = (
+            f"FOUNDER'S GOAL: {objective or '(not yet stated)'}\n\n"
+            f"FOUNDER JUST SAID: \"{user_msg}\"\n\n"
+            f"DRAFT REPLY TO CONFIRM:\n{reply}\n\n"
+            "Run the three checks now and output the verdict + final reply as STRICT JSON."
+        )
+        r = client().messages.create(model=PRIMARY_MODEL, max_tokens=1600,
+                                     system=[{"type": "text", "text": CONFIRM_SYSTEM}],
+                                     thinking={"type": "disabled"},
+                                     messages=[{"role": "user", "content": prompt}])
+        txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
+        out = json.loads(_extract_json(txt))
+        final = _dedash(out.get("reply", "")).strip()
+        if not final:
+            return reply
+        verdict = (out.get("verdict") or "").strip().lower()
+        log.info(f"confirm layer verdict: {verdict}")
+        return final
+    except Exception as e:
+        log.warning(f"confirm layer failed (keeping draft): {e}")
+        return reply
 
 # Run the single engine LLM call and normalize output
 def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: str = "normal",
@@ -488,6 +653,29 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
     city, country = geo.get("city"), geo.get("country")
     if city and country and city not in ("Unknown", "Local"):
         geo_line = f"USER_LOCATION: {city}, {country} (anchor tool/platform/payment/regulation suggestions to here)\n"
+    # Factory Bridge: if chat message is a business idea, build inline + inject evidence block
+    factory_block = ""
+    factory_artifact = None
+    try:
+        from factory_bridge import looks_like_business_idea, build_from_idea
+        if org_id and looks_like_business_idea(user_msg):
+            fb = build_from_idea(user_msg, org_id=org_id, user_id=(user_doc or {}).get("id", ""))
+            if fb.get("ok"):
+                factory_artifact = fb
+                brand = (fb.get("catalog", {}) or {}).get("brand", {}) or {}
+                worth = fb.get("worth", {}) or {}
+                growth = fb.get("growth", {}) or {}
+                factory_block = (
+                    "FACTORY_BUILT (`build_from_idea` executed this turn — evidence, not speculation):\n"
+                    f"- Build: {fb.get('id')} | idea: \"{fb.get('idea','')[:120]}\"\n"
+                    f"- Brand: {brand.get('name','')} — {brand.get('tagline','')}\n"
+                    f"- Worth: AOV ₹{worth.get('aov_inr','')} | margin {worth.get('margin','')} | valuation {worth.get('valuation_multiple','')}×\n"
+                    f"- Growth headline: {growth.get('headline','')[:180]}\n"
+                    "- The user asked to build a business — they now HAVE one. Do NOT ask for the idea again.\n"
+                    "- Your job this turn: celebrate + explain what's built + the 3 immediate next actions from the growth plan. Link to /builder and /admin.\n"
+                )
+    except Exception:
+        pass
     recall_section = (recall_block.strip() + "\n") if recall_block and recall_block.strip() else ""
     mcp_tools_section = _mcp_tools_block()  # Ch.X: inject available MCP tools into prompt
     # Wire 3: root cause context when user mentions business symptoms
@@ -507,6 +695,12 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
             workflow_section = suggest_workflow_block(user_msg, org_id)
             if workflow_section:
                 workflow_section = workflow_section + "\n\n"
+        except Exception:
+            pass
+    brain_context_section = ""
+    if org_id:
+        try:
+            brain_context_section = _brain_context_block(org_id, user_doc, user_msg)
         except Exception:
             pass
     # ── SALAAR inline: scan for threats, inject context into prompt ──
@@ -546,8 +740,10 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
         f"{company_state_block}"
         f"{root_cause_section}"
         f"{workflow_section}"
+        f"{brain_context_section}"
         f"{_bio_block(user_msg)}"
         f"{salaar_block}"
+        f"{factory_block}"
         f"Their message: {user_msg}"
         f"{file_text}"
     )
@@ -570,14 +766,19 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                       "cache_control": {"type": "ephemeral"}}]
     for model in chain:
         try:
-            kwargs = {"model": model, "max_tokens": 2000, "system": system_blocks,
+            kwargs = {"model": model, "max_tokens": 8000, "system": system_blocks,
                       "messages": [{"role": "user", "content": user_content}]}
             if has_file_context and model != ULTRA_MODEL:
-                kwargs["max_tokens"] = 3500  # room for richer analysis on file/recall turns
+                kwargs["max_tokens"] = 8000  # room for richer analysis on file/recall turns
             if model == ULTRA_MODEL:
                 kwargs["max_tokens"] = 8000  # room for thinking + JSON output
                 kwargs["thinking"] = {"type": "adaptive"}
                 kwargs["extra_body"] = {"output_config": {"effort": "high"}}
+            else:
+                # DeepSeek reasoning models burn the whole budget on hidden chain-of-thought,
+                # returning empty content. Disable thinking: the SYSTEM already demands a
+                # structured REASONING SWEEP inside the JSON output.
+                kwargs["thinking"] = {"type": "disabled"}
             r = client().messages.create(**kwargs)
             txt = next((b.text for b in r.content if getattr(b, "type", "") == "text"), "").strip()
             out = json.loads(_extract_json(txt))
@@ -600,10 +801,6 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
             # If there's no concrete action, an outbox alternative makes no sense either.
             if not (out.get("refreshed_next_action") or "").strip():
                 out["outbox_alternative"] = None
-            # Clean em-dashes -> comma without a stray leading space (slop ban + polish fix).
-            def _dedash(s):
-                s = s.replace(" — ", ", ").replace(" – ", ", ").replace("—", ", ").replace("–", ", ")
-                return s.replace(" ,", ",")
             for k in ("acknowledgment", "mirror", "insight", "refreshed_easiest_path",
                       "refreshed_next_action", "outbox_alternative", "action_payoff",
                       "big_picture_link", "bold_move", "refreshed_open_question", "state_summary"):
@@ -616,6 +813,55 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
             # understanding trail must be a dict (living memory, persisted across turns)
             if not isinstance(out.get("understanding"), dict):
                 out["understanding"] = {}
+            # ── Merged brain fields: mode / recommendation / plan / citations / prediction ──
+            mode_tag = str(out.get("mode") or "advice").strip().lower()
+            out["mode"] = mode_tag if mode_tag in VALID_MODES else "advice"
+            out["key_takeaway"] = _dedash(out.get("key_takeaway", "")) if isinstance(out.get("key_takeaway"), str) else ""
+            if not (out.get("key_takeaway") or "").strip():
+                out["key_takeaway"] = (out.get("acknowledgment") or "").strip()[:160]
+            _rec = out.get("recommendation")
+            out["recommendation"] = _dedash(_rec) if (out["mode"] == "decide" and isinstance(_rec, str) and _rec.strip()) else None
+            _pl = out.get("plan")
+            out["plan"] = [_dedash(s) for s in _pl if isinstance(s, str) and s.strip()][:8] if (out["mode"] == "plan" and isinstance(_pl, list)) else None
+            if out["mode"] == "plan" and not out["plan"]:
+                out["plan"] = [_dedash(out["acknowledgment"])[:400]]
+            cits = out.get("citations")
+            out["citations"] = [{"doc": str(c.get("doc", ""))[:200], "chapter": str(c.get("chapter", ""))[:200]}
+                                for c in cits if isinstance(c, dict) and (c.get("doc") or c.get("chapter"))][:8] if isinstance(cits, list) else []
+            out["found_in_docs"] = bool(out.get("found_in_docs")) if out["citations"] else False
+            _po = out.get("predicted_outcome")
+            if isinstance(_po, dict) and isinstance(_po.get("claim"), str) and _po["claim"].strip():
+                try:
+                    _conf = max(0, min(100, int(_po.get("confidence"))))
+                except Exception:
+                    _conf = 50
+                try:
+                    _days = max(1, min(90, int(_po.get("review_after_days"))))
+                except Exception:
+                    _days = 14
+                out["predicted_outcome"] = {"claim": _dedash(_po["claim"])[:400], "confidence": _conf, "review_after_days": _days}
+            else:
+                out["predicted_outcome"] = None
+            _dfi = out.get("dont_follow_if")
+            out["dont_follow_if"] = _dedash(_dfi) if (isinstance(_dfi, str) and _dfi.strip()) else None
+            # reasoning sweep: normalize to dict with defaults
+            _rs = out.get("reasoning")
+            out["reasoning"] = _rs if isinstance(_rs, dict) else {}
+            # benchmark_facts: only real stated numbers
+            _bf = out.get("benchmark_facts")
+            if isinstance(_bf, dict) and isinstance(_bf.get("facts"), list):
+                _facts = []
+                for f in _bf["facts"]:
+                    if isinstance(f, dict) and isinstance(f.get("metric"), str) and f["metric"].strip():
+                        try:
+                            _val = float(f.get("value"))
+                        except Exception:
+                            continue
+                        _facts.append({"metric": f["metric"].strip()[:60], "value": _val,
+                                       "unit": str(f.get("unit") or "")[:20]})
+                out["benchmark_facts"] = {"industry": str(_bf.get("industry") or "")[:60], "facts": _facts[:10]}
+            else:
+                out["benchmark_facts"] = {"industry": "", "facts": []}
             # Enforce ONE question per turn: strip stray '?' from non-question fields.
             for k in ("acknowledgment", "mirror"):
                 if isinstance(out.get(k), str):
@@ -668,6 +914,15 @@ def llm_turn(thread: dict, substrate: dict, user_msg: str, intent: str, mode: st
                 except Exception as exec_err:
                     log.warning(f"MCP tool execution failed (non-fatal): {exec_err}")
             out["_execution"] = execution_results
+            if factory_artifact is not None:
+                out["factory_build"] = factory_artifact
+                out["_reasoning"]["assumptions_detected"] = []
+            goal = ""
+            try:
+                goal = (thread or {}).get("goal") or (substrate or {}).get("objective") or ""
+            except Exception:
+                pass
+            out["acknowledgment"] = _confirm_final_reply(out["acknowledgment"], user_msg, goal)
             return out, model, usage
         except Exception as e:
             last_err = e
@@ -683,7 +938,7 @@ def llm_turn_with_tools(thread: dict, substrate: dict, user_msg: str, intent: st
     """Execute an LLM turn with MCP tool access. When the LLM requests a tool call,
     execute it via the Composio dispatcher, feed the result back, and return a
     natural-language reply. MCP is infrastructure — reasoning stays in SALAAR."""
-    from execution.mcp_client import mcp_enabled, tools_for_department
+    from execution.mcp_client import mcp_enabled
 
     if not mcp_enabled():
         return llm_turn(thread, substrate, user_msg, intent, mode,
